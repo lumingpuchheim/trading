@@ -182,8 +182,9 @@ in two weeks, gap-amplified −11% losers), slow bear (2022: NOT a crash —
 worst 20-day index move only −12%; losses arrived as a drip, 22 of 27
 trades stopped), and hidden cohort-bear (2021: index +29% yet the model
 lost — speculative names deflated under a rising index). The failure
-condition is therefore NOT the index: it is the deflation of the
-speculative growth cohort, for which the index is a proxy that fails
+condition is therefore NOT the index: it is falling prices across the
+speculative growth stocks themselves ("the bubble losing air" � no
+relation to macro price inflation/deflation), for which the index is a proxy that fails
 exactly in 2021-type years. Index-level overlays (mechanical guards or
 human macro judgment) watch the wrong object; cohort breadth — e.g. the
 model's own daily flag/pre-screen count — is the relevant weather gauge,
