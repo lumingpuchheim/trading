@@ -28,6 +28,8 @@ class LpplFit:
     w: float
     a: float
     b: float
+    c1: float
+    c2: float
     c: float       # oscillation amplitude sqrt(C1^2 + C2^2)
     r2: float
     damping: float  # m*|B| / (w*|C|): >=1 means trend dominates oscillation
@@ -80,8 +82,8 @@ def fit_window(y: np.ndarray, grid: WindowGrid) -> LpplFit:
     damping = grid.m[g] * abs(b) / (grid.w[g] * c) if c > 0 else np.inf
     qualified = bool(b < 0 and r2 >= grid.min_r2 and damping >= grid.min_damping)
     return LpplFit(tc=float(grid.tc[g]), m=float(grid.m[g]), w=float(grid.w[g]),
-                   a=float(a), b=float(b), c=c, r2=float(r2),
-                   damping=float(damping), qualified=qualified)
+                   a=float(a), b=float(b), c1=float(c1), c2=float(c2), c=c,
+                   r2=float(r2), damping=float(damping), qualified=qualified)
 
 
 def prescreen(closes: np.ndarray, i: int, cfg: dict) -> bool:
@@ -106,8 +108,10 @@ def evaluate_day(log_close: np.ndarray, i: int, grids: list[WindowGrid],
                  cfg: dict) -> dict:
     """Full multi-window evaluation at day i (uses data up to and including i).
     Returns the vote count, median tc of qualifying windows (in trading days
-    after day i) and the mean r2 of qualifying windows."""
-    votes, tcs, r2s = 0, [], []
+    after day i), the mean r2 of qualifying windows, and the full parameters
+    of the qualifying window whose tc is closest to the median (for curve-
+    based entry timing)."""
+    votes, quals = 0, []
     for grid in grids:
         if i + 1 < grid.n:
             continue  # not enough history for this window: counts as no vote
@@ -117,9 +121,36 @@ def evaluate_day(log_close: np.ndarray, i: int, grids: list[WindowGrid],
         fit = fit_window(y, grid)
         if fit.qualified:
             votes += 1
-            tcs.append(fit.tc)
-            r2s.append(fit.r2)
-    return {'votes': votes,
-            'tc_ahead': float(np.median(tcs)) if tcs else np.nan,
-            'mean_r2': float(np.mean(r2s)) if r2s else np.nan,
-            'bubble': votes >= cfg['lppl']['min_votes']}
+            quals.append((fit, grid.n))
+    out = {'votes': votes, 'tc_ahead': np.nan, 'mean_r2': np.nan,
+           'bubble': votes >= cfg['lppl']['min_votes'],
+           'p_n': 0, 'p_tc': np.nan, 'p_m': np.nan, 'p_w': np.nan,
+           'p_a': np.nan, 'p_b': np.nan, 'p_c1': np.nan, 'p_c2': np.nan}
+    if quals:
+        tcs = [f.tc for f, _ in quals]
+        med = float(np.median(tcs))
+        out['tc_ahead'] = med
+        out['mean_r2'] = float(np.mean([f.r2 for f, _ in quals]))
+        fit, n = quals[int(np.argmin([abs(t - med) for t in tcs]))]
+        out.update(p_n=n, p_tc=fit.tc, p_m=fit.m, p_w=fit.w,
+                   p_a=fit.a, p_b=fit.b, p_c1=fit.c1, p_c2=fit.c2)
+    return out
+
+
+def next_curve_minimum(p: dict, after: int) -> int | None:
+    """First strict local minimum of the fitted LPPL curve, in trading days
+    after the evaluation day, at a lag > `after` and before tc. Returns the
+    lag in days, or None if the curve has no future dip (monotone rise)."""
+    k_max = int(np.floor(p['p_tc'])) - 1
+    if k_max < after + 2:
+        return None
+    k = np.arange(0, k_max + 1, dtype=float)
+    dt = p['p_tc'] - k
+    lg = np.log(dt)
+    f = dt ** p['p_m']
+    curve = p['p_a'] + p['p_b'] * f \
+        + f * (p['p_c1'] * np.cos(p['p_w'] * lg) + p['p_c2'] * np.sin(p['p_w'] * lg))
+    for j in range(max(after + 1, 1), k_max):
+        if curve[j] < curve[j - 1] and curve[j] <= curve[j + 1]:
+            return j
+    return None

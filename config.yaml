@@ -47,9 +47,10 @@ learning:                         # section 5 — fitted on development period O
 lppl:                             # Sornette bubble detector — all frozen before any backtest
   windows: [125, 175, 250, 350, 500]  # trading-day window lengths, fitted jointly
   min_votes: 3                    # "in bubble" needs >= 3 of 5 windows qualified
-  tc_min_ahead: 5                 # grid: critical time 5 .. 1.0*window days ahead
-  tc_max_ahead_frac: 1.0          # widened from 0.5 (2026-08-25): admit earlier-stage bubbles
-  tc_points: 30                   # raised from 20 to keep tc resolution after widening
+  min_votes_loose: 2              # earlier, less certain flag for the *2 strategies
+  tc_min_ahead: 5                 # grid: critical time 5 .. 0.5*window days ahead
+  tc_max_ahead_frac: 0.5          # 1.0 was tried 2026-08-25 and hurt the dev period; reverted
+  tc_points: 20
   m_min: 0.1                      # power-law exponent range (Sornette-style)
   m_max: 0.9
   m_points: 10
