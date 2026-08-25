@@ -81,6 +81,39 @@ not clean; the pre-screen clips ~1% of would-be candidates.
 included). No further tuning. Judge it only on data arriving after
 2026-08-25 — the only sample nothing here has peeked at.
 
+### Exit variants (tested 2026-08-25, removed)
+
+Same entries, three exits. The tc clock beat both alternatives in both
+periods — dev +154% / +66% (trail) / +10% (SMA); test +86% / +60% / −3%:
+
+- **Trailing 8% stop**: shaken out by the same intra-bubble oscillations
+  the entry buys (448 of 450 dev exits were trail-stops; avg winner shrank
+  +22% → +13%; churn + cooldown made it miss resumptions). A dip-buying
+  entry and a wobble-selling exit cancel each other. Only merit: test
+  maxDD −33% vs −47%.
+- **50-day SMA cross**: a dip-seller attached to a dip-buyer — positions
+  bought 4–8% below the 20-day high sit near the SMA by construction, so
+  it churned 769 dev trades at ±3–4% each; t-stat 0.7 dev, 0.3 test.
+- **Takeaway**: the tc clock's value is not accuracy but *deafness to
+  price wobbles* — time-based patience plus price-based ejection (the
+  fixed stop) beats every price-based profit exit tried.
+
+### tc tuning (tested 2026-08-25, rejected)
+
+Protocol: scan exit shift tc+k, k = −15..+20 trading days, on dev only;
+select by highest dev t-stat; run test once for the selected k.
+
+- Dev surface is **flat**: total returns +108%..+161%, t-stats 2.40–3.00
+  with no structure. Shifting the clock three weeks either way barely
+  matters — consistent with tc carrying timing information only at the
+  months scale, not weeks.
+- Selected k = −10 (dev t 3.00 vs baseline 2.90) scored **worse** on its
+  single test run: +68% (t 1.75) vs the baseline's +86% (t 1.87).
+  Textbook regression to the mean: picking the max of eight near-identical
+  noisy values bought selection bias, and the test period returned it.
+- Baseline (k = 0) stands. The tc exit works because it is a clock, not
+  because the clock is precise.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

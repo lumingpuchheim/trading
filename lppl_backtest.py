@@ -37,7 +37,10 @@ START_EQUITY = 100_000.0
 # earlier variants kept as reference, currently disabled:
 # 'lppl_dip' (3-of-5), 'lppl_dip1' (1-of-5), 'lppl_short' (mirror),
 # 'lppl_bottom2' (curve-timed), 'dip_only' (no LPPL)
-STRATEGIES = ['lppl_dip2', 'lppl_dip2_trail', 'lppl_dip2_ma']
+# exit variants _trail and _ma tested 2026-08-25 and removed: both lose to
+# the tc clock in both periods (see FINDINGS.md) — the trailing stop is
+# shaken out by the same oscillations the entry buys, the SMA cross churns
+STRATEGIES = ['lppl_dip2']
 PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2']
 
 
@@ -179,8 +182,8 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
 
 
 def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
-             fraction: float | None = None,
-             max_pos: int | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
+             fraction: float | None = None, max_pos: int | None = None,
+             tc_shift: int = 0) -> tuple[pd.DataFrame, pd.Series, float]:
     tr = cfg['lppl_trading']
     if fraction is None:
         fraction = tr['equal_weight_fraction']
@@ -298,7 +301,7 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
             elif strategy == 'dip_only':
                 if i - pos['entry_i'] >= tr['dip_only_max_hold']:
                     pos['exit_reason'] = 'time'
-            elif pos['tc_i'] >= 0 and i >= pos['tc_i']:
+            elif pos['tc_i'] >= 0 and i >= pos['tc_i'] + tc_shift:
                 pos['exit_reason'] = 'tc'
 
         exiting = sum(1 for p in positions.values() if p['exit_reason'])
