@@ -34,7 +34,7 @@ from lppl import prescreen
 
 ROOT = Path(__file__).parent
 START_EQUITY = 100_000.0
-STRATEGIES = ['lppl_dip', 'bubble_nodip', 'dip_only']
+STRATEGIES = ['lppl_dip', 'lppl_dip_once', 'bubble_nodip', 'dip_only']
 
 
 def load_config() -> dict:
@@ -98,12 +98,25 @@ def load_panel(cfg: dict) -> dict:
                         tc_i[j:until] = tc_day
                 else:
                     prev_ok = 0
+        # bubble episodes: flag runs separated by < episode_gap off-days are
+        # one episode; a longer quiet stretch means the bubble ended
+        episode = np.full(n, -1, dtype=np.int64)
+        eid, off_run = -1, 10 ** 9
+        for j in range(n):
+            if bubble[j]:
+                if off_run >= cfg['lppl_trading']['episode_gap']:
+                    eid += 1
+                off_run = 0
+                episode[j] = eid
+            else:
+                off_run += 1
+
         finite_idx = np.flatnonzero(finite)
         last_i = int(finite_idx[-1]) if len(finite_idx) else -1
         arrays[t] = {'open': df['open'].to_numpy(), 'close': close,
                      'close_f': df['close'].ffill().to_numpy(),
                      'liquid': liquid, 'dip': dip, 'pre': pre,
-                     'bubble': bubble, 'tc_i': tc_i,
+                     'bubble': bubble, 'tc_i': tc_i, 'episode': episode,
                      'last_i': last_i, 'votes': None}
         if gg is not None:
             v = np.zeros(n, dtype=np.int8)
@@ -120,13 +133,17 @@ def load_panel(cfg: dict) -> dict:
 
 
 def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
-                     cooldown: dict) -> list[dict]:
+                     cooldown: dict, profited: dict) -> list[dict]:
     out = []
     for t, a in arrays.items():
         if t in positions or cooldown.get(t, -1) > i or not a['liquid'][i]:
             continue
-        if strategy == 'lppl_dip':
+        if strategy in ('lppl_dip', 'lppl_dip_once'):
             ok = a['bubble'][i] and a['dip'][i] and a['tc_i'][i] > i
+            # once-rule: already took a profit in this same bubble episode
+            if ok and strategy == 'lppl_dip_once' \
+                    and profited.get(t, -2) == a['episode'][i]:
+                ok = False
         elif strategy == 'bubble_nodip':
             ok = a['bubble'][i] and a['tc_i'][i] > i
         else:  # dip_only
@@ -135,7 +152,8 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
             votes = int(a['votes'][i]) if a['votes'] is not None else 0
             r2 = float(a['r2'][i]) if a['votes'] is not None else 0.0
             out.append({'ticker': t, 'votes': votes, 'r2': r2,
-                        'tc_i': int(a['tc_i'][i])})
+                        'tc_i': int(a['tc_i'][i]),
+                        'episode': int(a['episode'][i])})
     out.sort(key=lambda c: (-c['votes'], -c['r2'], c['ticker']))
     return out
 
@@ -151,6 +169,7 @@ def simulate(panel: dict, cfg: dict, strategy: str,
     cash, eq_prev = START_EQUITY, START_EQUITY
     positions: dict[str, dict] = {}
     cooldown: dict[str, int] = {}
+    profited: dict[str, int] = {}  # ticker -> episode id of a profitable exit
     pending: list[dict] = []
     trades: list[dict] = []
     equity = pd.Series(np.nan, index=days)
@@ -158,13 +177,15 @@ def simulate(panel: dict, cfg: dict, strategy: str,
     cost = tr['cost_per_side']
 
     def close_out(t, pos, px, i, reason, d):
+        ret = px * (1 - cost) / (pos['entry_px'] * (1 + cost)) - 1
         trades.append({
             'ticker': t, 'entry_date': pos['entry_date'], 'exit_date': d,
             'entry_px': pos['entry_px'], 'exit_px': px,
             'days_held': i - pos['entry_i'],
-            'ret_net': px * (1 - cost) / (pos['entry_px'] * (1 + cost)) - 1,
-            'exit_reason': reason})
+            'ret_net': ret, 'exit_reason': reason})
         cooldown[t] = i + tr['reentry_cooldown']
+        if ret > 0:
+            profited[t] = pos.get('episode', -2)
 
     for d in days:
         i = day_pos[d]
@@ -190,7 +211,8 @@ def simulate(panel: dict, cfg: dict, strategy: str,
                 continue  # would breach full investment: skip
             positions[t] = {'shares': invest / (px * (1 + cost)), 'entry_px': px,
                             'entry_date': d, 'entry_i': i, 'exit_reason': None,
-                            'tc_i': e.get('tc_i', -1)}
+                            'tc_i': e.get('tc_i', -1),
+                            'episode': e.get('episode', -2)}
             cash -= invest
         pending = []
 
@@ -215,7 +237,8 @@ def simulate(panel: dict, cfg: dict, strategy: str,
         exiting = sum(1 for p in positions.values() if p['exit_reason'])
         slots = tr['max_positions'] - (len(positions) - exiting)
         if slots > 0:
-            pending = candidates_today(arrays, i, strategy, positions, cooldown)[:slots]
+            pending = candidates_today(arrays, i, strategy, positions,
+                                       cooldown, profited)[:slots]
 
         held = sum(p['shares'] * arrays[t]['close_f'][i] for t, p in positions.items())
         eq_prev = cash + held

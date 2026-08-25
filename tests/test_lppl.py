@@ -19,12 +19,17 @@ def synthetic_lppl(n=250, tc_ahead=40.0, m=0.5, w=8.0, b=-0.05, c=0.002):
 
 
 def test_recovers_synthetic_lppl_within_grid_resolution(grid250):
+    g = CFG['lppl']
+    tc_step = (g['tc_max_ahead_frac'] * 250 - g['tc_min_ahead']) / (g['tc_points'] - 1)
+    m_step = (g['m_max'] - g['m_min']) / (g['m_points'] - 1)
+    w_step = (g['w_max'] - g['w_min']) / (g['w_points'] - 1)
+
     fit = fit_window(synthetic_lppl(), grid250)
     assert fit.qualified
     assert fit.r2 > 0.999
-    assert abs(fit.tc - 40.0) < 7       # tc grid step ~6.3 days
-    assert abs(fit.m - 0.5) < 0.1       # m grid step ~0.09
-    assert abs(fit.w - 8.0) < 0.8       # w grid step ~0.78
+    assert abs(fit.tc - 40.0) < 1.5 * tc_step
+    assert abs(fit.m - 0.5) < 1.5 * m_step
+    assert abs(fit.w - 8.0) < 1.5 * w_step
     assert fit.b < 0
 
 

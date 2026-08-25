@@ -47,9 +47,9 @@ learning:                         # section 5 — fitted on development period O
 lppl:                             # Sornette bubble detector — all frozen before any backtest
   windows: [125, 175, 250, 350, 500]  # trading-day window lengths, fitted jointly
   min_votes: 3                    # "in bubble" needs >= 3 of 5 windows qualified
-  tc_min_ahead: 5                 # grid: critical time 5 .. 0.5*window days ahead
-  tc_max_ahead_frac: 0.5
-  tc_points: 20
+  tc_min_ahead: 5                 # grid: critical time 5 .. 1.0*window days ahead
+  tc_max_ahead_frac: 1.0          # widened from 0.5 (2026-08-25): admit earlier-stage bubbles
+  tc_points: 30                   # raised from 20 to keep tc resolution after widening
   m_min: 0.1                      # power-law exponent range (Sornette-style)
   m_max: 0.9
   m_points: 10
@@ -73,6 +73,7 @@ lppl_trading:                     # FIXED — 8% stop, tc exit, equal weight
   cost_per_side: 0.002
   reentry_cooldown: 20
   dip_only_max_hold: 60           # dip_only ablation has no tc; time cap instead
+  episode_gap: 20                 # flag off this many trading days = the bubble episode ended
 
 trading:                          # section 6 — FIXED, never tuned
   stop_loss: 0.92                 # exit if close <= 0.92 x entry
