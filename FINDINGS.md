@@ -1,0 +1,98 @@
+# Findings — seller-decay and LPPL bubble strategies
+
+Status as of 2026-08-25. Universe: current S&P 1500 constituents (survivorship-
+biased — see `LIMITATIONS.md`; all absolute numbers are optimistic). Data:
+yfinance daily OHLCV 2005–today. Development period 2007–2018, test period
+2019–today. Costs 0.2% per side. All t-stats assume independent trades and
+therefore overstate significance; trades are correlated (up to 10 concurrent
+positions, shared market shocks).
+
+## 1. Seller-decay (mechanical VCP) — dead
+
+Exponential-decay fits of normalised range/volume inside tight bases
+(`screener.py`), ridge-learned expected returns and quarter-Kelly sizing
+(`learn.py`, 15,836 dev base-trades).
+
+- The ridge gave **lambda a negative weight** (lambda_vol −0.0024, one-input
+  lambda −0.001): faster seller-decay predicted *worse* returns. All weights
+  < 0.3% per standard deviation.
+- Test-period edge quintiles: top vs bottom +0.03% per trade — nothing.
+- Dev equity: model_kelly +20%; test: model_kelly +47% but *worse than both
+  no-model ablations* (template +65%, random +61%).
+
+## 2. Does fit quality predict profit? — no
+
+61,017 unfiltered base-trades: among decaying bases, Spearman(r2, return) =
+**−0.025 dev / −0.003 test**. The only pocket consistent across both periods
+was the top r2 decile of *expanding* (anti-model) bases: ~+1.2% per trade in
+both. Where the sample had power, the seller-exhaustion effect was absent.
+
+## 3. LPPL (Sornette) bubble detection
+
+Deterministic fixed-grid Filimonov–Sornette fit, 5 windows (125–500d),
+qualification B<0, R² ≥ 0.8, damping ≥ 1; 3-of-5 vote, 2-evaluation
+persistence (`lppl.py`, `lppl_detect.py`). Detector: ~19 ms per evaluation,
+full universe ~20 min on 7 cores.
+
+**As identification, it works; as a buy signal, it is structurally late.**
+Certification requires super-exponential curvature, which only exists in the
+terminal phase. STX 2025–26 did a 9x (89→782) under weekly evaluation with
+0 of 5 votes before the flag finally fired at $782, six weeks before the top.
+
+**The gate cannot see the bubble end.** Fit quality is scored on a 125–500
+day window; a 17% crash moved STX's R² from 0.9746 to 0.9737 and pushed the
+estimated tc *further out* (17→46→81 days) as the fitter re-explained the
+decline. There is no condition tying today's price to the fitted curve; the
+flag survives the crash it was supposed to warn about, with weeks of lag.
+Consequence (both failure charts, CHWY 2021 and STX 2026): the strategy's
+"first 4% dip inside a certified bubble" is selected for being the crash's
+first day. Stops fill on the next open, so 8% nominal risk realises at
+−15…−20% on gaps.
+
+### Variants tried (equal-weight 10%, 10 slots, 8% stop + past-tc exit)
+
+| variant | dev total (t) | test total (t) | verdict |
+|---|---|---|---|
+| lppl_dip (3-of-5, buy dips) | +47% (1.6) | −26% (−1.1) | noise, negative OOS |
+| bubble_nodip (no dip wait) | +34% (1.3) | −24% (−1.2) | dip wait ~irrelevant |
+| tc widened to 1.0 windows | +18% (1.0) | −37% (−2.0) | hurt dev → reverted |
+| one-profit-per-bubble rule | identical | identical | never fires; cooldown + tc exits already prevent same-episode re-entry |
+| lppl_short (mirror) | −67% (**−4.4**) | −3% (0.1) | decisively bad: intra-bubble wobbles stop shorts out repeatedly |
+| lppl_bottom2 (buy fitted-curve bottom) | 2 trades | 0 trades | self-refuting: damping ≥ 1 forces monotone fitted curves — the model predicts no buyable bottoms; real 4% dips are 2–4x its oscillation amplitude |
+| **lppl_dip2 (2-of-5 gate)** | **+150% (2.9)** | **+91% (1.9)** | only variant positive in both periods |
+| dip_only (pre-screen + dip, no LPPL) | −23% (0.1) | +60% (1.4) | momentum alone beats certification OOS |
+
+### The one encouraging result
+
+`lppl_dip2` — the loose 2-of-5 gate — beats both its neighbours (strict gate
+and no gate) in both periods, and its dev t-stat is the only one above 2.
+The 2-vote state precedes certification by weeks to months (STX: February vs
+May 2026), consistent with the general lesson: **the value is in the
+formation/acceleration phase; certification marks the end.** Performance in
+this family improves monotonically as the gate is relaxed toward earlier
+entry.
+
+Caveats, in order of severity: ~6 variants were tried, so t=2.9 as the best
+of six is worth p ≈ 1–2% before the correlated-trades and survivorship
+corrections; the test period was examined repeatedly during design and is
+not clean; the pre-screen clips ~1% of would-be candidates.
+
+**Frozen candidate:** `lppl_dip2` exactly as of commit `34f4347` (config
+included). No further tuning. Judge it only on data arriving after
+2026-08-25 — the only sample nothing here has peeked at.
+
+## 4. Statistical reality (applies to everything above)
+
+Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
+~1,400+ independent trades; these strategies produce 20–60 correlated trades
+per year. Portfolio equity curves at this scale are storytelling. The
+analyses with real power (15k–61k per-base observations) consistently found
+nothing. Every conclusion drawn from a few hundred trades — including the
+encouraging one — should be held loosely.
+
+## Provenance
+
+- `d37eefe` seller-decay screener + learning + Kelly backtest
+- `56aaed9` LPPL detector + bubble-dip backtest + ablations
+- `4840f3f` tc widening (rejected) + once-rule (inert)
+- `34f4347` short mirror, 2-of-5 gate, curve-timed bottom; tc reverted
