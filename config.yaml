@@ -67,8 +67,9 @@ lppl:                             # Sornette bubble detector — all frozen befo
   dip_high_window: 20
   validation_sample: 500          # rejected stock-days re-fitted to verify the pre-screen
 
-lppl_trading:                     # FIXED — 8% stop, tc exit, equal weight
+lppl_trading:                     # 8% stop, tc exit, equal weight
   stop_loss: 0.92                 # exit if close <= 0.92 x entry (the "8% leaving rule")
+  sma_exit: 50                    # _ma variant: exit when close < 50-day SMA
   max_positions: 10
   equal_weight_fraction: 0.10
   cost_per_side: 0.002

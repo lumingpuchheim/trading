@@ -37,7 +37,7 @@ START_EQUITY = 100_000.0
 # earlier variants kept as reference, currently disabled:
 # 'lppl_dip' (3-of-5), 'lppl_dip1' (1-of-5), 'lppl_short' (mirror),
 # 'lppl_bottom2' (curve-timed), 'dip_only' (no LPPL)
-STRATEGIES = ['lppl_dip2']
+STRATEGIES = ['lppl_dip2', 'lppl_dip2_trail', 'lppl_dip2_ma']
 PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2']
 
 
@@ -64,7 +64,10 @@ def load_panel(cfg: dict) -> dict:
         t = path.stem
         if t == d['benchmark']:
             continue
-        df = pd.read_parquet(path).reindex(calendar)
+        raw = pd.read_parquet(path)
+        sma50 = raw['close'].rolling(cfg['lppl_trading']['sma_exit']).mean()
+        df = raw.reindex(calendar)
+        sma50 = sma50.reindex(calendar).ffill()
         close = df['close'].to_numpy()
         n = len(close)
         dollar_vol = (df['close'] * df['volume']).rolling(d['dollar_volume_window']).mean()
@@ -128,7 +131,7 @@ def load_panel(cfg: dict) -> dict:
         arrays[t] = {'open': df['open'].to_numpy(), 'close': close,
                      'close_f': cvals, 'liquid': liquid, 'dip': dip, 'pre': pre,
                      'b3': b3, 'tc3': tc3, 'b2': b2, 'tc2': tc2,
-                     'b1': b1, 'tc1': tc1,
+                     'b1': b1, 'tc1': tc1, 'sma50': sma50.to_numpy(),
                      'votes': votes_d, 'r2': r2_d, 'ev_ptr': ev_ptr,
                      'evals': evals,
                      'last_i': int(finite_idx[-1]) if len(finite_idx) else -1}
@@ -151,7 +154,7 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
         if strategy in ('lppl_dip', 'lppl_short'):
             if a['b3'][i] and a['dip'][i] and a['tc3'][i] > i:
                 cand = {'fill_i': i + 1, 'tc_i': int(a['tc3'][i])}
-        elif strategy == 'lppl_dip2':
+        elif strategy.startswith('lppl_dip2'):  # exit variants share the entry
             if a['b2'][i] and a['dip'][i] and a['tc2'][i] > i:
                 cand = {'fill_i': i + 1, 'tc_i': int(a['tc2'][i])}
         elif strategy == 'lppl_dip1':
@@ -188,8 +191,13 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
     day_pos = {d: i for i, d in enumerate(cal)}
     days = cal[(cal >= period[0]) & (cal <= period[1])]
     side = -1 if strategy == 'lppl_short' else 1
-    flag_col = {'lppl_dip1': 'b1', 'lppl_dip2': 'b2',
-                'lppl_bottom2': 'b2'}.get(strategy, 'b3')
+    flag_col = 'b3'
+    if strategy == 'lppl_dip1':
+        flag_col = 'b1'
+    elif strategy.startswith('lppl_dip2') or strategy == 'lppl_bottom2':
+        flag_col = 'b2'
+    variant = 'trail' if strategy.endswith('_trail') \
+        else 'ma' if strategy.endswith('_ma') else 'base'
     cost = tr['cost_per_side']
     short_stop = 2 - tr['stop_loss']  # e.g. 1.08: mirrored 8% adverse move
 
@@ -266,11 +274,23 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
         for t, pos in positions.items():
             a = arrays[t]
             c = a['close_f'][i]
-            tc_col = 'tc2' if flag_col == 'b2' else 'tc3'
+            tc_col = 'tc' + flag_col[1]
             if strategy != 'dip_only' and a[tc_col][i] >= 0:
                 pos['tc_i'] = int(a[tc_col][i])
+            pos['peak'] = max(pos.get('peak', pos['entry_px']), c)
             if i >= a['last_i'] and a['last_i'] < len(cal) - 1:
                 pos['exit_reason'] = 'delisted'
+            elif variant == 'trail':
+                # trailing 8% stop from the highest close since entry;
+                # subsumes the fixed stop, replaces the tc clock
+                if c <= tr['stop_loss'] * pos['peak']:
+                    pos['exit_reason'] = 'trail_stop'
+            elif variant == 'ma':
+                # fixed stop + trend-death exit, no tc clock
+                if c <= tr['stop_loss'] * pos['entry_px']:
+                    pos['exit_reason'] = 'stop'
+                elif np.isfinite(a['sma50'][i]) and c < a['sma50'][i]:
+                    pos['exit_reason'] = 'sma'
             elif pos['side'] == 1 and c <= tr['stop_loss'] * pos['entry_px']:
                 pos['exit_reason'] = 'stop'
             elif pos['side'] == -1 and c >= short_stop * pos['entry_px']:
