@@ -164,6 +164,17 @@ because it is deaf. Exit design space now fully explored: calendar shifts
 (flat), price triggers (bad), fit triggers (worse). The baseline exit is
 final.
 
+### Relative-strength ranking (tested 2026-08-25, rejected by audit)
+
+Slot candidates ranked by trailing 126-day return instead of (votes, r2).
+The sharpest dev/test split of the project: dev +222% (t 3.33, best ever
+recorded) — test **−13%** (t 0.40, vs baseline +86%). Ranking by RS inside
+an already-momentum-selected candidate pool concentrates the portfolio in
+the most extended names, which is exactly what the 2020–22 momentum
+unwinds punished. The external momentum prior does not transfer to
+"momentum among momentum". Also the clearest demonstration yet that a
+dev-best configuration can be an out-of-sample disaster.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to

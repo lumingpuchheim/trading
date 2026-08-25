@@ -40,7 +40,7 @@ START_EQUITY = 100_000.0
 # exit variants _trail and _ma tested 2026-08-25 and removed: both lose to
 # the tc clock in both periods (see FINDINGS.md) — the trailing stop is
 # shaken out by the same oscillations the entry buys, the SMA cross churns
-STRATEGIES = ['lppl_dip2', 'lppl_dip2_fd']
+STRATEGIES = ['lppl_dip2', 'lppl_dip2_rs']
 PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2', 'p_sigma']
 
 
@@ -139,8 +139,15 @@ def load_panel(cfg: dict) -> dict:
                 ev_ptr[j:until] = len(evals)
                 evals.append({'j': j, **{c: getattr(r, c) for c in PARAM_COLS}})
 
+        # trailing return for relative-strength ranking (_rs variant)
+        lb = g['rs_lookback']
+        rs = np.full(n, -np.inf)
+        with np.errstate(invalid='ignore'):
+            r = cvals[lb:] / cvals[:-lb] - 1
+        rs[lb:] = np.where(np.isfinite(r), r, -np.inf)
+
         finite_idx = np.flatnonzero(finite)
-        arrays[t] = {'open': df['open'].to_numpy(), 'close': close,
+        arrays[t] = {'open': df['open'].to_numpy(), 'close': close, 'rs': rs,
                      'close_f': cvals, 'liquid': liquid, 'dip': dip,
                      'dip_band': dip_band, 'pre': pre,
                      'b3': b3, 'tc3': tc3, 'b2': b2, 'tc2': tc2,
@@ -210,11 +217,15 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
                 cand = {'fill_i': i + 1, 'tc_i': -1}
         if cand is not None:
             out.append({'ticker': t, 'votes': int(a['votes'][i]),
-                        'r2': float(a['r2'][i]), **cand})
+                        'r2': float(a['r2'][i]), 'rs': float(a['rs'][i]),
+                        **cand})
     if strategy.endswith(('_breadth', '_bb')) \
             and len(out) > cfg['lppl']['breadth_veto_max']:
         return []  # many candidates at once = systemic move, take none
-    out.sort(key=lambda c: (-c['votes'], -c['r2'], c['ticker']))
+    if strategy.endswith('_rs'):
+        out.sort(key=lambda c: (-c['rs'], c['ticker']))
+    else:
+        out.sort(key=lambda c: (-c['votes'], -c['r2'], c['ticker']))
     return out
 
 

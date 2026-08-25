@@ -66,6 +66,7 @@ lppl:                             # Sornette bubble detector — all frozen befo
   dip_from_high: 0.04             # entry: close >= 4% below its 20-day high close
   dip_high_window: 20
   curve_band_sigma: 3.0           # _guard: entry only if log-price >= fitted curve - 3 sigma
+  rs_lookback: 126                # _rs: rank slot candidates by trailing 126-day return
   dip_max_from_high: 0.10         # _band: a dip deeper than 10% below the 20d high is off-model
   breadth_veto_max: 5             # _breadth: >5 simultaneous new candidates = systemic, take none
   validation_sample: 500          # rejected stock-days re-fitted to verify the pre-screen
