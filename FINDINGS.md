@@ -114,6 +114,51 @@ select by highest dev t-stat; run test once for the selected k.
 - Baseline (k = 0) stands. The tc exit works because it is a clock, not
   because the clock is precise.
 
+### Crash-entry guards (tested 2026-08-25, REJECTED by protocol)
+
+Motivated by the March-2020 failure mode (buying market-wide collapses as
+"dips"): guard 1 = entry only while log-price >= own fitted curve − 3
+fitted-sigma; guard 3 = no entries while SPY is itself >= 4% below its
+20-day high. Both mechanical, no external data.
+
+- They work as designed: COVID-window entries 22 → 6 (avg −8.2% → −1.8%),
+  2022 entries 27 → 10; test +106% (t 2.13, maxDD −32%) vs baseline +86%
+  (t 1.87, maxDD −47%).
+- But dev: +67% (t 1.99) vs +154% (t 2.90) — only 24 fewer trades, yet
+  half the return gone. The vetoed dev entries were disproportionately
+  winners: in 2009–2012 the market was chronically below its 20-day high
+  and stocks far below their fitted curves, and buying exactly those
+  systemic dips was the most profitable behavior in the sample.
+- **Decision: rejected.** The protocol says dev selects, test audits;
+  dev rejects the guards decisively. The attractive test number is the
+  predicted artifact of designing rules while staring at 2020's failures.
+  Deeper reading: crash losses are not a bug a rule can remove — they are
+  the price of the same behavior that produced the 2009–2012 gains. The
+  guarded variant stays in the code as a registered alternative for
+  post-2026 data to judge.
+
+### Dip ceiling and breadth veto (tested 2026-08-25, both rejected)
+
+- **Dip ceiling** (entry only for dips 4–10% below the 20-day high; deeper
+  = off-model): loses in BOTH periods — dev +76% (t 2.10) vs baseline
+  +154% (t 2.90); test +29% (t 1.19) vs +86% (t 1.87). Deep dips carry
+  both the crash disasters and a disproportionate share of the big
+  winners; cutting them removes more profit than pain. Unambiguous no.
+- **Breadth veto** (>5 simultaneous new candidates = systemic day, take
+  none): the mirror image of the guards — slightly better dev (+174%,
+  t 3.14, the best dev configuration seen) but worse test (+43%, t 1.46).
+  The dev edge is within noise and the test period does not confirm it;
+  not adopted.
+- Combined (+both): middling dev, poor test. Rejected.
+
+**Running tally: every modification attempted on lppl_dip2 — vote gates
+(1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
+exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
+beat the baseline on both periods jointly.** The baseline is a local
+optimum in every direction probed. The skeptical reading (favoured by the
+sample sizes): it sits at the peak of the selection process that created
+it, and its true edge remains unproven until post-2026-08-25 data rules.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

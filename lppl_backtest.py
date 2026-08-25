@@ -40,7 +40,7 @@ START_EQUITY = 100_000.0
 # exit variants _trail and _ma tested 2026-08-25 and removed: both lose to
 # the tc clock in both periods (see FINDINGS.md) — the trailing stop is
 # shaken out by the same oscillations the entry buys, the SMA cross churns
-STRATEGIES = ['lppl_dip2', 'lppl_dip2_guard']
+STRATEGIES = ['lppl_dip2', 'lppl_dip2_band', 'lppl_dip2_breadth', 'lppl_dip2_bb']
 PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2', 'p_sigma']
 
 
@@ -87,6 +87,8 @@ def load_panel(cfg: dict) -> dict:
         hi20 = df['close'].rolling(g['dip_high_window']).max().to_numpy()
         dip = np.isfinite(close) & np.isfinite(hi20) \
             & (close <= (1 - g['dip_from_high']) * hi20)
+        # _band variants: dip must also be shallower than dip_max_from_high
+        dip_band = dip & (close >= (1 - g['dip_max_from_high']) * hi20)
 
         pre = np.zeros(n, dtype=bool)
         finite = np.isfinite(close)
@@ -139,7 +141,8 @@ def load_panel(cfg: dict) -> dict:
 
         finite_idx = np.flatnonzero(finite)
         arrays[t] = {'open': df['open'].to_numpy(), 'close': close,
-                     'close_f': cvals, 'liquid': liquid, 'dip': dip, 'pre': pre,
+                     'close_f': cvals, 'liquid': liquid, 'dip': dip,
+                     'dip_band': dip_band, 'pre': pre,
                      'b3': b3, 'tc3': tc3, 'b2': b2, 'tc2': tc2,
                      'b1': b1, 'tc1': tc1, 'sma50': sma50.to_numpy(),
                      'votes': votes_d, 'r2': r2_d, 'ev_ptr': ev_ptr,
@@ -187,7 +190,8 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
             if a['b3'][i] and a['dip'][i] and a['tc3'][i] > i:
                 cand = {'fill_i': i + 1, 'tc_i': int(a['tc3'][i])}
         elif strategy.startswith('lppl_dip2'):  # variants share the entry
-            if a['b2'][i] and a['dip'][i] and a['tc2'][i] > i:
+            dip_col = 'dip_band' if strategy.endswith(('_band', '_bb')) else 'dip'
+            if a['b2'][i] and a[dip_col][i] and a['tc2'][i] > i:
                 if not strategy.endswith('_guard') or curve_consistent(a, i, cfg):
                     cand = {'fill_i': i + 1, 'tc_i': int(a['tc2'][i])}
         elif strategy == 'lppl_dip1':
@@ -207,6 +211,9 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
         if cand is not None:
             out.append({'ticker': t, 'votes': int(a['votes'][i]),
                         'r2': float(a['r2'][i]), **cand})
+    if strategy.endswith(('_breadth', '_bb')) \
+            and len(out) > cfg['lppl']['breadth_veto_max']:
+        return []  # many candidates at once = systemic move, take none
     out.sort(key=lambda c: (-c['votes'], -c['r2'], c['ticker']))
     return out
 
