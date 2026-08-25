@@ -23,6 +23,24 @@ Everything in section 5 is fitted on 2007-2018 only and frozen; delete
 `data/trade_table.parquet` to force a trade-table rebuild after re-screening.
 Read `LIMITATIONS.md` before believing any number in `results/`.
 
+## LPPL bubble-dip strategy (second idea)
+
+Buy dips inside a Sornette-style bubble: a stock is "in a bubble" when a
+fixed-grid LPPL fit (Filimonov-Sornette linearisation, deterministic — no
+optimizer, no random starts) qualifies on >= 3 of 5 window lengths, for 2
+consecutive weekly evaluations. Entry: close >= 4% below the 20-day high
+while the flag is on and the median critical time tc is still ahead; buy
+next open. Exit: 8% stop, or today past tc. A cheap pre-screen
+(accelerating +20% run-up — a necessary condition for any qualifying fit)
+cuts compute ~10x; lppl_detect.py probes rejected days to verify it drops
+(almost) nothing. Ablations with identical rules: bubble_nodip (no dip
+wait), dip_only (pre-screen + dip, no LPPL fit).
+
+```
+python lppl_detect.py      # detector -> data/lppl_flags.parquet (~30 min, 7 cores)
+python lppl_backtest.py    # -> results/lppl_* tables and charts
+```
+
 ## Interpretation choices (where the spec left room)
 
 - The range/volume normalisation baseline is the mean over the 120 days

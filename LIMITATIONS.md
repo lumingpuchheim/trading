@@ -45,3 +45,18 @@ universe — but the bias need not cancel exactly.
 - **The trade table ignores portfolio frictions.** Learning targets come from
   every base traded independently (no position limits, no cooldown), so the
   model learns per-base economics, not portfolio-constrained ones.
+
+## LPPL strategy specifics
+
+- **The fit is stabilised, not validated.** The deterministic grid and the
+  3-of-5 window vote make the detector reproducible; they do not make LPPL
+  a proven crash model. The replication record of the literature is mixed.
+- **tc is a grid median, not a forecast with error bars.** The exit "past
+  median tc" inherits the fit's end-of-window bias (tc estimates cluster
+  just beyond the data edge).
+- **The pre-screen clips ~1% of would-be verdicts.** Probing 2,318 rejected
+  refit days found 0.99% would have qualified; the detector therefore misses
+  a small tail of bubbles that were not accelerating in the simple sense.
+- **Same survivorship-biased universe** as everything else here; bubble-y
+  stocks that later died and left the index are missing entirely, which
+  flatters any bubble-buying strategy's absolute numbers.
