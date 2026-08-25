@@ -172,6 +172,23 @@ optimum in every direction probed. The skeptical reading (favoured by the
 sample sizes): it sits at the peak of the selection process that created
 it, and its true edge remains unproven until post-2026-08-25 data rules.
 
+### When the model works — the habitat (per-year analysis, corrected)
+
+Per-year trade stats (results/lppl_winrate_by_year.csv) group cleanly:
+profitable years are 2009–2013, 2016, 2023–2025 — always the first years
+after a bear-market bottom, when speculative leadership re-forms. Losing
+years come in three shapes with one cause: fast crash (2020: 14 entries
+in two weeks, gap-amplified −11% losers), slow bear (2022: NOT a crash —
+worst 20-day index move only −12%; losses arrived as a drip, 22 of 27
+trades stopped), and hidden cohort-bear (2021: index +29% yet the model
+lost — speculative names deflated under a rising index). The failure
+condition is therefore NOT the index: it is the deflation of the
+speculative growth cohort, for which the index is a proxy that fails
+exactly in 2021-type years. Index-level overlays (mechanical guards or
+human macro judgment) watch the wrong object; cohort breadth — e.g. the
+model's own daily flag/pre-screen count — is the relevant weather gauge,
+noted here as an observation, not an adopted rule.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
