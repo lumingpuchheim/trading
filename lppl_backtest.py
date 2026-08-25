@@ -35,9 +35,9 @@ from lppl import next_curve_minimum, prescreen
 ROOT = Path(__file__).parent
 START_EQUITY = 100_000.0
 # earlier variants kept as reference, currently disabled:
-# 'lppl_dip' (3-of-5), 'lppl_short' (mirror), 'lppl_bottom2' (curve-timed),
-# 'dip_only' (no LPPL)
-STRATEGIES = ['lppl_dip2', 'lppl_dip1']
+# 'lppl_dip' (3-of-5), 'lppl_dip1' (1-of-5), 'lppl_short' (mirror),
+# 'lppl_bottom2' (curve-timed), 'dip_only' (no LPPL)
+STRATEGIES = ['lppl_dip2']
 PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2']
 
 
@@ -241,14 +241,26 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
             px = a['open'][i]
             if not np.isfinite(px):
                 continue
-            invest = tr['equal_weight_fraction'] * eq_prev
-            if invest > cash:
-                continue
-            pos = {'side': side, 'entry_px': px, 'entry_date': d, 'entry_i': i,
-                   'exit_reason': None, 'tc_i': e['tc_i'], 'invest': invest}
-            pos['shares'] = invest / (px * (1 + cost)) if side == 1 else 0.0
-            positions[t] = pos
-            cash -= invest
+            if side == 1:
+                # whole shares only: round the target size down
+                shares = np.floor(fraction * eq_prev / px)
+                outflow = shares * px * (1 + cost)
+                if shares < 1 or outflow > cash:
+                    continue  # cannot afford one share / would breach exposure
+                positions[t] = {'side': 1, 'shares': shares, 'entry_px': px,
+                                'entry_date': d, 'entry_i': i,
+                                'exit_reason': None, 'tc_i': e['tc_i'],
+                                'invest': outflow}
+                cash -= outflow
+            else:
+                invest = fraction * eq_prev
+                if invest > cash:
+                    continue
+                positions[t] = {'side': -1, 'shares': 0.0, 'entry_px': px,
+                                'entry_date': d, 'entry_i': i,
+                                'exit_reason': None, 'tc_i': e['tc_i'],
+                                'invest': invest}
+                cash -= invest
 
         # decisions at the close
         for t, pos in positions.items():
