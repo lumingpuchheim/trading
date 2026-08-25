@@ -40,7 +40,7 @@ START_EQUITY = 100_000.0
 # exit variants _trail and _ma tested 2026-08-25 and removed: both lose to
 # the tc clock in both periods (see FINDINGS.md) — the trailing stop is
 # shaken out by the same oscillations the entry buys, the SMA cross churns
-STRATEGIES = ['lppl_dip2', 'lppl_dip2_band', 'lppl_dip2_breadth', 'lppl_dip2_bb']
+STRATEGIES = ['lppl_dip2', 'lppl_dip2_fd']
 PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2', 'p_sigma']
 
 
@@ -237,7 +237,8 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
     elif strategy.startswith('lppl_dip2') or strategy == 'lppl_bottom2':
         flag_col = 'b2'
     variant = 'trail' if strategy.endswith('_trail') \
-        else 'ma' if strategy.endswith('_ma') else 'base'
+        else 'ma' if strategy.endswith('_ma') \
+        else 'fd' if strategy.endswith('_fd') else 'base'
     cost = tr['cost_per_side']
     short_stop = 2 - tr['stop_loss']  # e.g. 1.08: mirrored 8% adverse move
 
@@ -331,6 +332,14 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
                     pos['exit_reason'] = 'stop'
                 elif np.isfinite(a['sma50'][i]) and c < a['sma50'][i]:
                     pos['exit_reason'] = 'sma'
+            elif variant == 'fd':
+                # fixed stop + flag-death: sell when the detector stops
+                # affirming the bubble (votes below the loose gate), instead
+                # of waiting for the stale tc date
+                if c <= tr['stop_loss'] * pos['entry_px']:
+                    pos['exit_reason'] = 'stop'
+                elif a['votes'][i] < cfg['lppl']['min_votes_loose']:
+                    pos['exit_reason'] = 'flag'
             elif pos['side'] == 1 and c <= tr['stop_loss'] * pos['entry_px']:
                 pos['exit_reason'] = 'stop'
             elif pos['side'] == -1 and c >= short_stop * pos['entry_px']:

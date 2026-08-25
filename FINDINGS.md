@@ -151,6 +151,19 @@ fitted-sigma; guard 3 = no entries while SPY is itself >= 4% below its
   not adopted.
 - Combined (+both): middling dev, poor test. Rejected.
 
+### Flag-death exit (tested 2026-08-25, rejected — worst exit tried)
+
+Sell when the detector stops affirming the bubble (votes < 2) instead of
+waiting for the stale tc date. Decisively bad: the raw vote count flickers
+(the multi-window instability), so positions are dumped within days — 1,019
+dev trades (vs 295), 907 of them flag-exits, avg winner collapses +22% →
++5%, dev −33% (t −1.6), test +27% (t 1.1). Confirms the pattern from the
+trailing-stop and SMA tests: every *responsive* exit — price-based or
+fit-based — is destroyed by noise it responds to; the tc clock survives
+because it is deaf. Exit design space now fully explored: calendar shifts
+(flat), price triggers (bad), fit triggers (worse). The baseline exit is
+final.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
