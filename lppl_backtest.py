@@ -34,7 +34,10 @@ from lppl import next_curve_minimum, prescreen
 
 ROOT = Path(__file__).parent
 START_EQUITY = 100_000.0
-STRATEGIES = ['lppl_dip', 'lppl_short', 'lppl_dip2', 'lppl_bottom2', 'dip_only']
+# earlier variants kept as reference, currently disabled:
+# 'lppl_dip' (3-of-5), 'lppl_short' (mirror), 'lppl_bottom2' (curve-timed),
+# 'dip_only' (no LPPL)
+STRATEGIES = ['lppl_dip2', 'lppl_dip1']
 PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2']
 
 
@@ -108,6 +111,7 @@ def load_panel(cfg: dict) -> dict:
 
         b3, tc3 = build_state(g['min_votes'])
         b2, tc2 = build_state(g['min_votes_loose'])
+        b1, tc1 = build_state(1)  # lppl_dip1: any single window qualifying
 
         if gg is not None:
             for r in gg.itertuples():
@@ -124,6 +128,7 @@ def load_panel(cfg: dict) -> dict:
         arrays[t] = {'open': df['open'].to_numpy(), 'close': close,
                      'close_f': cvals, 'liquid': liquid, 'dip': dip, 'pre': pre,
                      'b3': b3, 'tc3': tc3, 'b2': b2, 'tc2': tc2,
+                     'b1': b1, 'tc1': tc1,
                      'votes': votes_d, 'r2': r2_d, 'ev_ptr': ev_ptr,
                      'evals': evals,
                      'last_i': int(finite_idx[-1]) if len(finite_idx) else -1}
@@ -149,6 +154,9 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
         elif strategy == 'lppl_dip2':
             if a['b2'][i] and a['dip'][i] and a['tc2'][i] > i:
                 cand = {'fill_i': i + 1, 'tc_i': int(a['tc2'][i])}
+        elif strategy == 'lppl_dip1':
+            if a['b1'][i] and a['dip'][i] and a['tc1'][i] > i:
+                cand = {'fill_i': i + 1, 'tc_i': int(a['tc1'][i])}
         elif strategy == 'lppl_bottom2':
             if a['b2'][i] and a['dip'][i] and a['tc2'][i] > i \
                     and a['ev_ptr'][i] >= 0:
@@ -167,15 +175,21 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
     return out
 
 
-def simulate(panel: dict, cfg: dict, strategy: str,
-             period: tuple[str, str]) -> tuple[pd.DataFrame, pd.Series, float]:
+def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
+             fraction: float | None = None,
+             max_pos: int | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
     tr = cfg['lppl_trading']
+    if fraction is None:
+        fraction = tr['equal_weight_fraction']
+    if max_pos is None:
+        max_pos = tr['max_positions']
     arrays = panel['arrays']
     cal = panel['calendar']
     day_pos = {d: i for i, d in enumerate(cal)}
     days = cal[(cal >= period[0]) & (cal <= period[1])]
     side = -1 if strategy == 'lppl_short' else 1
-    flag_col = 'b2' if strategy in ('lppl_dip2', 'lppl_bottom2') else 'b3'
+    flag_col = {'lppl_dip1': 'b1', 'lppl_dip2': 'b2',
+                'lppl_bottom2': 'b2'}.get(strategy, 'b3')
     cost = tr['cost_per_side']
     short_stop = 2 - tr['stop_loss']  # e.g. 1.08: mirrored 8% adverse move
 
