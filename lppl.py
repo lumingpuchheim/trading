@@ -31,6 +31,7 @@ class LpplFit:
     c1: float
     c2: float
     c: float       # oscillation amplitude sqrt(C1^2 + C2^2)
+    sigma: float   # residual std of the fit (log-price units)
     r2: float
     damping: float  # m*|B| / (w*|C|): >=1 means trend dominates oscillation
     qualified: bool
@@ -83,6 +84,7 @@ def fit_window(y: np.ndarray, grid: WindowGrid) -> LpplFit:
     qualified = bool(b < 0 and r2 >= grid.min_r2 and damping >= grid.min_damping)
     return LpplFit(tc=float(grid.tc[g]), m=float(grid.m[g]), w=float(grid.w[g]),
                    a=float(a), b=float(b), c1=float(c1), c2=float(c2), c=c,
+                   sigma=float(np.sqrt(max(sse[g], 0.0) / grid.n)),
                    r2=float(r2), damping=float(damping), qualified=qualified)
 
 
@@ -125,7 +127,8 @@ def evaluate_day(log_close: np.ndarray, i: int, grids: list[WindowGrid],
     out = {'votes': votes, 'tc_ahead': np.nan, 'mean_r2': np.nan,
            'bubble': votes >= cfg['lppl']['min_votes'],
            'p_n': 0, 'p_tc': np.nan, 'p_m': np.nan, 'p_w': np.nan,
-           'p_a': np.nan, 'p_b': np.nan, 'p_c1': np.nan, 'p_c2': np.nan}
+           'p_a': np.nan, 'p_b': np.nan, 'p_c1': np.nan, 'p_c2': np.nan,
+           'p_sigma': np.nan}
     if quals:
         tcs = [f.tc for f, _ in quals]
         med = float(np.median(tcs))
@@ -133,8 +136,18 @@ def evaluate_day(log_close: np.ndarray, i: int, grids: list[WindowGrid],
         out['mean_r2'] = float(np.mean([f.r2 for f, _ in quals]))
         fit, n = quals[int(np.argmin([abs(t - med) for t in tcs]))]
         out.update(p_n=n, p_tc=fit.tc, p_m=fit.m, p_w=fit.w,
-                   p_a=fit.a, p_b=fit.b, p_c1=fit.c1, p_c2=fit.c2)
+                   p_a=fit.a, p_b=fit.b, p_c1=fit.c1, p_c2=fit.c2,
+                   p_sigma=fit.sigma)
     return out
+
+
+def curve_value(p: dict, k: float) -> float:
+    """Fitted LPPL log-price k trading days after the evaluation day."""
+    dt = p['p_tc'] - k
+    f = dt ** p['p_m']
+    lg = np.log(dt)
+    return p['p_a'] + p['p_b'] * f \
+        + f * (p['p_c1'] * np.cos(p['p_w'] * lg) + p['p_c2'] * np.sin(p['p_w'] * lg))
 
 
 def next_curve_minimum(p: dict, after: int) -> int | None:

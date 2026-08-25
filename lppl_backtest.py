@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from lppl import next_curve_minimum, prescreen
+from lppl import curve_value, next_curve_minimum, prescreen
 
 ROOT = Path(__file__).parent
 START_EQUITY = 100_000.0
@@ -40,8 +40,8 @@ START_EQUITY = 100_000.0
 # exit variants _trail and _ma tested 2026-08-25 and removed: both lose to
 # the tc clock in both periods (see FINDINGS.md) — the trailing stop is
 # shaken out by the same oscillations the entry buys, the SMA cross churns
-STRATEGIES = ['lppl_dip2']
-PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2']
+STRATEGIES = ['lppl_dip2', 'lppl_dip2_guard']
+PARAM_COLS = ['p_n', 'p_tc', 'p_m', 'p_w', 'p_a', 'p_b', 'p_c1', 'p_c2', 'p_sigma']
 
 
 def load_config() -> dict:
@@ -61,6 +61,13 @@ def load_panel(cfg: dict) -> dict:
 
     flags = pd.read_parquet(data_dir / 'lppl_flags.parquet')
     flags_by_ticker = {t: gg.sort_values('date') for t, gg in flags.groupby('ticker')}
+
+    # market-state gate: the SAME dip definition applied to SPY itself;
+    # a stock's dip while the whole market is dipping is systemic, not
+    # stock-specific seller exhaustion
+    spy_hi20 = spy['close'].rolling(g['dip_high_window']).max()
+    market_dip = (spy['close'] <= (1 - g['dip_from_high']) * spy_hi20) \
+        .to_numpy(dtype=bool)
 
     arrays = {}
     for path in sorted((data_dir / 'ohlcv').glob('*.parquet')):
@@ -138,7 +145,8 @@ def load_panel(cfg: dict) -> dict:
                      'votes': votes_d, 'r2': r2_d, 'ev_ptr': ev_ptr,
                      'evals': evals,
                      'last_i': int(finite_idx[-1]) if len(finite_idx) else -1}
-    return {'calendar': calendar, 'arrays': arrays, 'spy_close': spy['close']}
+    return {'calendar': calendar, 'arrays': arrays, 'spy_close': spy['close'],
+            'market_dip': market_dip}
 
 
 def short_value(invest: float, p0: float, p: float, cost: float) -> float:
@@ -146,8 +154,29 @@ def short_value(invest: float, p0: float, p: float, cost: float) -> float:
     return invest * (1 + (p0 * (1 - cost) - p * (1 + cost)) / (p0 * (1 + cost)))
 
 
+def curve_consistent(a: dict, i: int, cfg: dict) -> bool:
+    """Guard 1: today's log-price must sit no further than `curve_band_sigma`
+    fitted sigmas below the latest evaluation's own fitted curve. The model
+    withdraws its bubble claim the day the price leaves the model."""
+    ptr = a['ev_ptr'][i]
+    if ptr < 0:
+        return False
+    p = a['evals'][ptr]
+    k = i - p['j']
+    if not p['p_n'] or not np.isfinite(p['p_sigma']) or k >= p['p_tc'] - 1:
+        return False
+    c = a['close'][i]
+    if not (np.isfinite(c) and c > 0):
+        return False
+    band = cfg['lppl']['curve_band_sigma'] * p['p_sigma']
+    return np.log(c) >= curve_value(p, k) - band
+
+
 def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
-                     cooldown: dict, pending: dict, cfg: dict) -> list[dict]:
+                     cooldown: dict, pending: dict, cfg: dict,
+                     market_dip: np.ndarray) -> list[dict]:
+    if strategy.endswith('_guard') and market_dip[i]:
+        return []  # guard 3: the market itself is dipping — systemic, stand aside
     out = []
     for t, a in arrays.items():
         if t in positions or t in pending or cooldown.get(t, -1) > i \
@@ -157,9 +186,10 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
         if strategy in ('lppl_dip', 'lppl_short'):
             if a['b3'][i] and a['dip'][i] and a['tc3'][i] > i:
                 cand = {'fill_i': i + 1, 'tc_i': int(a['tc3'][i])}
-        elif strategy.startswith('lppl_dip2'):  # exit variants share the entry
+        elif strategy.startswith('lppl_dip2'):  # variants share the entry
             if a['b2'][i] and a['dip'][i] and a['tc2'][i] > i:
-                cand = {'fill_i': i + 1, 'tc_i': int(a['tc2'][i])}
+                if not strategy.endswith('_guard') or curve_consistent(a, i, cfg):
+                    cand = {'fill_i': i + 1, 'tc_i': int(a['tc2'][i])}
         elif strategy == 'lppl_dip1':
             if a['b1'][i] and a['dip'][i] and a['tc1'][i] > i:
                 cand = {'fill_i': i + 1, 'tc_i': int(a['tc1'][i])}
@@ -307,8 +337,8 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
         exiting = sum(1 for p in positions.values() if p['exit_reason'])
         slots = tr['max_positions'] - (len(positions) - exiting) - len(pending)
         if slots > 0:
-            for c in candidates_today(arrays, i, strategy, positions,
-                                      cooldown, pending, cfg)[:slots]:
+            for c in candidates_today(arrays, i, strategy, positions, cooldown,
+                                      pending, cfg, panel['market_dip'])[:slots]:
                 pending[c['ticker']] = c
 
         held = sum(pos_value(t, p, arrays[t]['close_f'][i])

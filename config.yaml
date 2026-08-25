@@ -65,6 +65,7 @@ lppl:                             # Sornette bubble detector — all frozen befo
   prescreen_min_runup: 0.20       # +20% over the lookback, and accelerating
   dip_from_high: 0.04             # entry: close >= 4% below its 20-day high close
   dip_high_window: 20
+  curve_band_sigma: 3.0           # _guard: entry only if log-price >= fitted curve - 3 sigma
   validation_sample: 500          # rejected stock-days re-fitted to verify the pre-screen
 
 lppl_trading:                     # 8% stop, tc exit, equal weight
