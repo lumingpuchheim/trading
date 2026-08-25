@@ -175,6 +175,23 @@ unwinds punished. The external momentum prior does not transfer to
 "momentum among momentum". Also the clearest demonstration yet that a
 dev-best configuration can be an out-of-sample disaster.
 
+### Cohort-ratio regime gate (tested 2026-08-25, theory falsified)
+
+Claimed before testing: a top-decile-momentum cohort/SPY ratio with
+positive 126-day slope would be OFF in 2008, the 2020 crash, 2021 and
+2022. Measured: **ON 98% of 2008** and **ON 74% of 2022** — the claim was
+wrong in half the regimes. Cause: the monthly-rebalanced top decile
+rotates INTO whatever leads — defensives in 2008, energy in 2022 — so the
+"leaders vs index" ratio rises during exactly the bears it was supposed
+to flag. A performance-defined cohort tracks the momentum *style*, not
+the speculative-growth *habitat*; the two coincide only in growth-led
+regimes. (2020 crash: correctly OFF; 2021: only partially caught, 45–72%
+ON.) Backtest: gate mildly hurts returns in both periods (dev t 2.45 vs
+2.90; test 1.64 vs 1.87) while improving drawdowns (dev −26% vs −31%,
+test −30% vs −47%, mostly the 2020 window). Not adopted. Mechanical
+regime gating has now failed in four different formulations (market-dip
+guard, breadth veto, U-shaped habitat gauge, cohort ratio).
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
