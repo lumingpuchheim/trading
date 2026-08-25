@@ -192,6 +192,22 @@ test −30% vs −47%, mostly the 2020 window). Not adopted. Mechanical
 regime gating has now failed in four different formulations (market-dip
 guard, breadth veto, U-shaped habitat gauge, cohort ratio).
 
+### Democratic ensemble gate (tested 2026-08-25, rejected — and why voting can't fix it)
+
+Four prior regime signals vote (market dip, habitat-dead, mania, cohort
+slope); entries blocked at >= 2 of 4 hostile. Pre-declared, unscanned.
+Verification vs known regimes: 2008 blocked only 11%, 2021 blocked 2%,
+2022 blocked 32% — only the 2020 crash (79%) is caught. Backtest: worse
+in both periods (dev t 2.46 vs 2.90, test 1.58 vs 1.87). Root cause:
+voter errors are regime-specific and complementary in the wrong way —
+each bad regime is visible to a DIFFERENT single indicator (2008 to the
+market-dip voter, 2021 briefly to the mania voter), so a majority
+requirement erases exactly the minority knowledge, while an any-vote OR
+gate resurrects every voter's false positives and kills the recoveries.
+With correlated regime-specific errors, no aggregation threshold works.
+Fifth and final mechanical regime formulation; the avenue is closed with
+this data.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
