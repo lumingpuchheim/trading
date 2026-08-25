@@ -220,12 +220,15 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
 
 def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
              fraction: float | None = None, max_pos: int | None = None,
-             tc_shift: int = 0) -> tuple[pd.DataFrame, pd.Series, float]:
-    tr = cfg['lppl_trading']
+             tc_shift: int = 0,
+             stop_loss: float | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
+    tr = dict(cfg['lppl_trading'])
     if fraction is None:
         fraction = tr['equal_weight_fraction']
     if max_pos is None:
         max_pos = tr['max_positions']
+    if stop_loss is not None:
+        tr['stop_loss'] = stop_loss
     arrays = panel['arrays']
     cal = panel['calendar']
     day_pos = {d: i for i, d in enumerate(cal)}
