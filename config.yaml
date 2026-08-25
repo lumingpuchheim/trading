@@ -1,0 +1,63 @@
+# seller-decay screener — all tunable numbers live here.
+# Sections marked FIXED are part of the spec and must never be tuned.
+
+data:
+  start_date: "2005-01-01"        # download start
+  cache_dir: "data"               # parquet cache location
+  min_price: 5.0                  # filter: close > $5
+  min_dollar_volume: 5_000_000    # filter: avg daily dollar volume > $5M
+  dollar_volume_window: 20        # days used to compute avg dollar volume
+  benchmark: "SPY"
+
+trend_filter:                     # section 2 — all conditions must hold
+  sma_fast: 50
+  sma_mid: 150
+  sma_slow: 200
+  sma_slow_rising_lookback: 20    # 200-day SMA higher than 20 trading days ago
+  min_above_52w_low: 1.30         # close >= 1.30 x 52-week low
+  min_of_52w_high: 0.75           # close >= 0.75 x 52-week high
+  week52_window: 250              # trading days used for 52-week high/low
+
+base:                             # section 3 — mechanical base definition
+  high_window: 250                # H = highest close in last 250 trading days
+  start_threshold: 0.98           # base start: first day with close >= 0.98 x H
+  max_above_high: 1.03            # invalid if close ever > 1.03 x H since start
+  min_below_high: 0.70            # invalid if close ever < 0.70 x H since start
+  min_length: 20                  # trading days
+  max_length: 90                  # trading days
+
+model:                            # section 4 — seller-decay fit
+  fit_window: 40                  # N: last N trading days of the base
+  baseline_window: 120            # normalisation window for range and volume
+  min_valid_points: 20            # min usable (positive, finite) points for a fit
+  sanity_r2_min: 0.05             # FIXED sanity filter: r2_range and r2_vol above this
+
+learning:                         # section 5 — fitted on development period ONLY
+  return_cap: 1.0                 # cap trade returns at +100% for fitting
+  ridge_penalties: [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+  penalty_folds:                  # walk-forward inside the development period
+    - {fit_end: "2012-12-31", score_start: "2013-01-01", score_end: "2015-12-31"}
+    - {fit_end: "2015-12-31", score_start: "2016-01-01", score_end: "2018-12-31"}
+  top_fraction: 0.10              # penalty scored on avg return of top 10% ranked bases
+  n_r2_buckets: 5                 # buckets for the 5c tables and shrink()
+  n_edge_buckets: 5               # buckets for the Kelly table
+  kelly_multiplier: 0.25          # FIXED: quarter-Kelly, never optimised
+  lambda_top_fraction: 0.20       # strategy 3: top 20% of dev lambda distribution
+
+trading:                          # section 6 — FIXED, never tuned
+  stop_loss: 0.92                 # exit if close <= 0.92 x entry
+  sma_exit: 50                    # exit if close < 50-day SMA
+  max_holding_days: 60            # trading days
+  max_positions: 10
+  equal_weight_fraction: 0.10     # strategies 2-5: 10% of portfolio per position
+  max_position_fraction: 0.15     # cap any single position at 15% of portfolio
+  max_total_exposure: 1.0         # skip entries that would breach 100% invested
+  cost_per_side: 0.002            # 0.2% per side
+  reentry_cooldown: 20            # no re-entry within 20 days of an exit
+
+backtest:                        # section 7
+  start: "2007-01-01"
+  dev_end: "2018-12-31"          # development period: 2007 - 2018
+  test_start: "2019-01-01"       # test period: 2019 - today
+  random_seed: 42                # for template and random strategies
+  results_dir: "results"

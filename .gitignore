@@ -1,0 +1,4 @@
+# downloaded market data and derived caches (rebuild with download_data.py / screener.py / learn.py)
+data/
+__pycache__/
+.pytest_cache/
