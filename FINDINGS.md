@@ -792,6 +792,18 @@ anti-bubbles vs trailing 756d 80th pct. Pre-registered claims: 2021-H2
   out of crashes — the strategy's best trades (2009, 2023) — so the veto
   aims at the food by construction. Not run. V3 remains blocked on the
   short handicaps; V4 blocked on survivorship data.
+- **Full gated backtest (user request) — the sharpest dev/test split
+  ever recorded:** dev +221% (t 3.58, maxDD −20%) vs baseline +154%
+  (t 2.90, −31%) — the best dev configuration in the project's history:
+  the gauge surgically deletes 2008 (its corpses had certified by then)
+  and the 2009 V-bottom shatters the decay fits fast enough to reopen
+  the golden years. Test +12% (t 0.78) vs +86% (t 1.87): silent through
+  2021, hostile through 2022 into early 2023 — amputating the late-2022
+  bottom-fishing entries that seeded the best year (blocked test trades
+  +7.9% vs +3.0% allowed). REJECTED. Had dev selected alone, this gate
+  would have been adopted on the strongest statistics ever seen here and
+  delivered +12% over seven live years — the definitive exhibit for why
+  the test audit exists, retiring the RS and sector-cohort trophies.
 
 ## 4. Statistical reality (applies to everything above)
 
