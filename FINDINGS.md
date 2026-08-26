@@ -331,6 +331,22 @@ is dominated by softvote_c3 (-35% maxDD at +79% return vs +47%). Stops
 already provide fast emergency exits; forced liquidation only converts
 recoverable positions into realised losses at spike lows.
 
+### Sector P&L decomposition (2026-08-26 — knowledge, not a rule)
+
+Dev winners: Consumer Discretionary (+2.78 summed return, 49 trades),
+Staples, Communication (+16% avg on 10 trades); dev losers: Energy
+(10% win rate), IT (38 trades, ZERO net). Test: **Information Technology
+is +8.59 of the period's ~+9.5 total — 90% of all test-period trade
+profit** (AI-era bubbles, 2023/2025 cells +1.9/+5.1); Financials, Health
+Care, Consumer Discretionary negative. Sector rankings flip completely
+across the split (dev's best sector negative in test; dev's zero sector
+is test's everything) — the non-stationarity is fractal down to sectors.
+Reading: a bubble-hunting model is definitionally a concentrated bet on
+whichever sector hosts the era's bubble; sector diversification in this
+book is illusory, and a per-sector cap would have destroyed the test
+period. Use as monitoring knowledge (know what single bet the book
+currently is), not as a filter.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
