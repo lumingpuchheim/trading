@@ -319,6 +319,18 @@ and test-positive; it catches only 8/15 of the 2020 crash window (lag)
 but what it blocks is junk in both decades. Registered as
 candidate alongside softvote; usual selection-tax caveat (~20th variant).
 
+### Liquidate-on-halt (2026-08-26, rejected — dominated)
+
+Extending rule B to also force-sell all positions while the vol halt is
+hostile: dev +123% vs +154% (entry-halt only), test +47% vs +102%.
+89/317 dev and 60/259 test trades ended as forced 'halt' sales. In 2020
+the forced exits landed at post-alarm panic prices, barely better than
+letting the stops fire (year avg -2.5% vs -2.7%); in 2011-type spikes it
+dumped positions that recovered. Its only gain (test maxDD -34% vs -42%)
+is dominated by softvote_c3 (-35% maxDD at +79% return vs +47%). Stops
+already provide fast emergency exits; forced liquidation only converts
+recoverable positions into realised losses at spike lows.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to

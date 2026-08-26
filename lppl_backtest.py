@@ -234,7 +234,8 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
              fraction: float | None = None, max_pos: int | None = None,
              tc_shift: int = 0, stop_loss: float | None = None,
              entry_gate: np.ndarray | None = None,
-             size_mult: np.ndarray | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
+             size_mult: np.ndarray | None = None,
+             halt_liquidate: np.ndarray | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
     tr = dict(cfg['lppl_trading'])
     if fraction is None:
         fraction = tr['equal_weight_fraction']
@@ -335,7 +336,9 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
             if strategy != 'dip_only' and a[tc_col][i] >= 0:
                 pos['tc_i'] = int(a[tc_col][i])
             pos['peak'] = max(pos.get('peak', pos['entry_px']), c)
-            if i >= a['last_i'] and a['last_i'] < len(cal) - 1:
+            if halt_liquidate is not None and halt_liquidate[i]:
+                pos['exit_reason'] = 'halt'  # sell everything at the next open
+            elif i >= a['last_i'] and a['last_i'] < len(cal) - 1:
                 pos['exit_reason'] = 'delisted'
             elif variant == 'trail':
                 # trailing 8% stop from the highest close since entry;
