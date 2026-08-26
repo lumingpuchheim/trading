@@ -1,21 +1,41 @@
-"""Steady Giants monthly mail: fetch fresh data, compute this month's
-buy candidates under the frozen winning config (R2 >= 0.7, own-history
-P/E p90 ceiling), and email the ranked list. One email per run, green
-light or red, so silence always means breakage.
+"""Steady Giants monthly mail: sync an immutable local price store,
+compute this month's buy candidates under the frozen winning config
+(R2 >= 0.7, own-history P/E p90 ceiling), and email the ranked list.
+One mail per run, green light or red, so silence always means breakage.
 
-Standalone and stateless: fetches everything fresh into data/live/
-(never touches the frozen research caches in data/ohlcv etc.), tracks
-no portfolio, receives nothing back. Universe: the S&P 1500 snapshot
-frozen at the 2026-08 research download (known limitation, stated in
-the mail footer).
+Data layer (user requirement: verifiable, immutable raw history):
 
-Fetch strategy (fresh every run, polite to yfinance): one batched 6y
-download of adjusted close+volume for the whole universe decides the
-price screens (liquidity, lowest-vol tercile, 5y regression); only the
-~few hundred survivors get per-ticker dividends, reported EPS, and
-full-history closes for the nominal-price P/E and its own-history p90.
-An adjusted series shifts its whole history at each new dividend, so
-each run's own fetch is used end to end - never mixed with frozen bars.
+- data/live/raw/{ticker}.parquet - unadjusted-by-dividends daily close
+  and volume. Yahoo's auto_adjust=False basis, which is empirically
+  SPLIT-adjusted to current shares but dividend-unadjusted (verified on
+  NVDA around its 2024-06-10 10:1 split: Close reads 122, as-traded was
+  1224) - i.e. exactly the "nominal" series the research P/E uses.
+  First run seeds full history (the P/E own-history ceiling and the
+  dividend streaks need decades, so seeding only 6y would silently
+  change the screen); monthly runs append only days after the stored
+  high-water mark. Every append verifies an overlap window: raw closes
+  must match the fresh download. A near-constant overlap ratio is a new
+  stock split (Yahoo rescales its whole series): it is confirmed
+  against yfinance's split history, the stored series is rescaled by
+  the announced ratio, and a loud audit line is printed. Any other
+  mismatch is reported and the fresh values win for those days - never
+  silently.
+- data/live/dividends_ledger.csv - append-only: date, ticker, amount in
+  AS-DECLARED terms (what the company's investor page shows), converted
+  from Yahoo's current-share terms via the split ledger. Existing
+  entries are never modified; a re-fetch that disagrees with a stored
+  entry becomes a report line in console and mail footer.
+- data/live/splits_ledger.csv - append-only: date, ticker, ratio.
+- Adjustment is computed locally each run from raw + ledger with the
+  exact inverse of giants_features.nominal_prices, so screen results
+  stay consistent with the research. Nothing pre-cooked from Yahoo
+  enters the screen.
+
+Standalone and stateless otherwise: no portfolio tracking, frozen
+research caches in data/ohlcv never touched. Universe: the S&P 1500
+snapshot frozen at the 2026-08 research download (stated in the mail
+footer). Reported EPS is fetched fresh per surviving ticker (it is a
+point-in-time report stream, not an adjusted series).
 
 Send: Resend API, key from env RESEND_API_KEY. Missing key: the
 composed mail is printed instead and the run exits 0 (an ordinary
@@ -23,9 +43,6 @@ state, not a crash). --dry-run composes and prints, never sends.
 --limit N restricts the universe for a quick test run.
 
 Run: python giants_mail.py [--dry-run] [--limit N]
-Schedule (Windows Task Scheduler, monthly): see README of the task or
-FINDINGS; the command is simply `python giants_mail.py` with this
-directory as the working directory.
 """
 
 import json
@@ -37,16 +54,18 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from giants_features import (CUT, DIV_YEARS, MIN_PE_MONTHS, REG_WIN,
-                             VOL_WIN, div_record, nominal_prices,
+from giants_features import (MIN_PE_MONTHS, REG_WIN, VOL_WIN, div_record,
                              slope_r2, ttm_eps)
 from lppl_backtest import ROOT, load_config
 
 LIVE = ROOT / 'data' / 'live'
+RAW = LIVE / 'raw'
+DIV_LEDGER = LIVE / 'dividends_ledger.csv'
+SPLIT_LEDGER = LIVE / 'splits_ledger.csv'
 R2_TH = 0.7           # frozen winning config
 SLOTS = 8
-PRICE_YEARS = 6       # batch window: 5y regression + buffer
 CHUNK = 150           # tickers per yfinance batch request
+OVERLAP_DAYS = 21     # calendar days of stored tail re-fetched to verify
 TO = 'luming.sjtu@gmail.com'
 FROM = 'onboarding@resend.dev'
 RESEND_URL = 'https://api.resend.com/emails'
@@ -59,22 +78,30 @@ def universe() -> list[str]:
                   if p.stem != cfg['data']['benchmark'])
 
 
+def naive_index(idx) -> pd.DatetimeIndex:
+    idx = pd.DatetimeIndex(idx)
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+    return idx.normalize()
+
+
 def batch_download(tickers: list[str], **kw) -> pd.DataFrame:
-    """yf.download in polite chunks with one retry for tickers that come
-    back empty (transient yfinance blips happen); returns the
-    concatenated frame with MultiIndex columns (field, ticker)."""
+    """yf.download in polite chunks (auto_adjust=False, actions on) with
+    one retry for tickers that come back empty."""
     import yfinance as yf
 
     def _dl(tks: list[str]) -> pd.DataFrame:
         parts = []
         for k in range(0, len(tks), CHUNK):
             chunk = tks[k:k + CHUNK]
-            df = yf.download(chunk, auto_adjust=True, progress=False,
-                             group_by='column', threads=True, **kw)
+            df = yf.download(chunk, auto_adjust=False, actions=True,
+                             progress=False, group_by='column',
+                             threads=True, **kw)
             if df is not None and len(df):
                 if not isinstance(df.columns, pd.MultiIndex):  # 1 ticker
                     df.columns = pd.MultiIndex.from_product(
                         [df.columns, chunk])
+                df.index = naive_index(df.index)
                 parts.append(df)
             time.sleep(1.0)
         return pd.concat(parts, axis=1) if parts else pd.DataFrame()
@@ -89,6 +116,259 @@ def batch_download(tickers: list[str], **kw) -> pd.DataFrame:
         if len(retry):
             out = out.combine_first(retry)
     return out
+
+
+def load_ledger(path, cols: list[str]) -> pd.DataFrame:
+    if path.exists():
+        df = pd.read_csv(path, parse_dates=['date'])
+        return df[cols]
+    return pd.DataFrame(columns=cols)
+
+
+def append_ledger(path, rows: list[dict], cols: list[str]) -> None:
+    if not rows:
+        return
+    df = pd.DataFrame(rows)[cols]
+    df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+    header = not path.exists()
+    df.to_csv(path, mode='a', header=header, index=False,
+              lineterminator='\n')
+
+
+def declared_amount(amount_current: float, div_date, splits: pd.DataFrame,
+                    ticker: str) -> float:
+    """Yahoo dividend amounts are in current-share terms; the company
+    declared them in the share terms of their day. Undo the splits that
+    happened after the dividend."""
+    s = splits[(splits['ticker'] == ticker) & (splits['date'] > div_date)]
+    return float(amount_current * s['ratio'].prod())
+
+
+def current_amount(amount_declared: float, div_date, splits: pd.DataFrame,
+                   ticker: str) -> float:
+    s = splits[(splits['ticker'] == ticker) & (splits['date'] > div_date)]
+    return float(amount_declared / s['ratio'].prod())
+
+
+def compute_adjusted(raw: np.ndarray, dates: pd.DatetimeIndex,
+                     divs: pd.DataFrame | None) -> np.ndarray:
+    """Total-return series from raw closes + dividends (current-share
+    terms) - the exact inverse of giants_features.nominal_prices, so the
+    screen matches the research methodology."""
+    adj = raw.astype(float).copy()
+    if divs is None or not len(divs):
+        return adj
+    for r in divs.sort_values('date', ascending=False).itertuples():
+        loc = int(dates.searchsorted(r.date))
+        if loc <= 0 or loc >= len(dates):
+            continue
+        p_ex = raw[loc]
+        if not (np.isfinite(p_ex) and p_ex > r.amount > 0):
+            continue
+        adj[:loc] *= 1.0 - r.amount / p_ex
+    return adj
+
+
+def extract_ticker(px: pd.DataFrame, t: str) -> pd.DataFrame | None:
+    if not len(px) or t not in px['Close'].columns:
+        return None
+    df = pd.DataFrame({'close': px['Close'][t], 'volume': px['Volume'][t],
+                       'dividend': px['Dividends'][t],
+                       'split': px['Stock Splits'][t]})
+    df = df[df['close'].notna()]
+    return df if len(df) else None
+
+
+def harvest_actions(t: str, df: pd.DataFrame, div_led: pd.DataFrame,
+                    split_led: pd.DataFrame, notes: list[str]
+                    ) -> tuple[list[dict], list[dict], int]:
+    """New ledger rows from a fetched frame; overlapping entries are
+    compared and reported, never rewritten."""
+    new_splits = []
+    known_splits = set(split_led[split_led['ticker'] == t]['date'])
+    for dt, ratio in df['split'][df['split'] > 0].items():
+        if dt not in known_splits:
+            new_splits.append({'date': dt, 'ticker': t,
+                               'ratio': float(ratio)})
+    all_splits = split_led if not new_splits else (
+        pd.DataFrame(new_splits) if not len(split_led)
+        else pd.concat([split_led, pd.DataFrame(new_splits)]))
+    mine = div_led[div_led['ticker'] == t]
+    last = mine['date'].max() if len(mine) else pd.Timestamp.min
+    new_divs, n_checked = [], 0
+    for dt, amt in df['dividend'][df['dividend'] > 0].items():
+        decl = declared_amount(float(amt), dt, all_splits, t)
+        if dt > last:
+            new_divs.append({'date': dt, 'ticker': t, 'amount': decl})
+        else:
+            n_checked += 1
+            stored = mine[mine['date'] == dt]
+            if not len(stored):
+                notes.append(f'{t}: dividend {decl:.4f} on '
+                             f'{dt.date()} is missing from the ledger '
+                             f'(not appended - entries are immutable; '
+                             f'add it by hand if the company page '
+                             f'confirms it)')
+            elif not np.isclose(stored['amount'].iloc[0], decl,
+                                rtol=2e-2):
+                notes.append(f'{t}: ledger says dividend '
+                             f'{stored["amount"].iloc[0]:.4f} on '
+                             f'{dt.date()}, a re-fetch says {decl:.4f} '
+                             f'- ledger kept, please verify against '
+                             f'the company page')
+    return new_divs, new_splits, n_checked
+
+
+def _extend(led: pd.DataFrame, rows: list[dict]) -> pd.DataFrame:
+    if not rows:
+        return led
+    add = pd.DataFrame(rows)
+    return add if not len(led) else pd.concat([led, add],
+                                              ignore_index=True)
+
+
+def store_sync(tks: list[str], benchmark: str) -> dict:
+    """Seed or append the raw store and the ledgers. Returns counts and
+    audit notes for the console and the mail footer."""
+    import yfinance as yf
+    RAW.mkdir(parents=True, exist_ok=True)
+    div_led = load_ledger(DIV_LEDGER, ['date', 'ticker', 'amount'])
+    split_led = load_ledger(SPLIT_LEDGER, ['date', 'ticker', 'ratio'])
+    notes: list[str] = []
+    all_tks = tks + [benchmark]
+    stored = {p.stem for p in RAW.glob('*.parquet')}
+
+    if not stored:                                   # first run: deep seed
+        print(f'seeding the raw store with full history for '
+              f'{len(all_tks)} tickers - a one-time long fetch')
+        n_div = n_split = 0
+        for k in range(0, len(all_tks), CHUNK):
+            chunk = all_tks[k:k + CHUNK]
+            px = batch_download(chunk, period='max')
+            for t in chunk:
+                df = extract_ticker(px, t)
+                if df is None:
+                    notes.append(f'{t}: seed fetch came back empty')
+                    continue
+                df[['close', 'volume']].to_parquet(RAW / f'{t}.parquet')
+                nd, ns, _ = harvest_actions(t, df, div_led, split_led,
+                                            notes)
+                append_ledger(DIV_LEDGER, nd, ['date', 'ticker', 'amount'])
+                append_ledger(SPLIT_LEDGER, ns, ['date', 'ticker', 'ratio'])
+                div_led = _extend(div_led, nd)
+                split_led = _extend(split_led, ns)
+                n_div += len(nd)
+                n_split += len(ns)
+            print(f'  seeded {min(k + CHUNK, len(all_tks))}/{len(all_tks)}')
+        return {'mode': 'seed', 'n_appended_days': 0, 'n_new_div': n_div,
+                'n_new_split': n_split, 'notes': notes}
+
+    # monthly append: fetch a short window covering the stored tail
+    bench = pd.read_parquet(RAW / f'{benchmark}.parquet')
+    anchor = bench.index.max()
+    start = (anchor - pd.Timedelta(days=OVERLAP_DAYS)).strftime('%Y-%m-%d')
+    px = batch_download(all_tks, start=start)
+    n_appended = n_div = n_split = n_rescaled = 0
+    for t in all_tks:
+        f = RAW / f'{t}.parquet'
+        fresh = extract_ticker(px, t)
+        if fresh is None:
+            continue
+        if not f.exists():                    # new ticker: deep seed one
+            try:
+                h = yf.Ticker(t).history(period='max', auto_adjust=False,
+                                         actions=True)
+            except Exception:
+                notes.append(f'{t}: not in the store and the deep fetch '
+                             f'failed - skipped this month')
+                continue
+            time.sleep(0.5)
+            h.index = naive_index(h.index)
+            df = pd.DataFrame({'close': h['Close'], 'volume': h['Volume'],
+                               'dividend': h['Dividends'],
+                               'split': h['Stock Splits']}).dropna(
+                                   subset=['close'])
+            df[['close', 'volume']].to_parquet(f)
+            nd, ns, _ = harvest_actions(t, df, div_led, split_led, notes)
+            append_ledger(DIV_LEDGER, nd, ['date', 'ticker', 'amount'])
+            append_ledger(SPLIT_LEDGER, ns, ['date', 'ticker', 'ratio'])
+            notes.append(f'{t}: new ticker, deep-seeded '
+                         f'({len(df)} days, {len(nd)} dividends)')
+            continue
+        old = pd.read_parquet(f)
+        all_shared = old.index.intersection(fresh.index)
+        changed = False
+        if len(all_shared):
+            # the newest shared bar may be a live quote while the market
+            # is open: refresh it silently, immutability starts one day
+            # back
+            prov = all_shared.max()
+            pv = fresh.loc[prov, ['close', 'volume']].to_numpy(dtype=float)
+            if not np.allclose(
+                    old.loc[prov, ['close', 'volume']].to_numpy(dtype=float),
+                    pv, rtol=1e-9, equal_nan=True):
+                old.loc[prov, ['close', 'volume']] = pv
+                changed = True
+        shared = all_shared[all_shared < all_shared.max()] \
+            if len(all_shared) else all_shared
+        if len(shared):
+            a = old.loc[shared, 'close'].to_numpy(dtype=float)
+            b = fresh.loc[shared, 'close'].to_numpy(dtype=float)
+            ok = np.isclose(a, b, rtol=1e-5)
+            if not ok.all():
+                ratio = a / b
+                near_const = np.isfinite(ratio).all() and \
+                    ratio.max() / ratio.min() < 1.001 \
+                    and abs(ratio.mean() - 1) > 0.01
+                matched = False
+                if near_const:
+                    try:
+                        sp = yf.Ticker(t).splits
+                        sp.index = naive_index(sp.index)
+                        recent = sp[sp.index > anchor - pd.Timedelta(days=45)]
+                        for sdt, sratio in recent.items():
+                            if np.isclose(float(sratio), ratio.mean(),
+                                          rtol=0.01):
+                                old['close'] /= float(sratio)
+                                old['volume'] *= float(sratio)
+                                changed = True
+                                matched = True
+                                n_rescaled += 1
+                                notes.append(
+                                    f'AUDIT {t}: {sratio:.4g}-for-1 split '
+                                    f'on {sdt.date()} - stored history '
+                                    f'rescaled by the announced ratio')
+                                break
+                    except Exception:
+                        pass
+                if not matched:
+                    bad = int((~ok).sum())
+                    notes.append(
+                        f'WARNING {t}: {bad}/{len(shared)} overlap days '
+                        f'disagree with the fresh download (max rel '
+                        f'{np.nanmax(np.abs(a / b - 1)):.2%}) and it is '
+                        f'not a known split - fresh values used for '
+                        f'those days')
+                    old.loc[shared, ['close', 'volume']] = \
+                        fresh.loc[shared, ['close', 'volume']].to_numpy()
+                    changed = True
+        add = fresh.loc[fresh.index > old.index.max()]
+        if len(add):
+            old = pd.concat([old, add[['close', 'volume']]])
+            changed = True
+            n_appended += len(add)
+        if changed:
+            old.to_parquet(f)
+        nd, ns, _ = harvest_actions(t, fresh, div_led, split_led, notes)
+        append_ledger(DIV_LEDGER, nd, ['date', 'ticker', 'amount'])
+        append_ledger(SPLIT_LEDGER, ns, ['date', 'ticker', 'ratio'])
+        div_led = _extend(div_led, nd)
+        split_led = _extend(split_led, ns)
+        n_div += len(nd)
+        n_split += len(ns)
+    return {'mode': 'append', 'n_appended_days': n_appended,
+            'n_new_div': n_div, 'n_new_split': n_split,
+            'n_rescaled': n_rescaled, 'notes': notes}
 
 
 def market_light(spy: pd.Series) -> tuple[bool, dict]:
@@ -106,8 +386,7 @@ def market_light(spy: pd.Series) -> tuple[bool, dict]:
 def pe_history(nom: np.ndarray, dates: pd.DatetimeIndex,
                eps_dates: np.ndarray, eps_vals: np.ndarray) -> tuple[float, float]:
     """(current P/E, own-history p90 of monthly P/E samples before this
-    month). Monthly first trading days, nominal price / TTM reported
-    EPS, same construction as the research table."""
+    month), nominal price over TTM reported EPS."""
     months = pd.Series(dates).dt.to_period('M')
     firsts = pd.Series(np.arange(len(dates))).groupby(months).first().to_numpy()
     samples = []
@@ -124,12 +403,8 @@ def pe_history(nom: np.ndarray, dates: pd.DatetimeIndex,
     return pe_now, p90
 
 
-def div_streak(dv: pd.Series, last_year: int) -> int:
-    """Consecutive complete calendar years with a payment, counting
-    back from last_year."""
-    ysum = dv.groupby(dv.index.year).sum() if len(dv) else pd.Series(dtype=float)
-    n = 0
-    y = last_year
+def div_streak(ysum: pd.Series, last_year: int) -> int:
+    n, y = 0, last_year
     while ysum.get(y, 0.0) > 0:
         n += 1
         y -= 1
@@ -150,21 +425,32 @@ def trim_summary(text: str, target: int = 250, max_chars: int = 500) -> str:
 
 
 def compose(run_month: str, green: bool, light: dict, cands: list[dict],
-            n_liquid: int, n_qual: int) -> tuple[str, str]:
+            n_liquid: int, n_qual: int, notes: list[str]) -> tuple[str, str]:
     state = 'GREEN' if green else 'RED'
     light_line = (f"Market light: {state} - SPY {light['spy']:.0f} vs "
                   f"200-day average {light['sma200']:.0f}; 20-day "
                   f"volatility {light['vol20']:.2%} vs calm threshold "
                   f"{light['vol_thr']:.2%}.")
-    footer = ("<hr><p style='color:#666;font-size:12px'>Steady Giants "
+    audit = ''
+    if notes:
+        lines = ''.join(f'<li>{n}</li>' for n in notes[:20])
+        more = f'<li>… and {len(notes) - 20} more, see console</li>' \
+            if len(notes) > 20 else ''
+        audit = (f"<p style='color:#a60;font-size:12px'><b>Data audit "
+                 f"notes:</b></p><ul style='color:#a60;font-size:12px'>"
+                 f'{lines}{more}</ul>')
+    footer = (audit +
+              "<hr><p style='color:#666;font-size:12px'>Steady Giants "
               "monthly screen. Universe: S&P 1500 snapshot 2026-08 (a "
               "known limitation: newly listed or newly added companies "
               "are not seen). Qualification: lowest-volatility third of "
               "the liquid universe, 5-year straight-line price growth "
               "with R&#178; &#8805; 0.7, dividends every one of the last "
               "5 years with no cut over 20%, and a price/earnings ratio "
-              "not above the stock's own 90th-percentile history. This "
-              "is a screen, not advice; it knows nothing about what you "
+              "not above the stock's own 90th-percentile history. Prices "
+              "come from a local immutable store with append-only "
+              "dividend and split ledgers (data/live/). This is a "
+              "screen, not advice; it knows nothing about what you "
               "already hold.</p>")
     if not green:
         subject = f'Steady Giants {run_month}: light RED, no buys'
@@ -228,49 +514,64 @@ def main() -> None:
     dry_run = '--dry-run' in sys.argv
     limit = int(sys.argv[sys.argv.index('--limit') + 1]) \
         if '--limit' in sys.argv else None
-    LIVE.mkdir(parents=True, exist_ok=True)
     cfg = load_config()
     d = cfg['data']
     tks = universe()
     if limit:
         tks = tks[:limit]
-    start = (pd.Timestamp.today()
-             - pd.DateOffset(years=PRICE_YEARS)).strftime('%Y-%m-%d')
 
-    px = batch_download(tks + [d['benchmark']], start=start)
-    if not len(px):
-        print('the price download came back empty - nothing to screen, '
-              'no mail composed')
-        sys.exit(1)
-    close, volume = px['Close'], px['Volume']
-    close.to_parquet(LIVE / 'close_6y.parquet')
-    spy = close[d['benchmark']].dropna()
-    cal = spy.index
-    print(f'fetched {close.shape[1] - 1}/{len(tks)} tickers, '
-          f'{len(cal)} days through {cal[-1].date()}')
+    sync = store_sync(tks, d['benchmark'])
+    print(f"store: {sync['mode']}, {sync['n_appended_days']} ticker-days "
+          f"appended, {sync['n_new_div']} new dividends, "
+          f"{sync['n_new_split']} new splits, "
+          f"{len(sync['notes'])} audit notes")
+    for n in sync['notes'][:15]:
+        print(f'  {n}')
 
+    div_led = load_ledger(DIV_LEDGER, ['date', 'ticker', 'amount'])
+    split_led = load_ledger(SPLIT_LEDGER, ['date', 'ticker', 'ratio'])
+
+    def current_divs(t: str) -> pd.DataFrame:
+        mine = div_led[div_led['ticker'] == t]
+        if not len(mine):
+            return mine
+        mine = mine.copy()
+        mine['amount'] = [current_amount(a, dt, split_led, t)
+                          for a, dt in zip(mine['amount'], mine['date'])]
+        return mine
+
+    spy_raw = pd.read_parquet(RAW / f"{d['benchmark']}.parquet")
+    spy_adj = compute_adjusted(spy_raw['close'].to_numpy(), spy_raw.index,
+                               current_divs(d['benchmark']))
+    spy = pd.Series(spy_adj, index=spy_raw.index)
+    print(f'store spans through {spy.index[-1].date()}')
     green, light = market_light(spy)
     print(f"light: {'GREEN' if green else 'RED'} "
           f"(SPY {light['spy']:.0f} vs sma200 {light['sma200']:.0f}, "
           f"vol20 {light['vol20']:.2%} vs thr {light['vol_thr']:.2%})")
 
-    # phase 1: price screens on the whole universe
-    stats = []
+    # phase 1: price screens from the local store, locally adjusted
+    stats, raws = [], {}
     for t in tks:
-        if t not in close.columns:
+        f = RAW / f'{t}.parquet'
+        if not f.exists():
             continue
-        c = close[t].reindex(cal).to_numpy()
-        v = volume[t].reindex(cal).to_numpy() if t in volume.columns else None
-        if v is None or len(c) < REG_WIN or not np.isfinite(c[-1]):
+        df = pd.read_parquet(f)
+        if len(df) < REG_WIN or df.index[-1] < spy.index[-1] - \
+                pd.Timedelta(days=7):
             continue
-        dollar = np.nanmean((c * v)[-d['dollar_volume_window']:])
-        if not (c[-1] > d['min_price'] and np.isfinite(dollar)
+        raws[t] = df
+        c_raw = df['close'].to_numpy(dtype=float)
+        adj = compute_adjusted(c_raw, df.index, current_divs(t))
+        dollar = np.nanmean(
+            (c_raw * df['volume'].to_numpy())[-d['dollar_volume_window']:])
+        if not (c_raw[-1] > d['min_price'] and np.isfinite(dollar)
                 and dollar > d['min_dollar_volume']):
             continue
-        w = c[-REG_WIN:]
+        w = adj[-REG_WIN:]
         if not np.all(np.isfinite(w)):
             continue
-        r3 = pd.Series(c[-VOL_WIN - 1:]).pct_change().to_numpy()[1:]
+        r3 = pd.Series(adj[-VOL_WIN - 1:]).pct_change().to_numpy()[1:]
         if not np.all(np.isfinite(r3)):
             continue
         slope, r2 = slope_r2(np.log(w))
@@ -287,28 +588,24 @@ def main() -> None:
     print(f'price screens: {len(liq)} liquid, {len(surv)} in the calm '
           f'tercile with a straight 5y uptrend')
 
-    # phase 2: dividends, EPS, full-history closes for survivors only
+    # phase 2: dividend record from the ledger, EPS fetched fresh
     import yfinance as yf
-    full = batch_download(sorted(surv.index), period='max')
-    fc = full['Close'] if len(full) else pd.DataFrame()
-    rows, skipped = [], []
+    rows = []
     last_year = date.today().year - 1
     for t in sorted(surv.index):
+        divs = current_divs(t)
+        if not len(divs):
+            continue
+        ysum = divs.groupby(divs['date'].dt.year)['amount'].sum()
+        paid, cut = div_record(ysum, last_year + 1)
+        if not paid or cut:
+            continue
         try:
-            tk = yf.Ticker(t)
-            dv = tk.dividends
-            e = tk.get_earnings_dates(limit=100)
+            e = yf.Ticker(t).get_earnings_dates(limit=100)
         except Exception:
             continue
         time.sleep(0.2)
-        if dv is None or not len(dv) or e is None or not len(e):
-            continue
-        ddf = pd.DataFrame(
-            {'date': [pd.Timestamp(pd.Timestamp(x).date()) for x in dv.index],
-             'amount': dv.to_numpy(dtype=float)})
-        ysum = ddf.groupby(ddf['date'].dt.year)['amount'].sum()
-        paid, cut = div_record(ysum, last_year + 1)
-        if not paid or cut:
+        if e is None or not len(e):
             continue
         rep = e['Reported EPS'].dropna().sort_index()
         if len(rep) < 4:
@@ -316,12 +613,9 @@ def main() -> None:
         eps_dates = np.array([np.datetime64(pd.Timestamp(x).date())
                               for x in rep.index], dtype='datetime64[ns]')
         eps_vals = rep.to_numpy(dtype=float)
-        c_full = fc[t].dropna() if t in fc.columns else pd.Series(dtype=float)
-        if len(c_full) < 5:
-            skipped.append(t)
-            continue
-        nom = nominal_prices(c_full.to_numpy(), c_full.index, ddf)
-        pe, p90 = pe_history(nom, c_full.index, eps_dates, eps_vals)
+        df = raws[t]
+        pe, p90 = pe_history(df['close'].to_numpy(dtype=float), df.index,
+                             eps_dates, eps_vals)
         if not np.isfinite(pe):
             continue
         rows.append({'ticker': t, 'r2': float(surv.loc[t, 'r2']),
@@ -329,11 +623,8 @@ def main() -> None:
                      'trend': float(np.exp(surv.loc[t, 'slope'] * 252) - 1),
                      'pe': pe, 'p90': p90,
                      'pe_vs': pe / p90 - 1 if np.isfinite(p90) else np.nan,
-                     'streak': div_streak(dv, last_year),
+                     'streak': div_streak(ysum, last_year),
                      'buyable': not (np.isfinite(p90) and pe > p90)})
-    if skipped:
-        print(f'note: {len(skipped)} survivors had an empty history fetch '
-              f'even after retry and were skipped: {skipped[:10]}')
     qual = pd.DataFrame(rows)
     n_qual = int(len(qual))
     cands = qual[qual['buyable']].sort_values(
@@ -370,7 +661,8 @@ def main() -> None:
     if not green:
         cands = []
     subject, body = compose(run_month, green, light, cands,
-                            n_liquid=len(liq), n_qual=n_qual)
+                            n_liquid=len(liq), n_qual=n_qual,
+                            notes=sync['notes'])
     send(subject, body, dry_run)
 
 
