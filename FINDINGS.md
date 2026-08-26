@@ -791,6 +791,39 @@ it is the green-light timing result applied to the idle balance, not a
 new discovery about the giants. Post-hoc experiment, held to the same
 looseness as everything else here.
 
+### Resign rule (2026-08-26, post-hoc — rejected)
+
+Motivated by the open-positions finding: the P/E ceiling sells winners
+while laggards stay forever (the 8 open test positions lag SPY by
+5–123 points since entry). Rule: at a monthly decision, sell any
+holding whose return since entry lags SPY's by more than X points.
+Grid X ∈ {10, 15, 20, 30} vs baseline, both parking modes, frozen
+config, no controls. **Integrity note, plainly: this rule was designed
+after seeing test results, so the test period is not a clean audit for
+it — nor for anything else fitted on it from here on.** Same
+survivorship-biased universe; upper bounds throughout.
+
+| X | dev tbill total/maxDD/MAR | dev spy_green | test tbill | test spy_green | resigns (test) | next-12m vs SPY (test) |
+|---|---|---|---|---|---|---|
+| off | +275.5% / −12.2% / 0.96 | +472.0% / −12.2% / 1.29 | +125.8% / −24.2% / 0.47 | +173.0% / −24.3% / 0.58 | 0 | — |
+| 10 | +337.3% / −14.6% / 0.90 | +569.6% / −14.7% / 1.17 | +113.7% / −27.9% / 0.37 | +136.1% / −27.7% / 0.43 | 59 | −0.8% |
+| 15 | +305.3% / −14.5% / 0.85 | +519.2% / −14.5% / 1.13 | +85.6% / −32.5% / 0.26 | +101.4% / −32.5% / 0.30 | 41–43 | −0.3…+0.6% |
+| 20 | +328.7% / −13.6% / 0.95 | +538.8% / −13.7% / 1.23 | +89.1% / −26.7% / 0.33 | +109.6% / −26.4% / 0.39 | 32 | −1.1% |
+| 30 | +307.6% / −12.7% / 0.98 | +507.4% / −12.7% / 1.28 | +99.8% / −25.5% / 0.37 | +124.0% / −25.7% / 0.43 | 19 | −7.0% |
+
+Dev: more total return at every X, slightly deeper drawdowns, MAR a
+wash. Test — the period that motivated the rule — **strictly worse at
+every X in both parking modes**: up to a third of the total return
+gone and maxDD deepened to −32.5%. The instructive paradox: the test
+resigns were individually "right" (resigned stocks went on to lag SPY
+over the next 12 months at every X), yet the portfolio still lost —
+lag-vs-SPY is widest in drawdowns, so the rule systematically sells at
+local bottoms and redeploys into new entries plus costs that earn less
+than the dumped laggards' recoveries. Interaction with the LPPL sell
+is minor: at most 3 later-profitable LPPL exits stolen (dev X=10),
+0–1 in test. Verdict: rejected — it churns 19–59 extra sells and
+hurts exactly where it was supposed to help.
+
 ### Anti-bubble breadth gauge, V1 (2026-08-26 — rejected; the user called it)
 
 Mirror LPPL detector (constants inherited frozen; `lppl_anti_detect.py`):
