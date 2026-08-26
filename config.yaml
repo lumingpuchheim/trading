@@ -70,7 +70,7 @@ lppl:                             # Sornette bubble detector — all frozen befo
   dip_max_from_high: 0.10         # _band: a dip deeper than 10% below the 20d high is off-model
   breadth_veto_max: 5             # _breadth: >5 simultaneous new candidates = systemic, take none
   validation_sample: 500          # rejected stock-days re-fitted to verify the pre-screen
-  watchlist_days: 126             # any votes>=1 evaluation within this window exempts the ticker from the pre-screen (0 = off)
+  watchlist_days: 0               # pre-screen watchlist exemption, 0 = off; 126 tested 2026-08-26 and rejected (dev collapses, see FINDINGS)
 
 lppl_trading:                     # 8% stop, tc exit, equal weight
   stop_loss: 0.92                 # exit if close <= 0.92 x entry (the "8% leaving rule")

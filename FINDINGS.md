@@ -376,10 +376,51 @@ sporadic (pre-screen gaps) and the second leg went vertical without a
 next buyable dip was the collapse. A dip-buyer cannot board a rocket
 that does not dip until it explodes. Not adopted; mechanism understood.
 
+### Detector watchlist exemption (2026-08-26, REJECTED — dev collapses)
+
+Motivated by the verified SMCI gap above: after the 2023-12-04 tc exit the
+pre-screen went dark in the consolidation, leaving a five-week evaluation
+hole exactly over the Jan 5–18 2024 dips at $29–32. Change tested: a ticker
+with any votes>=1 evaluation in the trailing 126 trading days is evaluated
+on every refit day regardless of the pre-screen (`lppl.watchlist_days`).
+
+- **Mechanism verified, motivating trade still missed.** The prescreen-
+  passed evaluations are row-identical (all 156,190 — the change is purely
+  additive), SMCI's hole is closed (continuous 5-day evaluations, b1 covers
+  the Jan 5–18 dips with fresh tc). But every second-leg evaluation still
+  scores 1-of-5 (the old bubble pollutes the long windows — same mechanism
+  as the leg2 test), so b2 never fires and the b2-gated strategies STILL
+  cannot buy SMCI's January dips.
+- **The "small watchlist" premise was wrong.** Votes>=1 exempt evaluations
+  re-extend the watchlist, making it self-sustaining: +262,309 exempt
+  evaluations (62.7% of all; detector runtime doubled to ~49 min), 90,790
+  with votes>=1 and 37,069 with votes>=2. Universe votes>=2 evaluations
+  went 16,733 → 53,802 (3.2x): post-run-up consolidations keep fitting the
+  run-up still inside their windows. The pre-screen probe's "0.00% of
+  rejected days qualify" holds for random rejected days, not for the
+  selected watchlist ones. The exemption does not fill gaps — it triples
+  the b2 flag set.
+- **Backtest: dev collapses.** Baseline dev +59% (t 1.86, maxDD −46%) vs
+  +154% (t 2.90, −31%); test +118% (t 2.05) vs +86% (t 1.87). volhalt_B
+  and softvote_c3 are worse in BOTH periods (volhalt dev t 2.24 / test
+  t 1.33 vs 2.93 / 2.06; softvote dev t 2.41 / test t 1.78 vs 2.99 / 2.10).
+  Dev trades 295 → 196, avg invested 0.77 → 0.88: persistent b2 windows
+  keep rolling tc forward, holds lengthen, slots stop recycling — the
+  exemption quietly turned the dip-buyer into a longer-hold strategy.
+- **Rejected by protocol** (dev selects; two of three variants also lose
+  the test period). Cache reverted to the pre-screen-only flags (restore
+  verified row-identical; the watchlist run is preserved in
+  `data/lppl_flags_watchlist.parquet`, charts in
+  `results/lppl_watchlist_{dev,test}.png`). `watchlist_days` set to 0.
+  The baseline's better test number is the crash-guard mirage again: a
+  rule shaped by staring at a test-period failure (SMCI) flatters test
+  and is repriced by dev.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
-exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
-beat the baseline on both periods jointly.** The baseline is a local
+exits, tc shifts, crash guards, dip ceiling, breadth veto, detector
+watchlist exemption — has failed to beat the baseline on both periods
+jointly.** The baseline is a local
 optimum in every direction probed. The skeptical reading (favoured by the
 sample sizes): it sits at the peak of the selection process that created
 it, and its true edge remains unproven until post-2026-08-25 data rules.
