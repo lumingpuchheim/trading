@@ -162,7 +162,11 @@ def fill_pending(conn: sqlite3.Connection, trade_date: str,
             continue                       # placed today or later: not yet
         px = opens.get(o['symbol'])
         if px is None:
-            continue                       # no quote: stays pending
+            # no quote that day (holiday, data gap): the order waits,
+            # exactly as an unexecuted order would at the broker
+            out.append({'order_id': o['id'], 'status': 'PENDING',
+                        'symbol': o['symbol'], 'reason': 'no quote'})
+            continue
         if o['side'] == 'BUY' and buyable is not None \
                 and o['symbol'] not in buyable and o['symbol'] not in always:
             _reject(conn, o, trade_date, 'not on the buyable list')
