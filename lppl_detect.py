@@ -52,16 +52,27 @@ def detect_ticker(path_str: str) -> tuple[list[dict], list[dict], int, int]:
     n_pass = n_reject = 0
     rng = np.random.default_rng(abs(hash(path.stem)) % (2 ** 32))
     start = min(g['windows'])  # earliest day any window can be fitted
+    watch = g.get('watchlist_days', 0)
+    last_qual = -10 ** 9  # local index of the latest votes>=1 evaluation
     for i in range(start, len(df), g['refit_every']):
-        if prescreen(closes, i, cfg):
+        ps = prescreen(closes, i, cfg)
+        # watchlist exemption: a ticker with any qualifying evaluation in the
+        # trailing `watchlist_days` stays evaluated through consolidations,
+        # where the accelerating-run-up pre-screen goes dark (second legs)
+        exempt = not ps and i - last_qual <= watch
+        if ps:
             n_pass += 1
-            ev = evaluate_day(log_close, i, grids, cfg)
-            rows.append({'ticker': path.stem, 'date': dates[i], 'i_local': i, **ev})
         else:
             n_reject += 1
-            if rng.random() < 0.002:  # small random probe of rejected days
-                ev = evaluate_day(log_close, i, grids, cfg)
-                probes.append({'ticker': path.stem, 'date': dates[i], **ev})
+        if ps or exempt:
+            ev = evaluate_day(log_close, i, grids, cfg)
+            rows.append({'ticker': path.stem, 'date': dates[i], 'i_local': i,
+                         'exempt': exempt, **ev})
+            if ev['votes'] >= 1:
+                last_qual = i
+        elif rng.random() < 0.002:  # small random probe of rejected days
+            ev = evaluate_day(log_close, i, grids, cfg)
+            probes.append({'ticker': path.stem, 'date': dates[i], **ev})
     return rows, probes, n_pass, n_reject
 
 
@@ -94,6 +105,11 @@ def main() -> None:
     flags.to_parquet(data_dir / 'lppl_flags.parquet')
     total = n_pass + n_reject
     print(f'\npre-screen: {n_pass}/{total} refit days passed ({n_pass / total:.1%})')
+    if 'exempt' in flags:
+        n_ex = int(flags['exempt'].sum())
+        print(f'watchlist exemption: {n_ex} extra evaluations '
+              f'({n_ex / len(flags):.1%} of all), '
+              f'{int((flags["exempt"] & (flags["votes"] >= 1)).sum())} with votes>=1')
     print(f'{len(flags)} evaluations, {int(flags["bubble"].sum())} bubble verdicts '
           f'({flags["bubble"].mean():.1%}) -> {data_dir / "lppl_flags.parquet"}')
 

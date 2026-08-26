@@ -79,6 +79,37 @@ def test_prescreen_is_necessary_for_qualification(grid250):
     assert qualified_anyway == 0
 
 
+def test_watchlist_exemption_evaluates_consolidations(tmp_path, monkeypatch):
+    """A ticker with a votes>=1 evaluation in the trailing watchlist_days
+    keeps being evaluated on refit days even where the pre-screen fails
+    (consolidations after a first bubble leg); with the exemption off those
+    days produce no evaluation rows."""
+    import pandas as pd
+
+    import lppl_detect
+
+    log_p = synthetic_lppl(n=250)
+    closes = np.exp(np.concatenate([log_p, np.full(200, log_p[-1])]))
+    idx = pd.bdate_range('2015-01-02', periods=len(closes))
+    path = tmp_path / 'FAKE.parquet'
+    pd.DataFrame({'close': closes}, index=idx).to_parquet(path)
+
+    def cfg_with(days):
+        return {**CFG, 'lppl': {**CFG['lppl'], 'watchlist_days': days}}
+
+    monkeypatch.setattr(lppl_detect, 'load_config', lambda: cfg_with(126))
+    rows, _, _, _ = lppl_detect.detect_ticker(str(path))
+    rows = pd.DataFrame(rows)
+    assert (rows.loc[~rows['exempt'], 'votes'] >= 1).any()  # bubble phase fires
+    flat_exempt = rows[(rows['i_local'] >= 255) & rows['exempt']]
+    assert len(flat_exempt) > 0  # consolidation days still evaluated
+
+    monkeypatch.setattr(lppl_detect, 'load_config', lambda: cfg_with(0))
+    rows0, _, _, _ = lppl_detect.detect_ticker(str(path))
+    evaluated0 = set(pd.DataFrame(rows0)['i_local']) if rows0 else set()
+    assert not set(flat_exempt['i_local']) & evaluated0  # off = gaps return
+
+
 def test_evaluation_uses_only_past_data():
     """Truncation check: the verdict for day i must be identical with all
     future data removed."""
