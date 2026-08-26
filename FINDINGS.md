@@ -570,6 +570,31 @@ discriminator; (4) options IV/skew — speculative-cohort health, the 2021
 blind spot; (5) real-rate levels (weak prior after the policy-label
 failure).
 
+### Earnings adjacency of stops (2026-08-26 — external data test #1)
+
+`lppl_earnings.py`; yfinance earnings dates for all 429 traded tickers
+(34,656 reports, dev coverage 96%, test 100%; dates imperfect — levels
+carry uncertainty, ratios are the evidence). Control = tc exits, whose
+timing is clock-driven: their earnings-adjacency (dev 5.2%, ~= the 4.8%
+theoretical base rate; test 2.4%) estimates the random-window rate.
+
+- **Ordinary stops concentrate around earnings at ~2.5x the base rate in
+  both periods** (dev 13.0% vs 5.2%; test 6.1% vs 2.4%). In dev,
+  earnings-adjacent stops also lose 3pp more (−12.6% vs −9.6%); in test
+  there is no slippage difference (−11.1% vs −11.0%). Total drag is
+  modest: roughly 0.6 summed return units across 12 dev years.
+- **The catastrophic fills are NOT an earnings story.** Dev: 3 of 5
+  stops ≤ −15% were earnings nights (WAT −27%, ARCB −25%, OLED −17%).
+  Test: 0 of 9 — the list is the 2020 crash window (TSLA, WING, NEE,
+  MRNA), idiosyncratic news (PTGX −64%, biotech), and 2021/24/25 breaks.
+  The worst losses come from the market and from non-earnings news, not
+  the calendar — consistent with the 2020 decomposition.
+- Winners sit through ~1.5–1.9 reports on average, losers ~0.5–0.7 —
+  mechanical (4.5-month winning holds span ~1.5 quarters), but it means
+  the winner tail REQUIRES holding through earnings; an
+  avoid-earnings rule would amputate the tail that pays for everything.
+  Recorded as knowledge; no rule proposed or tested.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
