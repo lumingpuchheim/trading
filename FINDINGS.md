@@ -645,6 +645,39 @@ gap (stops don't hold across gaps). X scanned on dev over {0,2,4,6}%,
   discipline (don't open fresh positions into a report), which the
   backtest's 1-day fill lag makes untestable here.
 
+### Win-probability model (2026-08-26 — the first OOS-valid model, and why it still doesn't pay)
+
+User question: expected-win failed; can the features at least learn
+P(win)? Ridge-logistic on the 1,798 pseudo-trades (`lppl_winprob.py`),
+lambda by walk-forward fold AUC, one test evaluation. Pre-registered
+trap: E[ret|features] is known flat OOS, so if P(win) is learnable, win
+SIZE must anti-compensate.
+
+- **P(win) is learnable — the first stable OOS result in the project.**
+  Test AUC 0.586 (dev in-sample 0.613); win rate rises monotonically
+  across dev-edge quintiles OOS: 28.5% → 29.0% → 38.4% → 40.5% → 47.6%.
+  Direction (log-odds per sd): calmer stock (vol20 −0.26), dip shared
+  with the market rather than idiosyncratic (rel_dip −0.23), deeper dip
+  (+0.21), small-window short-dated fits (p_n −0.14, tc_runway −0.13).
+  Mechanically sensible: these predict "survives to the tc clock
+  without hitting −8%".
+- **And the trap sprang exactly as registered: win size anti-compensates
+  monotonically in BOTH periods.** Mean winner size by the same
+  quintiles: dev 31.4% → 12.0%, test 30.6% → 9.7%. Mean RETURN per
+  quintile: no gradient in either period (dev +1.6..+4.4 unordered;
+  test +1.0/−0.1/+1.9/+4.5/+0.4). With the stop fixing the loss side,
+  E[ret] ≈ p·W − (1−p)·10%, and the data says p·W ≈ const: probability
+  and payoff are inversely priced inside the candidate pool. The model
+  predicts a trade's STYLE (steady grinder vs lottery ticket), not its
+  value.
+- Consequence: any p-based sizing/filter tilts toward grinders and cuts
+  the tail that carries the book — the ejector-seat lesson in model
+  form. Not used for trading. Also explains the test era's lower win
+  rate: its trades skew into the low-p buckets (267 vs 82 in the
+  extremes) — the AI-era book was structurally more lottery-like.
+- Caveats: single pre-registered test evaluation; correlated trades
+  overstate nominal significance; pseudo-trades are slot-free.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
