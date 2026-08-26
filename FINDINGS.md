@@ -302,6 +302,23 @@ Verdict: about half of 2020's crash damage is avoidable by sizing;
 the rest (onset buys, gap slippage, rebound lag) is the strategy's
 nature, not an implementation error.
 
+### Crash-halt gates (2026-08-26): down+volume vs vol-spike — first dev-neutral gate
+
+User rule A (SPY day <= -2% on >= 1.5x volume; halt 10 days): catches the
+2020 crash window perfectly (15/15 entries blocked — day-one speed is
+real) but its blocked pile in dev averages +6.5%: high-volume panic dips
+in 2011/2009-13 were the model's best food (the capitulation ambiguity).
+Dev +103% vs +154%, test +35% vs +86%. Rejected.
+
+Rule B (20d vol > trailing 756d 90th pct; entries halted while true):
+good-year tax only 3-4%; blocked trades are worthless in BOTH periods
+(dev -0.3%, test +0.9% avg). Backtest: dev IDENTICAL to baseline
+(+154%, t 2.93 vs 2.90, maxDD -29 vs -31) and test BETTER (+102% vs
++86%, t 2.06, maxDD -42 vs -47). The first hard gate that is dev-neutral
+and test-positive; it catches only 8/15 of the 2020 crash window (lag)
+but what it blocks is junk in both decades. Registered as
+candidate alongside softvote; usual selection-tax caveat (~20th variant).
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
