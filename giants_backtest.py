@@ -88,13 +88,17 @@ def build_b2(data_dir, cal, cfg):
 
 
 def run(period_i, dec_list, by_i, closes, last_i, b2, green, tb_f,
-        r2_th, sell_col, rng=None, parking='tbill', spy_f=None):
+        r2_th, sell_col, rng=None, parking='tbill', spy_f=None,
+        resign_x=None, spy_px=None):
     """One portfolio path. dec_list: decision day indices inside period.
     by_i: {day index -> month table}. Returns (daily equity, trades).
     parking: idle cash sits in 'tbill' (spec), 'spy_always' (SPY even on
     red light) or 'spy_green' (SPY on green, T-bills on red). Moving the
     whole idle balance in/out of SPY pays COST per side; the smaller
-    flows at stock buys/sells are modeled costless."""
+    flows at stock buys/sells are modeled costless.
+    resign_x: sell a holding whose return since entry lags SPY's over
+    the same window by more than X percentage points (checked after the
+    spec's sell rules; needs spy_px, nominal SPY closes on cal)."""
     j0, j1 = period_i
     cash, positions, trades = START, {}, []
     equity = np.empty(j1 - j0 + 1)
@@ -126,6 +130,10 @@ def run(period_i, dec_list, by_i, closes, last_i, b2, green, tb_f,
                         and np.isfinite(getattr(r, sell_col)) \
                         and r.pe > getattr(r, sell_col):
                     reason = 'pe_ceiling'
+                elif resign_x is not None \
+                        and (spy_px[j] / spy_px[pos['entry_i']]
+                             - px / pos['entry_px']) > resign_x / 100.0:
+                    reason = 'resign'
                 if reason:
                     cash += pos['shares'] * px * (1 - COST)
                     trades.append({'ticker': t, 'action': 'sell', 'i': j,
@@ -238,6 +246,58 @@ def main() -> None:
                                  index=False)
         print(f'-> {results / "giants_parking.csv"}, '
               f'giants_parking_curves.csv, giants_parking_{{dev,test}}.png')
+        return
+
+    if '--resign' in sys.argv:
+        # post-hoc experiment: sell holdings lagging SPY since entry by
+        # more than X points. Frozen config, no controls. NOTE: designed
+        # after seeing test results; the test period is not a clean
+        # audit for this rule.
+        r2_th, sell_col = 0.7, 'pe_p90'
+        spy_px = spy.to_numpy()
+        rows, base_trd = [], {}
+        for pname, (pi, dl) in periods.items():
+            for mode in ('tbill', 'spy_green'):
+                for x in (None, 10, 15, 20, 30):
+                    eq, tr = run(pi, dl, by_i, closes, last_i, b2, green,
+                                 tb_f, r2_th, sell_col, parking=mode,
+                                 spy_f=spy_f, resign_x=x, spy_px=spy_px)
+                    m = metrics(eq, None)
+                    trd = pd.DataFrame(tr)
+                    if x is None:
+                        base_trd[(pname, mode)] = trd
+                    res = trd[(trd['action'] == 'sell')
+                              & (trd['reason'] == 'resign')]
+                    # subsequent 12m: resigned stock vs SPY
+                    diffs = []
+                    for r in res.itertuples():
+                        j2 = min(r.i + 252, len(cal) - 1)
+                        diffs.append(closes[r.ticker][j2]
+                                     / closes[r.ticker][r.i]
+                                     - spy_px[j2] / spy_px[r.i])
+                    # positions that in the baseline later exited via a
+                    # profitable LPPL sell but resign sold first
+                    b = base_trd[(pname, mode)]
+                    bl = b[(b['action'] == 'sell')
+                           & (b['reason'] == 'lppl_tc') & (b['ret'] > 0)]
+                    keys = set(zip(bl['ticker'], bl['entry_i']))
+                    stolen = sum((r.ticker, r.entry_i) in keys
+                                 for r in res.itertuples())
+                    rows.append({'period': pname, 'parking': mode,
+                                 'resign_x': x if x is not None else 'off',
+                                 **m, 'n_resign': len(res),
+                                 'next12m_vs_spy': float(np.mean(diffs))
+                                 if diffs else np.nan,
+                                 'stole_lppl_wins': stolen})
+                    nx = f'{np.mean(diffs):+.1%}' if diffs else '   -'
+                    print(f'{pname:5s} {mode:9s} x={str(x or "off"):3s}: '
+                          f'total {m["total"]:+.1%} cagr {m["cagr"]:+.2%} '
+                          f'maxDD {m["maxdd"]:+.1%} MAR {m["mar"]:.2f} '
+                          f'resigns {len(res):3d} next12m-vs-SPY {nx} '
+                          f'stole-lppl {stolen}')
+        pd.DataFrame(rows).to_csv(results / 'giants_resign.csv',
+                                  index=False)
+        print(f'-> {results / "giants_resign.csv"}')
         return
 
     print('=== dev grid (select by MAR, declared in spec/docstring) ===')
