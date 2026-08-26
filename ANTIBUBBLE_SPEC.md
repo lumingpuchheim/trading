@@ -81,6 +81,34 @@ not a forecast). Declared expectations and handicaps:
   negative one less. Both periods reported; V3 runs only if V1 or V2
   shows the certification carries information at all.
 
+### V4 — Bounce-back bet (Nikkei-style; REGISTERED BUT BLOCKED on data)
+
+The user's motivating idea: buy the recovery an anti-bubble predicts —
+rallies within the structured decay, or the decay's exhaustion
+(Sornette's 1999 Nikkei call). Registered so it is not forgotten, and
+explicitly BLOCKED until delisting-inclusive data exists:
+
+- **The current universe cannot fairly test it.** The cache holds only
+  today's index members — companies whose crashes were followed by
+  recovery into the index. Every crashed-and-never-bounced name (Enron,
+  Wirecable-class failures, delistings) is absent. For shorts this bias
+  is honest (pessimistic); for bounce-BUYING it flips: on survivor-only
+  data, "buy the crashed" is the single most flattered strategy
+  possible, and a positive backtest would be indistinguishable from the
+  bias. Precondition: point-in-time membership / delisting-inclusive
+  prices (the standing #1 paid-data upgrade).
+- Secondary handicaps, from this repo's own results: fitted-curve
+  fine-structure timing has failed every test (lppl_bottom2
+  self-refuted — the inherited damping filter forces near-monotone
+  curves whose predicted wiggles are 2–4x smaller than real swings);
+  the index-level analogue has n ≈ 3 episodes in 20 years; and the
+  bubble side already harvests much of the post-bust recovery with a
+  lag (the habitat finding: best years are the first years after bear
+  bottoms).
+- If the data precondition is ever met, V4 must pre-register its entry
+  (which oscillation/exhaustion signal), its exit, and a
+  delisting-inclusive control before any run.
+
 ## Protocol
 
 Dev 2007–2018 selects, test 2019+ audits once, per house rules. No new
