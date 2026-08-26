@@ -416,11 +416,45 @@ on every refit day regardless of the pre-screen (`lppl.watchlist_days`).
   rule shaped by staring at a test-period failure (SMCI) flatters test
   and is repriced by dev.
 
+### Refit-while-held exit (2026-08-26, rejected — the greed test, deconfounded)
+
+Why did SMCI sell on a boring, flat day? Because the 2023-12-04 exit
+executed the 2023-08-10 evaluation's tc (+79 trading days) with zero
+updates — the pre-screen was dark through the whole consolidation, so the
+detector never re-examined a stock it was holding. A fresh fit dated the
+sell day (from the preserved watchlist stream) said the opposite: votes 2,
+R² 0.950, tc ≈ 167 trading days out — "hold".
+
+Test (user request), isolating the exit half of the rejected watchlist
+change: entries stay on the pre-screen-only flags; held positions are
+refit every 5 days (live cost ≤ 10 tickers/day) and fresh votes>=2
+evaluations roll the tc clock forward (same persistence semantics as the
+entry flags). `simulate(tc_roll_key=...)` + `lppl_refit_exit.py`.
+
+- On the motivating trade it is spectacular: SMCI held Apr 2023 → Jul
+  2024, +633% instead of +172%.
+- On the book it fails in both periods: dev +70% (t 2.07, maxDD −43%) vs
+  +154% (t 2.90, −31%); test +16% (t 0.71, maxDD −59%) vs +86% (t 1.87,
+  −47%). Win rate 34% → 20% (test) while the avg winner doubles (+31% →
+  +59%): the exit distribution becomes a lottery — one +633% SMCI against
+  a book of extended losers.
+- Mechanism, the STX pathology now measured at scale: tc exits collapse
+  (dev 140 → 63, test 85 → 28) because fits made during declines
+  re-explain the decline and push tc out, so once refits feed the clock
+  it almost never fires; extended positions round-trip to the entry-price
+  stop or decay while blocking slots (trades 244 → 173).
+- Third confirmation of the exit law: an exit that listens to the fit is
+  worse than the deaf clock in BOTH directions — flag-death (sell when
+  the fit goes quiet) and refit-exit (hold while the fit keeps talking)
+  both lose to executing a stale forecast on schedule. The tc estimate
+  carries months-scale information at entry time and none at exit time.
+  The regret about SMCI's exit is survivorship of one lucky path.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto, detector
-watchlist exemption — has failed to beat the baseline on both periods
-jointly.** The baseline is a local
+watchlist exemption, refit-while-held exit — has failed to beat the
+baseline on both periods jointly.** The baseline is a local
 optimum in every direction probed. The skeptical reading (favoured by the
 sample sizes): it sits at the peak of the selection process that created
 it, and its true edge remains unproven until post-2026-08-25 data rules.

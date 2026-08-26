@@ -241,7 +241,8 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
              fraction: float | None = None, max_pos: int | None = None,
              tc_shift: int = 0, stop_loss: float | None = None,
              entry_gate: np.ndarray | None = None,
-             size_mult: np.ndarray | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
+             size_mult: np.ndarray | None = None,
+             tc_roll_key: str | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
     tr = dict(cfg['lppl_trading'])
     if fraction is None:
         fraction = tr['equal_weight_fraction']
@@ -342,7 +343,9 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
         for t, pos in positions.items():
             a = arrays[t]
             c = a['close_f'][i]
-            tc_col = 'tc' + flag_col[1]
+            # tc_roll_key: roll held positions' tc from an alternative stream
+            # (e.g. refit-while-held evaluations) instead of the entry flags
+            tc_col = tc_roll_key or ('tc' + flag_col[1])
             if strategy != 'dip_only' and a[tc_col][i] >= 0:
                 pos['tc_i'] = int(a[tc_col][i])
             pos['peak'] = max(pos.get('peak', pos['entry_px']), c)
