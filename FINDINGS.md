@@ -227,6 +227,31 @@ share their signature. Mechanical regime gating is closed — not for lack
 of detectors, but because the discrimination the gate needs is the same
 one the whole strategy is built on failing to make.
 
+### Soft-vote sizing ensemble (2026-08-26 — first both-period-consistent overlay)
+
+Size = 10% x (4 − hostile votes)/4 over {S1 200SMA, S3 vol, V3 mania, FC
+flagged-cohort}. Returns slightly lower (dev +135% vs +154%, test +75% vs
++86%), maxDD much lower in both periods (−25% vs −31%; −36% vs −47%),
+per-trade t higher in both (2.96/1.99 vs 2.90/1.87). Sizing degrades
+gracefully where blocking failed catastrophically. Registered alongside
+the frozen baseline; judged on post-2026 data.
+
+### Hostile-time winners vs losers — indistinguishable (the bedrock result)
+
+For all trades entered under >= 1 hostile voter (179 dev, 139 test):
+static features (vote count, dip depth, stock votes/r2/RS/tc) are
+identical between winners and losers in both periods. Every feature that
+shows a gradient FLIPS SIGN between periods: hostility age (old-alarm
+trades +4.9% dev, −2.6% test), FC slope depth, and — tested at the user's
+suggestion — the simultaneous-SPY comparison rel_dip (stock's 20d
+drawdown minus SPY's concurrent one): high-idiosyncratic dips are the
+WORST tercile in dev (+1.2%/+1.9%) and the BEST in test (+8.6%/+8.5%).
+Same for 5-day relative return. Conclusion: the label that separates a
+buyable hostile-time dip from a fatal one is the regime type itself,
+which no price-derived feature encodes stably. This justifies soft
+sizing (optimal when affected trades are indistinguishable) and closes
+the discrimination question at stock, cohort, and feature level.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
