@@ -201,8 +201,12 @@ def main() -> None:
         # user experiment: park idle cash in SPY instead of T-bills,
         # frozen winning config, no grid, no controls
         r2_th, sell_col = 0.7, 'pe_p90'
-        rows = []
+        labels = {'tbill': 'T-bills (spec)', 'spy_always': 'SPY always',
+                  'spy_green': 'SPY green-only'}
+        rows, curves = [], []
         for pname, (pi, dl) in periods.items():
+            days = cal[pi[0]:pi[1] + 1]
+            plt.figure(figsize=(11, 6))
             for mode in ('tbill', 'spy_always', 'spy_green'):
                 eq, _ = run(pi, dl, by_i, closes, last_i, b2, green, tb_f,
                             r2_th, sell_col, parking=mode, spy_f=spy_f)
@@ -211,9 +215,29 @@ def main() -> None:
                 print(f'{pname:5s} {mode:11s}: total {m["total"]:+.1%} '
                       f'cagr {m["cagr"]:+.2%} maxDD {m["maxdd"]:+.1%} '
                       f'MAR {m["mar"]:.2f}')
+                norm = eq / eq[0]
+                curves.append(pd.DataFrame(
+                    {'date': days, 'period': pname, 'variant': mode,
+                     'equity': norm}))
+                plt.plot(days, norm,
+                         label=f'{labels[mode]} ({m["total"]:+.0%})')
+            spy_p = spy.iloc[pi[0]:pi[1] + 1] / spy.iloc[pi[0]]
+            plt.plot(days, spy_p, color='gray', lw=0.8, alpha=0.7,
+                     label=f'SPY (context, {spy_p.iloc[-1] - 1:+.0%})')
+            plt.yscale('log')
+            plt.legend()
+            plt.grid(alpha=0.3)
+            plt.title(f'Steady Giants cash parking, {pname} '
+                      f'(r2>={r2_th}, sell={sell_col})')
+            plt.tight_layout()
+            plt.savefig(results / f'giants_parking_{pname}.png', dpi=120)
+            plt.close()
         pd.DataFrame(rows).to_csv(results / 'giants_parking.csv',
                                   index=False)
-        print(f'-> {results / "giants_parking.csv"}')
+        pd.concat(curves).to_csv(results / 'giants_parking_curves.csv',
+                                 index=False)
+        print(f'-> {results / "giants_parking.csv"}, '
+              f'giants_parking_curves.csv, giants_parking_{{dev,test}}.png')
         return
 
     print('=== dev grid (select by MAR, declared in spec/docstring) ===')
