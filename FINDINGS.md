@@ -347,6 +347,20 @@ book is illusory, and a per-sector cap would have destroyed the test
 period. Use as monitoring knowledge (know what single bet the book
 currently is), not as a filter.
 
+### Greedy exit: acceleration-conditional tc extension (2026-08-26, rejected)
+
+Post-exit audit first: stocks drift +3.0%/+4.8% in the 60 days after tc
+exits (positive both periods) — but that is market-rate beta, not bubble
+alpha, and recycled slots out-earn it (+0.10%/day vs +0.05%/day). The
+conditional extension (hold past tc while the stock's 20d return exceeds
+its own trailing 756d 90th percentile): extensions barely fire — at tc
+most bubbles are in a stall, not a blow-off (SMCI's Dec-2023 tc had flat
+momentum; the rule sells on schedule and still misses the January run) —
+and the variant is mildly worse in BOTH periods (dev +129% t 2.62 vs
++154% t 2.90; test +78% t 1.81 vs +86% t 1.87), with avg winners DOWN.
+The greed question is closed: the money after tc is ordinary drift, the
+blow-offs are not identifiable at tc, and the capital is better recycled.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to

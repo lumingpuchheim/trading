@@ -254,7 +254,8 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
         flag_col = 'b2'
     variant = 'trail' if strategy.endswith('_trail') \
         else 'ma' if strategy.endswith('_ma') \
-        else 'fd' if strategy.endswith('_fd') else 'base'
+        else 'fd' if strategy.endswith('_fd') \
+        else 'greed' if strategy.endswith('_greed') else 'base'
     cost = tr['cost_per_side']
     short_stop = 2 - tr['stop_loss']  # e.g. 1.08: mirrored 8% adverse move
 
@@ -364,7 +365,13 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
                 if i - pos['entry_i'] >= tr['dip_only_max_hold']:
                     pos['exit_reason'] = 'time'
             elif pos['tc_i'] >= 0 and i >= pos['tc_i'] + tc_shift:
-                pos['exit_reason'] = 'tc'
+                # _greed: postpone the tc exit while the stock is still in
+                # its own top-decile 20-day acceleration (blow-off riding)
+                if variant == 'greed' and a.get('accel') is not None \
+                        and a['accel'][i]:
+                    pass
+                else:
+                    pos['exit_reason'] = 'tc'
 
         exiting = sum(1 for p in positions.values() if p['exit_reason'])
         slots = tr['max_positions'] - (len(positions) - exiting) - len(pending)
