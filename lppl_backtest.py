@@ -232,7 +232,8 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
 def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
              fraction: float | None = None, max_pos: int | None = None,
              tc_shift: int = 0, stop_loss: float | None = None,
-             entry_gate: np.ndarray | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
+             entry_gate: np.ndarray | None = None,
+             size_mult: np.ndarray | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
     tr = dict(cfg['lppl_trading'])
     if fraction is None:
         fraction = tr['equal_weight_fraction']
@@ -306,7 +307,7 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
                 continue
             if side == 1:
                 # whole shares only: round the target size down
-                shares = np.floor(fraction * eq_prev / px)
+                shares = np.floor(fraction * e.get('mult', 1.0) * eq_prev / px)
                 outflow = shares * px * (1 + cost)
                 if shares < 1 or outflow > cash:
                     continue  # cannot afford one share / would breach exposure
@@ -366,9 +367,11 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
 
         exiting = sum(1 for p in positions.values() if p['exit_reason'])
         slots = tr['max_positions'] - (len(positions) - exiting) - len(pending)
-        if slots > 0 and (entry_gate is None or entry_gate[i]):
+        mult = 1.0 if size_mult is None else float(size_mult[i])
+        if slots > 0 and mult > 0 and (entry_gate is None or entry_gate[i]):
             for c in candidates_today(arrays, i, strategy, positions, cooldown,
                                       pending, cfg, panel['market_dip'])[:slots]:
+                c['mult'] = mult
                 pending[c['ticker']] = c
 
         held = sum(pos_value(t, p, arrays[t]['close_f'][i])
