@@ -44,6 +44,33 @@ def nominal_prices(adj: np.ndarray, dates, divs: pd.DataFrame | None) -> np.ndar
     return nominal
 
 
+def slope_r2(y: np.ndarray) -> tuple[float, float]:
+    """Straight-line regression of log prices on time: slope per day, R2."""
+    t = np.arange(len(y), dtype=float)
+    t_c = t - t.mean()
+    t_ss = float(t_c @ t_c)
+    y_c = y - y.mean()
+    slope = float((t_c @ y_c) / t_ss)
+    tot_ss = float(y_c @ y_c)
+    r2 = slope * slope * t_ss / tot_ss if tot_ss > 0 else 0.0
+    return slope, r2
+
+
+def div_record(ysum: pd.Series, yr: int) -> tuple[bool, bool]:
+    """(paid every one of the last DIV_YEARS complete years,
+    cut >20% YoY in the trailing 2 complete years)."""
+    paid = all(ysum.get(y_, 0.0) > 0 for y_ in range(yr - DIV_YEARS, yr))
+    cut = any(ysum.get(y_, 0.0) < CUT * ysum.get(y_ - 1, 0.0)
+              for y_ in (yr - 1, yr - 2)) if paid else False
+    return paid, cut
+
+
+def ttm_eps(eps_dates: np.ndarray, eps_vals: np.ndarray, asof) -> float:
+    """Sum of the last 4 reported quarters known on `asof`, else NaN."""
+    m = eps_dates <= asof
+    return float(eps_vals[m][-4:].sum()) if m.sum() >= 4 else np.nan
+
+
 def main() -> None:
     cfg = load_config()
     d = cfg['data']
@@ -60,10 +87,6 @@ def main() -> None:
         .dropna(subset=['eps']).sort_values('date')
     div_by = {t: g for t, g in div.groupby('ticker')}
     eps_by = {t: g for t, g in eps.groupby('ticker')}
-
-    t_idx = np.arange(REG_WIN, dtype=float)
-    t_c = t_idx - t_idx.mean()
-    t_ss = float(t_c @ t_c)
 
     rows = []
     files = sorted((data_dir / 'ohlcv').glob('*.parquet'))
@@ -97,29 +120,16 @@ def main() -> None:
             if not (np.all(np.isfinite(w)) and np.all(np.isfinite(r3[1:]))):
                 continue
             vol = float(np.std(r3[1:]))
-            y = np.log(w)
-            y_c = y - y.mean()
-            slope = float((t_c @ y_c) / t_ss)
-            fitted_ss = slope * slope * t_ss
-            tot_ss = float(y_c @ y_c)
-            r2 = fitted_ss / tot_ss if tot_ss > 0 else 0.0
-
-            # dividend record over the last DIV_YEARS complete years
-            yr = cal[i].year
-            paid = all(ysum.get(y_, 0.0) > 0 for y_ in range(yr - DIV_YEARS, yr))
-            cut = any(ysum.get(y_, 0.0) < CUT * ysum.get(y_ - 1, 0.0)
-                      for y_ in (yr - 1, yr - 2)) if paid else False
-
-            # trailing 12m reported EPS as of this date
-            m = eps_dates <= cal[i]
-            ttm = float(eps_vals[m][-4:].sum()) if m.sum() >= 4 else np.nan
+            slope, r2 = slope_r2(np.log(w))
+            paid, cut = div_record(ysum, cal[i].year)
+            ttm = ttm_eps(eps_dates, eps_vals, cal[i])
             pe = nom[i] / ttm if np.isfinite(ttm) and ttm > 0 \
                 and np.isfinite(nom[i]) else np.nan
 
             rows.append({'ticker': t, 'date': cal[i], 'i': int(i),
                          'vol': vol, 'slope': slope, 'r2': float(r2),
                          'div_paid': bool(paid), 'div_cut': bool(cut),
-                         'has_eps': bool(m.sum() >= 4), 'pe': pe})
+                         'has_eps': bool(np.isfinite(ttm)), 'pe': pe})
         if k % 200 == 0:
             print(f'  {k}/{len(files)} tickers, {len(rows)} rows', flush=True)
 
