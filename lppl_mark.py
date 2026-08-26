@@ -6,8 +6,11 @@ Evaluates EVERY refit day (no pre-screen — one symbol is cheap, so no
 flag gaps), using the frozen detector constants. Prints the persistent
 2-of-5 stretches with median tc and writes the marked chart to
 results/<symbol>_bubbles.png. Data comes from the main ohlcv cache when
-the symbol is there; otherwise it is downloaded once (yfinance,
-auto_adjust total-return prices) and cached in data/extra/.
+the symbol is there; otherwise it is downloaded once and cached in
+data/extra/ as RAW closes (auto_adjust=False) — raw prices are auditable
+against any public quote source, adjusted ones are not. Note for heavy
+dividend payers: raw prices show ex-dividend drops and understate total
+return; the fit sees the price shape as it was actually quoted.
 """
 
 import sys
@@ -33,7 +36,7 @@ def load_series(symbol: str, cfg: dict) -> pd.Series:
         return pd.read_parquet(cache)['close'].dropna()
     import yfinance as yf
     df = yf.download(symbol, start=cfg['data']['start_date'],
-                     auto_adjust=True, progress=False)
+                     auto_adjust=False, progress=False)
     if df is None or df.empty:
         sys.exit(f'no data for {symbol}')
     if isinstance(df.columns, pd.MultiIndex):
