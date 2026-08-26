@@ -242,7 +242,8 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
              tc_shift: int = 0, stop_loss: float | None = None,
              entry_gate: np.ndarray | None = None,
              size_mult: np.ndarray | None = None,
-             tc_roll_key: str | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
+             tc_roll_key: str | None = None,
+             earn_exit: tuple[dict, float] | None = None) -> tuple[pd.DataFrame, pd.Series, float]:
     tr = dict(cfg['lppl_trading'])
     if fraction is None:
         fraction = tr['equal_weight_fraction']
@@ -338,6 +339,20 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
                                 'exit_reason': None, 'tc_i': e['tc_i'],
                                 'invest': invest}
                 cash -= invest
+
+        # pre-earnings ejector: a report lands on the coming gap night and
+        # the position is red beyond the threshold -> sell at THIS close
+        # (the calendar is known in advance, so the fill is implementable)
+        if earn_exit is not None:
+            masks, thr = earn_exit
+            for t in list(positions):
+                pos = positions[t]
+                m = masks.get(t)
+                c = arrays[t]['close_f'][i]
+                if m is not None and m[i] and pos['side'] == 1 \
+                        and not pos['exit_reason'] \
+                        and c <= thr * pos['entry_px']:
+                    cash += close_out(t, positions.pop(t), c, i, 'earn', d)
 
         # decisions at the close
         for t, pos in positions.items():

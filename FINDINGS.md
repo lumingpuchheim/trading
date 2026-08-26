@@ -619,6 +619,32 @@ against its halves (`lppl_greenlight.py`).
   softvote_c3 (drawdown control); the frozen baseline stands and
   post-2026 data judges.
 
+### Pre-earnings ejector seat (2026-08-26, rejected — the scan was noise)
+
+User idea: a report lands on the coming gap night and the position is
+down more than X% → sell at the pre-report close instead of risking the
+gap (stops don't hold across gaps). X scanned on dev over {0,2,4,6}%,
+'sell-always' as reference; `simulate(earn_exit=...)`, same-close fill.
+
+- Dev surface is jagged, not monotone: x0 +179% (t 3.11) but x2 +117%,
+  x4 +132%, x6 +127% — all BELOW baseline (+154%) except the single x0
+  cell. A real mechanism would shade gradually with depth; one popping
+  cell is noise. 'Always' confirms the tail amputation prediction:
+  +61% (t 2.00) with 241 forced exits.
+- Test audit of the dev-best (x0): +44% (t 1.37) vs baseline +86%
+  (t 1.87) — regression to the mean, exactly like the tc-shift scan.
+  The 29 ejections averaged only −3.1% (mild saves), but win rate fell
+  34.4% → 30.5% and the winner tail thinned: ejected red positions
+  include the ones whose report was the up-gap that made them winners.
+  In the AI-era test period, earnings beats were the fuel.
+- Deeper lesson, consistent with the exit law: in a lottery-ticket
+  payoff structure, ANY rule that surrenders a ticket before a binary
+  event trades an ~3% saving against a fat right tail. The 8% stop
+  (post-gap) remains the only earnings defense that survives both
+  periods. Earnings knowledge stays useful only as entry-timing
+  discipline (don't open fresh positions into a report), which the
+  backtest's 1-day fill lag makes untestable here.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
