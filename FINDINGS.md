@@ -595,6 +595,30 @@ theoretical base rate; test 2.4%) estimates the random-window rate.
   avoid-earnings rule would amputate the tail that pays for everything.
   Recorded as knowledge; no rule proposed or tested.
 
+### Green-light entry gate (2026-08-26 — registered with maximal post-hoc caveat)
+
+User-requested: the anatomy study's home regime as a hard entry gate
+(SPY > 200d SMA AND 20d vol <= its 756d 90th pct), entry-only, decomposed
+against its halves (`lppl_greenlight.py`).
+
+- dev: green +162% (t 3.18, maxDD −26%, win rate 45.4%) vs baseline
+  +154% (t 2.90, −31%) — the best dev configuration recorded that also
+  survives its test audit (the breadth veto's t 3.14 did not).
+  trend_only is nearly identical (+159%, t 3.12).
+- test: green +82% (t 1.83, maxDD −38%) vs baseline +86% (t 1.87, −47%)
+  — mildly lower return, meaningfully lower drawdown, no collapse. In
+  test, green degenerates to trend_only exactly (identical 218 trades);
+  the calm leg adds nothing once trend is in. calm_only remains the best
+  test performer (+102%, t 2.06): trend's marginal blocks in test are
+  the spring-2020 rebound entries (SPY below its 200d SMA into June
+  2020) — the smoother ride is bought with exactly those trades.
+- Verdict: passes the adoption letter (dev improves, test intact), but
+  the gate was constructed the same day from the both-period descriptive
+  table — the most post-hoc rule tested here. Registered as a third
+  candidate alongside volhalt_B (better test, neutral dev) and
+  softvote_c3 (drawdown control); the frozen baseline stands and
+  post-2026 data judges.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
