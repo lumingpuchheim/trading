@@ -38,9 +38,15 @@ class LpplFit:
 
 
 class WindowGrid:
-    """Precomputed grid tensors for one window length."""
+    """Precomputed grid tensors for one window length.
 
-    def __init__(self, n: int, cfg: dict):
+    mirror=False (bubble): tc lies AFTER the window end; dt = days until tc.
+    mirror=True (anti-bubble): tc lies BEFORE the window start; dt = days
+    since tc, so the fit describes log-periodic DECAY away from a past
+    peak. All grid constants are shared (ANTIBUBBLE_SPEC: the anti side
+    inherits frozen bubble constants, no separate tuning)."""
+
+    def __init__(self, n: int, cfg: dict, mirror: bool = False):
         g = cfg['lppl']
         tc_grid = np.linspace(g['tc_min_ahead'], g['tc_max_ahead_frac'] * n,
                               g['tc_points'])
@@ -51,7 +57,10 @@ class WindowGrid:
         self.tc, self.m, self.w = tc.ravel(), m.ravel(), w.ravel()
 
         t = np.arange(n, dtype=float)
-        dt = (n - 1 + self.tc[:, None]) - t[None, :]     # (G, n), all > 0
+        if mirror:
+            dt = self.tc[:, None] + t[None, :]           # (G, n), all > 0
+        else:
+            dt = (n - 1 + self.tc[:, None]) - t[None, :]  # (G, n), all > 0
         f = dt ** self.m[:, None]
         lg = np.log(dt)
         self.X = np.stack([np.ones_like(f), f,
@@ -104,6 +113,24 @@ def prescreen(closes: np.ndarray, i: int, cfg: dict) -> bool:
     if c_now / c_then - 1 < g['prescreen_min_runup']:
         return False
     return np.log(c_now / c_mid) > np.log(c_mid / c_then)
+
+
+def prescreen_anti(closes: np.ndarray, i: int, cfg: dict) -> bool:
+    """Cheap necessary condition for an anti-bubble fit at day i: a deep,
+    established decline (mirror of prescreen). Its job is cutting compute,
+    not picking losers — deliberately loose."""
+    g = cfg['lppl']
+    if i + 1 < 252:
+        return False
+    c = closes[i]
+    if not np.isfinite(c) or c <= 0:
+        return False
+    hi = np.nanmax(closes[i - 251:i + 1])
+    if not np.isfinite(hi) or hi <= 0 \
+            or c / hi - 1 > -g['prescreen_anti_drawdown']:
+        return False
+    sma = np.nanmean(closes[i + 1 - g['prescreen_anti_sma']:i + 1])
+    return bool(np.isfinite(sma) and c < sma)
 
 
 def evaluate_day(log_close: np.ndarray, i: int, grids: list[WindowGrid],

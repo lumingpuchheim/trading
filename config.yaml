@@ -71,6 +71,8 @@ lppl:                             # Sornette bubble detector — all frozen befo
   breadth_veto_max: 5             # _breadth: >5 simultaneous new candidates = systemic, take none
   validation_sample: 500          # rejected stock-days re-fitted to verify the pre-screen
   watchlist_days: 0               # pre-screen watchlist exemption, 0 = off; 126 tested 2026-08-26 and rejected (dev collapses, see FINDINGS)
+  prescreen_anti_drawdown: 0.25   # anti-bubble pre-screen: >= 25% below the 252d high ...
+  prescreen_anti_sma: 200         # ... and below the 200d SMA (ANTIBUBBLE_SPEC)
 
 lppl_trading:                     # 8% stop, tc exit, equal weight
   stop_loss: 0.92                 # exit if close <= 0.92 x entry (the "8% leaving rule")

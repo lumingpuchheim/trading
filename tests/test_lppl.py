@@ -49,6 +49,36 @@ def test_pure_noise_rarely_qualifies(grid250):
     assert hits <= 2  # random walks should almost never pass qualification
 
 
+def synthetic_anti(n=250, tc_behind=40.0, m=0.5, w=8.0, b=-0.05, c=0.002):
+    tau = tc_behind + np.arange(n)
+    return 5.0 + b * tau ** m + c * tau ** m * np.cos(w * np.log(tau))
+
+
+def test_mirror_grid_recovers_synthetic_antibubble(grid250):
+    g = CFG['lppl']
+    tc_step = (g['tc_max_ahead_frac'] * 250 - g['tc_min_ahead']) / (g['tc_points'] - 1)
+    anti = WindowGrid(250, CFG, mirror=True)
+    fit = fit_window(synthetic_anti(), anti)
+    assert fit.qualified
+    assert fit.r2 > 0.999
+    assert abs(fit.tc - 40.0) < 1.5 * tc_step
+    # the same decaying series must NOT qualify on the bubble grid
+    assert not fit_window(synthetic_anti(), grid250).qualified
+    # and a rising bubble series must not qualify on the mirror grid
+    assert not fit_window(synthetic_lppl(), anti).qualified
+
+
+def test_prescreen_anti_requires_deep_established_decline():
+    from lppl import prescreen_anti
+    n = 400
+    rising = np.linspace(100, 150, n)
+    assert not prescreen_anti(rising, n - 1, CFG)
+    shallow = np.concatenate([np.full(200, 100.0), np.full(200, 90.0)])
+    assert not prescreen_anti(shallow, n - 1, CFG)  # only -10% from high
+    deep = np.concatenate([np.full(200, 100.0), np.linspace(100, 60, 200)])
+    assert prescreen_anti(deep, n - 1, CFG)
+
+
 def test_prescreen_requires_accelerating_runup():
     n = 400
     flat = np.full(n, 100.0)
