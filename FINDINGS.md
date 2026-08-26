@@ -450,6 +450,44 @@ entry flags). `simulate(tc_roll_key=...)` + `lppl_refit_exit.py`.
   carries months-scale information at entry time and none at exit time.
   The regret about SMCI's exit is survivorship of one lucky path.
 
+### Expected-win audit, Route 1 (2026-08-26 — no usable payoff model; a leak demo)
+
+User question: the strategy measures odds (is this a bubble?) but never
+payoff (how much is left?). Pre-registered audit (`lppl_payoff.py`): 1,798
+candidate-day pseudo-trades (1,027 dev / 771 test — every liquid b2∧dip∧tc
+day, non-overlapping per ticker, real trade mechanics, no slot
+competition), 15 decision-time features, dev-fixed quintile edges,
+survival = |dev spread| ≥ 1pp with same-signed test spread; ridge on
+survivors. Pre-registered directions: young flag_age +, long tc_runway +,
+low persist_depth +.
+
+- Stage 1: 7 of 15 features nominally survive — but ~half of a 15-feature
+  field passing a sign-agreement test is close to the noise expectation,
+  and most quintile profiles are non-monotone (spreads made at the
+  endpoints). Prereg scorecard: flag_age and persist_depth pass on
+  spreads with rank correlations ≈ 0 (weak); tc_runway fails with the
+  OPPOSITE sign in both periods — short-dated fits pay better (dev rho
+  −0.11, test −0.13, the only replicated structure in the table), and its
+  cousin p_n agrees (small windows better; corr 0.47). Direction of every
+  surviving gradient: less certified / younger / shorter / smaller →
+  higher payoff — consistent with the formation-phase lesson and mildly
+  indicting the (votes desc, r2 desc) slot ranking, whose payoff
+  gradients are both negative in dev.
+- **The leak demonstration (keep this one).** The prereg survival rule
+  checks the test spread's sign — one bit of test information leaking
+  into stage-2 feature selection. Contaminated ridge: test rho +0.094,
+  top-decile +4.1% — looks like the first stable payoff model. Selecting
+  on dev alone (adds p_sigma, one feature): test rho collapses to
+  **+0.026**, top-decile +2.3% vs the +1.4% sample average, quintiles
+  non-monotone. One bit of leakage inflated the out-of-sample rank
+  correlation almost fourfold. The clean number is the +0.026.
+- Verdict: Route 1 concludes NEGATIVE — no expected-win model worth
+  sizing on (composite edge ~1pp per trade against 16–22% per-trade
+  noise). Stage 3 (sizing overlay) not run, per the pre-declared bar.
+  The short-runway/small-window payoff tilt is recorded as knowledge and
+  as the single candidate for a future pre-registered test on post-2026
+  data; testing it now, after seeing this table, would be the RS trap.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto, detector
