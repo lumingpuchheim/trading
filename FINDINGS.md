@@ -766,6 +766,31 @@ P/E-blocked in 23 of its 24 test qualifying months.
 Charts: `results/giants_dev.png`, `results/giants_test.png`; trades in
 `results/giants_{dev,test}_trades.csv`, summary `results/giants_summary.csv`.
 
+### SPY parking experiment (2026-08-26, post-hoc — the spec froze T-bills)
+
+User request: "collecting money with T-bills is too slow" — park idle
+cash in SPY instead. Two variants, frozen winning config, no controls
+re-run. The tension: idle time concentrates in red-light periods, so
+always-in-SPY holds the market exactly when the trend filter distrusts
+it — the maxDD column is the heart of the answer. (Moving the idle
+balance in/out of SPY pays 0.2%/side; same survivorship-biased
+universe as everything above, all numbers upper bounds.)
+
+| parking | dev total | dev CAGR | dev maxDD | dev MAR | test total | test CAGR | test maxDD | test MAR |
+|---|---|---|---|---|---|---|---|---|
+| T-bills (spec) | +275.5% | +11.7% | −12.2% | 0.96 | +125.8% | +11.3% | −24.2% | 0.47 |
+| SPY always | +223.1% | +10.3% | **−55.2%** | 0.19 | +190.3% | +15.0% | −29.1% | 0.51 |
+| SPY green-only | **+472.0%** | +15.7% | −12.2% | **1.29** | **+173.0%** | +14.1% | −24.3% | 0.58 |
+
+Always-SPY is strictly worse than T-bills in dev — the full 2008 crash
+lands on the idle capital (2007–10 is 100% idle, no qualifiers yet) and
+even total return drops. Green-only-SPY dominates the baseline in both
+periods on total and MAR at essentially unchanged drawdown; much of its
+dev edge is earned 2007–10 when the system held no stocks at all, i.e.
+it is the green-light timing result applied to the idle balance, not a
+new discovery about the giants. Post-hoc experiment, held to the same
+looseness as everything else here.
+
 ### Anti-bubble breadth gauge, V1 (2026-08-26 — rejected; the user called it)
 
 Mirror LPPL detector (constants inherited frozen; `lppl_anti_detect.py`):
