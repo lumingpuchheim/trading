@@ -44,7 +44,8 @@ def build_market(cfg):
     tb = pd.read_parquet(data_dir / 'dgs3mo.parquet').set_index('date')['yield_pct']
     tb = tb.reindex(cal).ffill().fillna(0.0).to_numpy()
     tb_f = (1.0 + tb / 100.0) ** (1.0 / 252.0)
-    return data_dir, cal, s, green, tb_f
+    spy_f = s.pct_change().fillna(0.0).to_numpy() + 1.0
+    return data_dir, cal, s, green, tb_f, spy_f
 
 
 def load_prices(data_dir, cal, benchmark):
@@ -87,17 +88,27 @@ def build_b2(data_dir, cal, cfg):
 
 
 def run(period_i, dec_list, by_i, closes, last_i, b2, green, tb_f,
-        r2_th, sell_col, rng=None):
+        r2_th, sell_col, rng=None, parking='tbill', spy_f=None):
     """One portfolio path. dec_list: decision day indices inside period.
-    by_i: {day index -> month table}. Returns (daily equity, trades)."""
+    by_i: {day index -> month table}. Returns (daily equity, trades).
+    parking: idle cash sits in 'tbill' (spec), 'spy_always' (SPY even on
+    red light) or 'spy_green' (SPY on green, T-bills on red). Moving the
+    whole idle balance in/out of SPY pays COST per side; the smaller
+    flows at stock buys/sells are modeled costless."""
     j0, j1 = period_i
     cash, positions, trades = START, {}, []
     equity = np.empty(j1 - j0 + 1)
     dec_set = set(dec_list)
     prev_dec = {d: p for d, p in zip(dec_list, [j0 - 1] + dec_list[:-1])}
+    in_spy = False
 
     for j in range(j0, j1 + 1):
-        cash *= tb_f[j]
+        want_spy = (parking == 'spy_always'
+                    or (parking == 'spy_green' and green[j]))
+        if want_spy != in_spy:
+            cash *= 1.0 - COST          # move the idle balance in or out
+            in_spy = want_spy
+        cash *= spy_f[j] if in_spy else tb_f[j]
         if j in dec_set:
             tab = by_i.get(j)
             rows = {r.ticker: r for r in tab.itertuples()} if tab is not None else {}
@@ -170,7 +181,7 @@ def main() -> None:
     cfg = load_config()
     bt = cfg['backtest']
     results = ROOT / bt['results_dir']
-    data_dir, cal, spy, green, tb_f = build_market(cfg)
+    data_dir, cal, spy, green, tb_f, spy_f = build_market(cfg)
     closes, last_i = load_prices(data_dir, cal, cfg['data']['benchmark'])
     b2 = build_b2(data_dir, cal, cfg)
     tab = pd.read_parquet(data_dir / 'giants_monthly.parquet')
@@ -185,13 +196,33 @@ def main() -> None:
         j1 = int(cal.searchsorted(pd.Timestamp(b), side='right')) - 1
         periods[name] = ((j0, j1), [i for i in all_dec if j0 <= i <= j1])
 
+    import sys
+    if '--parking' in sys.argv:
+        # user experiment: park idle cash in SPY instead of T-bills,
+        # frozen winning config, no grid, no controls
+        r2_th, sell_col = 0.7, 'pe_p90'
+        rows = []
+        for pname, (pi, dl) in periods.items():
+            for mode in ('tbill', 'spy_always', 'spy_green'):
+                eq, _ = run(pi, dl, by_i, closes, last_i, b2, green, tb_f,
+                            r2_th, sell_col, parking=mode, spy_f=spy_f)
+                m = metrics(eq, None)
+                rows.append({'period': pname, 'parking': mode, **m})
+                print(f'{pname:5s} {mode:11s}: total {m["total"]:+.1%} '
+                      f'cagr {m["cagr"]:+.2%} maxDD {m["maxdd"]:+.1%} '
+                      f'MAR {m["mar"]:.2f}')
+        pd.DataFrame(rows).to_csv(results / 'giants_parking.csv',
+                                  index=False)
+        print(f'-> {results / "giants_parking.csv"}')
+        return
+
     print('=== dev grid (select by MAR, declared in spec/docstring) ===')
     grid = {}
     (pi, dl) = periods['dev']
     for r2_th in R2_GRID:
         for sc in SELL_GRID:
             eq, tr = run(pi, dl, by_i, closes, last_i, b2, green, tb_f,
-                         r2_th, sc)
+                         r2_th, sc, spy_f=spy_f)
             m = metrics(eq, None)
             m['n_buys'] = sum(1 for x in tr if x['action'] == 'buy')
             grid[(r2_th, sc)] = m
@@ -205,7 +236,7 @@ def main() -> None:
     summary = {}
     for pname, (pi, dl) in periods.items():
         eq, tr = run(pi, dl, by_i, closes, last_i, b2, green, tb_f,
-                     r2_th, sell_col)
+                     r2_th, sell_col, spy_f=spy_f)
         m = metrics(eq, None)
         trd = pd.DataFrame(tr)
         trd['date'] = [cal[i] for i in trd['i']]
@@ -218,7 +249,8 @@ def main() -> None:
         ctl = []
         for s in range(N_CONTROLS):
             ceq, _ = run(pi, dl, by_i, closes, last_i, b2, green, tb_f,
-                         r2_th, sell_col, rng=np.random.default_rng(s))
+                         r2_th, sell_col, rng=np.random.default_rng(s),
+                         spy_f=spy_f)
             ctl.append(ceq[-1] / ceq[0] - 1)
         ctl = np.array(ctl)
         m['pct_vs_controls'] = float((m['total'] > ctl).mean())
