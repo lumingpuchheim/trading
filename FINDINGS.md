@@ -678,6 +678,94 @@ SIZE must anti-compensate.
 - Caveats: single pre-registered test evaluation; correlated trades
   overstate nominal significance; pseudo-trades are slot-free.
 
+## Steady Giants (2026-08-26 — separate system, pre-registered in STEADY_GIANTS_SPEC.md)
+
+Buffett-style steady compounders: monthly qualification (liquid, lowest
+trailing-3y-vol tercile, 5y log-price regression with positive slope and
+R² above threshold, 5y unbroken dividends with no >20% cut, EPS present),
+buys only on the market green light and only when trailing P/E is not
+above the stock's own historic p90, sells only on the own-history P/E
+ceiling / LPPL 2-of-5 certification / dividend cut / delisting. 8 slots,
+winners never trimmed, idle cash earns 3M T-bills. P/E uses reconstructed
+nominal prices; equity curves use the total-return series (dividends
+already in, never double-counted).
+
+**Survivorship caveat, load-bearing as always: the universe is today's
+S&P 1500 members, so a hold-forever system is being graded with the
+answer key — every number below is an upper bound.** The 200
+random-qualifier controls (same rules, random picks among qualifiers)
+are the partial antidote: they share the same biased universe, so
+beating them measures selection skill, not survivorship.
+
+Qualifier sanity: 201,766 ticker-months; qualifier-months 34,059 /
+29,080 / 21,873 at R² ≥ 0.6 / 0.7 / 0.8 — roughly 110–225 per month
+from 2012 on, a plausible band. First possible decision is 2010-02 (the
+5y regression window only fills then; data starts 2005), so the "dev"
+curve sits in T-bills through 2007–09 — **the dev maxDD below is
+flattered by having slept through 2008.**
+
+Dev 3×3 grid (selection by MAR, declared before running): R² ≥ 0.7 with
+sell at own-history **p90** won (MAR 0.96); pe_max (never sell on
+valuation) was the worst column (MAR 0.75–0.76) — taking profits at the
+own-history ceiling beat holding forever, even in the dev bull market.
+
+| | total | CAGR | maxDD | MAR | buys | avg hold | vs controls |
+|---|---|---|---|---|---|---|---|
+| dev 2007–18 | +275.5% | +11.7% | −12.2% | 0.96 | 66 | 0.94y | beats 80.0% (median +242%) |
+| test 2019–26 | +125.8% | +11.3% | −24.2% | 0.47 | 53 | 0.67y | beats 88.5% (median +93%) |
+
+Context: T-bills +10.0% dev / +23.6% test; SPY +126% dev (maxDD −55%) /
++242% test (maxDD −34%). SPY is context, never the target: the system
+beat it in dev, lost to it in test.
+
+**Verdict: PASS on the pre-registered criteria** — CAGR far above
+T-bills with maxDD well under the universe's in both periods, and above
+the 75%-of-controls bar in both (80.0% and 88.5%). Held loosely per the
+statistical-reality section: the dev margin over the control bar is 5
+points of a 200-draw distribution, and both periods lean on the same
+survivorship-biased universe. What the controls do establish: ranking
+by straightest-line R² picks better steady giants than picking steady
+giants at random.
+
+Sell-rule contributions: pe_ceiling did the volume (45 dev / 37 test
+sells, mean +21% / +13% per trade), the LPPL certification sell was
+rare but the most profitable exit (10 dev / 8 test, mean **+26.5% /
++18.0%**) — selling a boring giant into its mania worked; div_cut fired
+3 times (dev, mean +3%). No delistings. One honest deviation from the
+spec's temperament: expected holding was "years", realised average is
+0.7–0.9y, because the p90 ceiling churns — the system is a valuation
+cycler in steady names, not a 20-year holder.
+
+### The KO answer (and PG/JNJ/COST)
+
+**The system never bought KO — or PG, JNJ, COST — in either period**,
+while holding exactly their genre (WEC, XEL, MCD, GIS, CHD, RSG, CTAS,
+AJG, ICE...). KO qualified in 165 of 199 decision months, and three
+blockers stacked:
+
+| | qualified | own-P/E too high | red light | slots full | outranked | best rank |
+|---|---|---|---|---|---|---|
+| KO dev | 73 | 39 | 6 | 28 | 0 | 8 (2013-08) |
+| KO test | 92 | 33 | 11 | 43 | 5 | 29 (2026-02) |
+| PG dev/test | 56 / 71 | 34 / 28 | 4 / 11 | 18 / 30 | 1 / 2 | 40 / 26 |
+| JNJ dev/test | 66 / 62 | 34 / 8 | 9 / 16 | 22 / 33 | 1 / 5 | 32 / 13 |
+| COST dev/test | 21 / 24 | 7 / 23 | 2 / 0 | 12 / 1 | 0 / 0 | 5 / 4 |
+
+In the whole test period there were exactly 5 months with a green
+light, a free slot, and KO eligible — and KO's R² (0.76–0.84) ranked
+37th–92nd against a slot cutoff of 0.93–0.97. On 2019-03-01, the first
+test decision with all 8 slots free, KO ranked 92 of 145 eligibles. So
+the answer to "would we have caught the KO rise Berkshire sat out" is
+**no**: through the 2019+ rise KO's P/E sat above its own p90 in a third
+of months (the do-not-buy-what-you'd-flag filter), and whenever it was
+buyable, dozens of straighter compounders outranked it for 8 slots. KO
+is a steady giant; it is never among the *straightest* 8. COST is the
+sharpest version: nearly always eligible-quality (best rank 4–5), but
+P/E-blocked in 23 of its 24 test qualifying months.
+
+Charts: `results/giants_dev.png`, `results/giants_test.png`; trades in
+`results/giants_{dev,test}_trades.csv`, summary `results/giants_summary.csv`.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
