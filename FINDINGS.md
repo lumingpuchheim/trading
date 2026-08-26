@@ -766,6 +766,33 @@ P/E-blocked in 23 of its 24 test qualifying months.
 Charts: `results/giants_dev.png`, `results/giants_test.png`; trades in
 `results/giants_{dev,test}_trades.csv`, summary `results/giants_summary.csv`.
 
+### Anti-bubble breadth gauge, V1 (2026-08-26 — rejected; the user called it)
+
+Mirror LPPL detector (constants inherited frozen; `lppl_anti_detect.py`):
+252,744 evaluations of decliners, 648 full anti verdicts (0.3%), probe
+0.00%. Gauge: daily fraction of certified (2-of-5, persistence 2)
+anti-bubbles vs trailing 756d 80th pct. Pre-registered claims: 2021-H2
+**0% hostile (FAIL — the motivating claim)**, 2020-crash 35% (FAIL),
+2022 78% (PASS), 2009-13 15% and 2023-25 13% (quiet claims PASS).
+
+- **Why 2021 was missed — the SMCI window-pollution mechanism, mirrored:**
+  the Feb-2021 peakers had fallen for 6-9 months by H2-2021, but their
+  250-500d windows still contained the 2020 ascent, so decay fits failed;
+  they certified only in 2022. The gauge structurally marks the SECOND
+  year of a speculative winter. Fast crashes (2020) never develop months
+  of structured decay at all. The user predicted this failure before the
+  run ("a trend can never be both bubble and antibubble ... i dont think
+  an antibubble can shield 2021").
+- Kill test: dev blocked −2.9% vs allowed +5.0% — the first gauge ever
+  to pass the dev-side audit — and test blocked +7.9% vs allowed +3.0%:
+  sign flip, blocking 2022's deep profitable dips. Eighth regime
+  formulation, eighth death; rejected per protocol.
+- V2 (stock-level anti-veto) is also weakened before testing: bubble
+  certification + anti pre-screen can only co-occur on violent rebounds
+  out of crashes — the strategy's best trades (2009, 2023) — so the veto
+  aims at the food by construction. Not run. V3 remains blocked on the
+  short handicaps; V4 blocked on survivorship data.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
