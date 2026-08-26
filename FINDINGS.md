@@ -208,6 +208,25 @@ With correlated regime-specific errors, no aggregation threshold works.
 Fifth and final mechanical regime formulation; the avenue is closed with
 this data.
 
+### Flagged-cohort ratio (tested 2026-08-26 — the decisive regime kill)
+
+Cohort = stocks flagged within the trailing 126 days (definitionally
+speculative, cannot rotate into defensives); gate hostile when the
+cohort/SPY ratio falls over 126 days. Stage-1 regime table: the best ever
+— 100% of the 2020 crash, **91% of 2021 H2 (first detector to catch the
+hidden top in seven attempts)**, 57% of 2022, instant reopening at the
+2009 bottom, 14% FP in 2009–13. And the trade-level audit still kills it:
+the trades it would block averaged **+5.8% (dev) / +4.9% (test)** versus
++2.4% / +3.2% for allowed ones — the gate blocks the BEST trades in both
+periods. Cause: 'flagged cohort falling' is the gate's hostile signature
+AND the strategy's food — dips in bubble stocks. At cohort level exactly
+as at stock level, a dip and a collapse are the same observable at
+decision time. Even a regime classifier that sees every bad regime
+transfers negative value, because hostile states and profitable states
+share their signature. Mechanical regime gating is closed — not for lack
+of detectors, but because the discrimination the gate needs is the same
+one the whole strategy is built on failing to make.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
