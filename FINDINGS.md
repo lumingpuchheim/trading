@@ -361,6 +361,21 @@ and the variant is mildly worse in BOTH periods (dev +129% t 2.62 vs
 The greed question is closed: the money after tc is ordinary drift, the
 blow-offs are not identifiable at tc, and the capital is better recycled.
 
+### Second-leg re-entry (2026-08-26, no-op — and why SMCI stays uncatchable)
+
+User theory confirmed mechanically: after a tc exit the old bubble
+pollutes the long windows, so second legs re-certify at only 1-of-5
+(SMCI Dec 2023 - Apr 2024: fresh fits, R2 0.96, new tc — always 1 vote).
+Baseline re-entries after tc exits are accordingly rare (5/140 dev,
+4/85 test; the test four averaged +29%). The targeted fix — accept
+1-of-5 for re-entry within 130 days of a tc exit — changes nothing:
+12 unique test entries at −2.3% avg; totals within ±2pp of baseline.
+SMCI itself was STILL not re-entered: its 1-vote evaluations were
+sporadic (pre-screen gaps) and the second leg went vertical without a
+4% dip inside a live flag window until the Feb-16 −20% break — i.e. the
+next buyable dip was the collapse. A dip-buyer cannot board a rocket
+that does not dip until it explodes. Not adopted; mechanism understood.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to

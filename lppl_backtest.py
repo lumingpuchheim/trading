@@ -184,7 +184,8 @@ def curve_consistent(a: dict, i: int, cfg: dict) -> bool:
 
 def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
                      cooldown: dict, pending: dict, cfg: dict,
-                     market_dip: np.ndarray) -> list[dict]:
+                     market_dip: np.ndarray,
+                     recent_tc: dict | None = None) -> list[dict]:
     if strategy.endswith('_guard') and market_dip[i]:
         return []  # guard 3: the market itself is dipping — systemic, stand aside
     out = []
@@ -202,6 +203,12 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
                 need_curve = strategy.endswith(('_guard', '_g1'))
                 if not need_curve or curve_consistent(a, i, cfg):
                     cand = {'fill_i': i + 1, 'tc_i': int(a['tc2'][i])}
+            elif strategy.endswith('_leg2') and recent_tc is not None \
+                    and i - recent_tc.get(t, -10**9) <= 130 \
+                    and a['b1'][i] and a['dip'][i] and a['tc1'][i] > i:
+                # second-leg re-entry: after a recent tc exit, the old bubble
+                # pollutes the long windows, so 1-of-5 corroboration suffices
+                cand = {'fill_i': i + 1, 'tc_i': int(a['tc1'][i])}
         elif strategy == 'lppl_dip1':
             if a['b1'][i] and a['dip'][i] and a['tc1'][i] > i:
                 cand = {'fill_i': i + 1, 'tc_i': int(a['tc1'][i])}
@@ -262,6 +269,7 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
     cash, eq_prev = START_EQUITY, START_EQUITY
     positions: dict[str, dict] = {}
     cooldown: dict[str, int] = {}
+    recent_tc: dict[str, int] = {}  # ticker -> day index of last tc exit
     pending: dict[str, dict] = {}
     trades: list[dict] = []
     equity = pd.Series(np.nan, index=days)
@@ -285,6 +293,8 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
             'days_held': i - pos['entry_i'],
             'ret_net': ret, 'exit_reason': reason})
         cooldown[t] = i + tr['reentry_cooldown']
+        if reason == 'tc':
+            recent_tc[t] = i
         return proceeds
 
     for d in days:
@@ -378,7 +388,8 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
         mult = 1.0 if size_mult is None else float(size_mult[i])
         if slots > 0 and mult > 0 and (entry_gate is None or entry_gate[i]):
             for c in candidates_today(arrays, i, strategy, positions, cooldown,
-                                      pending, cfg, panel['market_dip'])[:slots]:
+                                      pending, cfg, panel['market_dip'],
+                                      recent_tc)[:slots]:
                 c['mult'] = mult
                 pending[c['ticker']] = c
 
