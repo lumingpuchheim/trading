@@ -2,3 +2,8 @@
 data/
 __pycache__/
 .pytest_cache/
+
+# simulator runtime state (local account, not source)
+sim/sim.db
+sim/exports/
+data_live/

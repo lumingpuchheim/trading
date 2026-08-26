@@ -1,0 +1,47 @@
+# Paper-trading simulator constants (SIMULATOR_SPEC).
+# Verify the broker block against Comdirect's current
+# Preis-Leistungs-Verzeichnis before trusting absolute numbers.
+
+broker:
+  commission_base_eur: 4.90       # 4.90 EUR + 0.25% of volume ...
+  commission_pct: 0.0025
+  commission_min_eur: 9.90        # ... min 9.90 ...
+  commission_max_eur: 59.90       # ... max 59.90 (commission only)
+  venue_fee_eur: 2.50             # Handelsplatzentgelt, on top
+  cash_interest_pct: 0.0          # settlement account pays nothing
+
+tax:
+  abgeltungsteuer: 0.25
+  soli: 0.055                     # 5.5% OF the tax -> 26.375% effective
+  church_tax: 0.0                 # off by default
+  allowance_eur: 1000.0           # Sparer-Pauschbetrag per calendar year
+  etf_teilfreistellung: 0.30      # equity UCITS ETF partial exemption
+  us_withholding: 0.15            # US dividend withholding, credited
+  personal_rate: 0.42             # §23 private sales (gold under 1 year)
+  private_sale_freigrenze_eur: 1000.0   # threshold, not an allowance
+  private_sale_holding_days: 365
+
+instruments:
+  gold:
+    symbol: "4GLD.DE"             # Xetra-Gold: tax-free after 1 year
+    currency: EUR
+    asset_class: gold
+  sp500:
+    symbol: "SXR8.DE"             # S&P 500 UCITS ETF, EUR-quoted
+    currency: EUR
+    asset_class: etf_equity
+  fx_pair: "EURUSD=X"
+  default_stock_currency: USD     # recommended US names
+
+books:
+  default_start_capital_eur: 20000.0
+
+email:
+  enabled: false
+  smtp_host: ""
+  smtp_port: 587
+  smtp_user: ""
+  smtp_password_env: "SIM_SMTP_PASSWORD"
+  from_addr: ""
+  send_weekday: 6                 # 0=Mon .. 6=Sun
+  send_hour: 18

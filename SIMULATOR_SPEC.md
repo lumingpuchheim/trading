@@ -18,6 +18,13 @@ the registered address. Contents:
    Each recommendation is either **BUYABLE** or **BLOCKED** with the
    reason shown (market light red; P/E above own p90; already flagged
    as a bubble). Blocked names cannot be bought in the simulator.
+
+   **Every recommendation carries an explicit SOURCE label —
+   `LPPL_DIP2` or `STEADY_GIANTS`** — as its own column, with the two
+   systems listed in separate sections of the email. The label is
+   stored on the order, the lot and every transaction row, so a
+   position's origin stays visible for the life of the trade and each
+   system's realized P&L can be reported separately.
 2. **Bubble warnings** (lppl_mark logic, evaluated weekly, no
    pre-screen) for: every currently held stock, gold, and the S&P 500
    index. Vote count, stretch start date, median tc. Plus Steady-Giants
@@ -93,8 +100,19 @@ sale (FIFO lot matching, fees reduce the gain):
   configurable) if total private-sale gains exceed the 1,000 €
   Freigrenze; the GUI warns before an early gold sale.
 
-Tax is deducted from cash at each sale (like the real account); a
-year-end tax report per book is generated.
+**Dividends are paid into the book's cash.** On each payment date every
+held position is credited qty × dividend per share, converted at that
+day's FX rate, with US withholding and German tax applied as above;
+the payment appears in the transaction log as its own DIVIDEND row
+(gross, withheld, German tax, net) and is *not* reinvested
+automatically — the cash sits in the book until an order spends it.
+This makes the Steady-Giants dividend stream visible as the cash it
+actually is.
+
+Tax is deducted from cash at each sale (like the real account); §23
+private-sale tax on early gold sales is accrued and settled at year end
+(the Freigrenze needs the full-year total; the real payment happens
+with the annual return). A year-end tax report per book is generated.
 
 ## 6. Books — "different combinations"
 
