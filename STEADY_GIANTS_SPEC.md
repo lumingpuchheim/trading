@@ -33,6 +33,21 @@ T-bills. No leverage, no shorts.
      each report date (point-in-time safe).
   3. FRED DGS3MO (T-bill yield).
 
+## Total-return accounting (user requirement: dividends count)
+
+- Cached prices are downloaded with yfinance auto_adjust=True: they are
+  TOTAL-RETURN series with dividends baked in. Equity curves computed
+  from them therefore already include reinvested dividends; dividend
+  cash is never added separately (that would double count).
+- **P/E must NOT use adjusted prices**: dividend adjustment shrinks past
+  prices with a drift that fades toward today, which would mechanically
+  push measured P/E upward over time and spuriously trigger the
+  own-history ceiling for exactly the best payers. Nominal prices are
+  reconstructed from the adjusted series and the fetched dividend
+  history (invert the back-adjustment factor ex-date by ex-date);
+  all P/E ratios use nominal price over reported trailing EPS.
+- Cash earns the 3M T-bill yield with daily accrual, as above.
+
 ## Qualification: what is a steady giant?
 
 Computed monthly, trailing windows only. A stock QUALIFIES when all hold:
