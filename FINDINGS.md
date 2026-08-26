@@ -515,6 +515,61 @@ human macro judgment) watch the wrong object; cohort breadth — e.g. the
 model's own daily flag/pre-screen count — is the relevant weather gauge,
 noted here as an observation, not an adopted rule.
 
+### The anatomy of being right (2026-08-26 descriptive study, no changes)
+
+`lppl_study.py` — six-section diagnosis on cached data. Findings, in
+order of how firmly the data supports them:
+
+1. **The model is a tail harvester.** Median trade is NEGATIVE in both
+   periods (−6.8% dev, −8.3% test); win rates 42%/34%. The top 10% of
+   trades carry 60%/77% of gross wins; in test the top FIVE trades carry
+   a third. Stops average −10.1%/−11.0% (8% nominal plus gap slippage;
+   7/9 fills below −15%), median loser gone in 20–25 days; tc exits
+   average +18.7%/+30.0% over ~4.5-month holds. "Right" means catching a
+   handful of monsters per period; everything else pays the entry fee.
+2. **The home regime is consistent across both periods** (the cleanest
+   conditional pattern in the project): entries while SPY > 200d SMA
+   with 20d vol below its 756d 90th pct average +4.5%/+4.8% per trade
+   (~2/3 of all trades, ~all of the profit); every other market state
+   averages ≈ 0. Matches volhalt_B/S1 from the gating side.
+3. **The flag is an acceleration marker, not a top marker.** Median
+   episode is a 10-trading-day flicker (2 evaluations). The actual price
+   peak comes a median 87/75 trading days after episode start, and
+   85%/82% of peaks occur AFTER the flag has already lapsed.
+4. **tc is an unbiased but coarse clock**: median (tc estimate − actual
+   peak) = +7/+13 trading days, IQR roughly ±50. The exit clock works
+   because its median is honest and its patience window matches its
+   ±2.5-month noise — quantifying the earlier "months-scale" claim.
+5. **Certification carries thin cross-sectional content** (controlled
+   test, ~56k/52k control days): vs 0-vote accelerating-run-up controls,
+   flagged days show ~zero median 60/120d excess-vs-SPY return in dev,
+   and monotonically WORSE outcomes with votes in test (3–5 votes:
+   −4.5% median 60d excess, 120d crash rate 17.9% vs 14.3%). The LPPL
+   curve does not predict returns; the strategy's edge lives in trade
+   construction (dip entry, asymmetric exits, tc patience) inside the
+   momentum habitat. Caveat: dip_only (no gate — but also no tc clock)
+   collapsed in dev, so the gate's candidate selection + clock supply is
+   load-bearing there, just not separable from the exit it enables.
+6. **Breadth level is NOT the weather gauge.** High-flag years split
+   evenly (2013, 2024 good; 2014, 2017, 2018, 2021 bad) and low-flag
+   years contain both the best (2009, 2023) and the worst (2008, 2020,
+   2022) years. The earlier cohort-breadth observation fails in its
+   simplest (level) form; trade count is decoupled from breadth by the
+   slot cap. Episode-level crash rates (180d post-peak drawdown ≤ −30%:
+   29% dev, 45% test) are description only — no matched episode control.
+
+Non-result: entry order within episodes cannot be studied — 294/295 dev
+trades are first entries (cooldown + tc exits preclude re-entry, as the
+once-rule already showed).
+
+External data worth acquiring, in priority order: (1) point-in-time
+index membership — survivorship bias touches every number here; (2)
+earnings-announcement dates — are the −15%+ stop fills earnings nights?;
+(3) short interest / borrow fees — crowding as episode-crash
+discriminator; (4) options IV/skew — speculative-cohort health, the 2021
+blind spot; (5) real-rate levels (weak prior after the policy-label
+failure).
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
