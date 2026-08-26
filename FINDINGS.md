@@ -266,6 +266,21 @@ best-matched external variable does not explain the instability; the
 flips are period-specific beyond the policy label. (Caveats: n=47–191
 per cell; crude last-move label.)
 
+### Sector-based growth cohort (2026-08-26 — external candidate #3, the purest flip yet)
+
+Fixed-membership cohort by GICS classification (IT + Comm Services +
+Cons Discretionary + Health Care, 593 tickers, no rotation), equal-weight
+vs SPY, 126d slope. It IS the 2021 detector: 84% of 2021 H2 hostile with
+only 12% false positives in 2009-13. And the trade audit is the exact
+mirror of every predecessor: in dev the gate finally WORKS (blocked
+trades -0.3% vs allowed +4.7%) — the first favorable dev audit of any
+gate — and in test it blocks the BEST trades (+6.0% blocked vs +2.0%
+allowed), because equal-weight growth lagged the Mag7-driven cap-weighted
+SPY through 2023-25, marking the AI boom hostile (63%). A gate that
+passes dev and fails test: under our own protocol it would have been
+adopted and would have failed live. The strongest single exhibit of
+non-stationarity in the project.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
