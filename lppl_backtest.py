@@ -199,7 +199,8 @@ def candidates_today(arrays: dict, i: int, strategy: str, positions: dict,
         elif strategy.startswith('lppl_dip2'):  # variants share the entry
             dip_col = 'dip_band' if strategy.endswith(('_band', '_bb')) else 'dip'
             if a['b2'][i] and a[dip_col][i] and a['tc2'][i] > i:
-                if not strategy.endswith('_guard') or curve_consistent(a, i, cfg):
+                need_curve = strategy.endswith(('_guard', '_g1'))
+                if not need_curve or curve_consistent(a, i, cfg):
                     cand = {'fill_i': i + 1, 'tc_i': int(a['tc2'][i])}
         elif strategy == 'lppl_dip1':
             if a['b1'][i] and a['dip'][i] and a['tc1'][i] > i:

@@ -281,6 +281,27 @@ passes dev and fails test: under our own protocol it would have been
 adopted and would have failed live. The strongest single exhibit of
 non-stationarity in the project.
 
+### The 2020 blunders, decomposed (2026-08-26)
+
+Baseline 2020: pre-crash late-bubble buys (5 trades, sum −0.53) — no
+signal was hostile yet, ex-ante indistinguishable; crash-window buys
+Feb 20–Mar 23 (15 trades, sum −1.45 ≈ −14.5% of equity at 10% sizing) —
+THE blunder; gap-amplified stops (worst fill −24.6% vs 8% nominal);
+rebound absence (only 7 entries Mar 24–Aug 31, +7.1% avg — flags need
+months of new run-up to re-form, so the model missed most of the
+strongest rally in a decade by construction).
+
+Mitigations measured: soft-vote sizing cut the crash-window equity hit
+roughly in half (−14.5% → −7.6%; 8 of 15 entries sized at 0.25x) at a
+cost of ~10% of total profit per period — the only 2020 fix consistent
+in both periods. Curve-guard alone (_g1, newly isolated): barely catches
+the crash (sum −1.12 vs −1.45) and costs heavily in both periods (dev
++110% vs +154%, test +36% vs +86%) — in the earlier guards round the
+market-dip gate, not the curve check, was doing the catching. Rejected.
+Verdict: about half of 2020's crash damage is avoidable by sizing;
+the rest (onset buys, gap slippage, rebound lag) is the strategy's
+nature, not an implementation error.
+
 **Running tally: every modification attempted on lppl_dip2 — vote gates
 (1/3-of-5), short mirror, curve-timed entry, Kelly sizing, trailing/SMA
 exits, tc shifts, crash guards, dip ceiling, breadth veto — has failed to
