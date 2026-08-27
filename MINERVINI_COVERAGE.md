@@ -84,7 +84,10 @@ Status key: **YES** built and tested · **PART** partly built ·
 | **stop under the final contraction's low** | **NO** | he uses this structurally alongside the percentage rule |
 | **reward:risk floor before entering** | **NO** | he refuses trades whose stop distance is not justified by the potential gain |
 | **selling into strength / planned partial profits** | **NO** | our spec says winners run, no target |
-| back-stop / breakeven stop raising | NO | not built |
+| back-stop / breakeven stop raising | PART | v3 `breakeven_r`: a +2R winner may not become a loss |
+| **tennis-ball action / post-entry health read** | **NO** | his hold-through-the-shakeout mechanism (dips of 2-10 days that recover to new highs = accumulation, hold; sag without recovery = sell). Specified in spec section 10.1, not built |
+| relative strength during market weakness (falls least, bounces first) | NO | specified in spec 10.2, not built |
+| RS line new high before price ("anticipating leadership") | NO | specified in spec 10.2, not built |
 | time-based exit | n/a | he does not use one; neither do we |
 
 ## Portfolio, universe and money management

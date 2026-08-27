@@ -304,6 +304,104 @@ chase guard, 8% stop, slots, costs, cooldown, controls — unchanged from
 v2. The 8% stop still caps every loss; rule 3 only removes the
 hair-trigger, it does not widen the risk.
 
+## 10. The four missing pillars, specified (v4 candidates — NOT implemented)
+
+Written 2026-08-27 after the paired exit measurement. Plain language
+first, mechanics second. Nothing here is built; every constant is a
+proposal awaiting approval, and one caveat governs all of it: **both
+backtest periods have been seen. Any v4 number computed on this history
+is post-hoc by construction. The honest judge for these changes is the
+simulator's forward paper ledger, not another backtest.**
+
+Ranked by measured importance:
+
+### 10.1 Exit philosophy — hold through the shakeout (biggest measured gap)
+
+**Plain language.** Today the system sells whenever the price wobbles
+below an average line. The measurement says that is the single biggest
+destroyer: the same entries, simply left alone for 60 days, win 60-76%
+of the time; through our exits they win 19-28%. Minervini does the
+opposite of us: he decides in advance how much he is willing to lose
+(the stop), and between the stop and his profit targets he deliberately
+sits through noise — including the scary dip right after buying.
+
+**His own words for the mechanism we lack — "Tennis Ball Action"**
+(raised by the user; verified from his posts, so this is primary
+source): *"Stocks under strong institutional accumulation almost always
+find support during the first few pullbacks... Tennis ball action will
+generally occur after two to five days or even one to two weeks of
+pullback, followed by the stock bouncing back up again, taking out the
+most recent highs... Does it come bouncing back like a tennis ball or
+splat like an egg? The best stocks rebound the fastest. Once I buy a
+stock, if it displays tennis ball action, I will probably hold it
+longer."* In plain terms: a fresh buy that dips for up to two weeks and
+then jumps back to new highs has just PROVEN there are big buyers
+underneath — that dip is a reason to hold, not to sell. A stock that
+sags and cannot recover is the one to get rid of. Our current exits
+sell the tennis balls at the bottom of their first bounce. He also
+reads post-entry health from: more up days than down days, more strong
+closes than weak ones, bigger volume on up days than down days
+("squat" and "reversal recovery" are his names for a stalled breakout
+that undercuts briefly and recovers within 1-4 days — healthy).
+
+**Proposed mechanics (constants frozen on approval):**
+- Keep the 8% stop. It is his number and it caps every disaster.
+- DELETE the SMA50 exit for the first 15 trading days after entry.
+  During that window only the stop can sell. This is the tennis-ball
+  tolerance: dips of days-to-two-weeks are expected, not punished.
+- Tennis-ball test at day 15: if the stock has taken out its
+  post-entry high at any point after a pullback, it is a tennis ball —
+  switch to trend mode (decisive SMA50 break as in v3, breakeven-at-2R
+  as in v3). If it sits below the entry price and has never recovered
+  its post-entry high, it is an egg — sell at the next open.
+- Sell into strength: sell HALF at +20% (his stated winner range is
+  20-30%), let the rest run under the trend rule.
+
+### 10.2 Selection — rank the candidates, stop taking them alphabetically
+
+**Plain language.** He passes on most qualifying setups; we take every
+one in alphabetical order until the slots fill, which is a coin-flip
+disguised as a rule. The controls beating us say our entry choice adds
+negative value against random. What he selects FOR is strength in the
+precise sense the user read about: the stocks that fall least when the
+market falls, that bounce first when it turns, whose
+performance-vs-index line hits new highs BEFORE the price does
+("anticipating leadership" — institutions accumulating quietly), with
+RS ratings 90+ at the start of big moves, in leading industry groups.
+
+**Proposed mechanics, all computable from cached data except the last:**
+- rank candidates by RS percentile (we gate at top 30%; rank inside it,
+  prefer the 90th+ percentile),
+- holds-up-when-weak score: the stock's average return on the SPY
+  down-days inside its own base (higher = leader),
+- RS-line-new-high flag: stock/SPY ratio at a 52-week high on the setup
+  day while price is still below the pivot,
+- industry-group strength needs a sector table we do not cache —
+  buildable, small data acquisition.
+- Slots fill from the top of this ranking. (Declared: an RS ranking
+  failed OOS once in the LPPL system as slot priority; this is a
+  different system and the claim will be judged on the forward ledger,
+  not asserted.)
+
+### 10.3 Universe — fish where he fishes
+
+**Plain language.** Our list is today's S&P 1500: big, established
+survivors. His hunting ground is young small/mid caps and recent IPOs —
+names that join an index years AFTER the move he trades, or never. No
+rule change fixes this; it needs point-in-time constituent and IPO
+data, which costs money. Until then every result here carries this
+asterisk.
+
+### 10.4 Sizing and progressive exposure — LAST, and only after the sign flips
+
+**Plain language.** Betting bigger on a losing average trade just loses
+faster, so this pillar is meaningless until 10.1-10.3 produce a
+positive average on the forward ledger. Once (if) they do, his
+structure: risk 1.25-2.5% of the account per trade, concentrate in
+20-25% positions when trades are working, pyramid into winners, cut
+size in half after a losing streak — exposure follows results, in both
+directions.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)
