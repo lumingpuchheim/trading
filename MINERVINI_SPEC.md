@@ -295,6 +295,54 @@ Points 2, 3 and 4 are mine and were avoidable with the data in hand.
 Points 1, 5 and 7 are data limitations. Point 6 is a modelling choice.
 Any future version should fix 2-4 before another number is generated.
 
+
+### Source verification of the claims above (checked 2026-08-27)
+
+The user asked for proof that my characterisation of the method is what
+the source actually says, not my paraphrase. Each load-bearing claim was
+checked against public sources. Caveat first: the books are the primary
+source and are not readable here, so all of this is secondary — screener
+documentation, book summaries, and one direct book quotation.
+
+**Confirmed — these drove the conclusions and they hold:**
+
+| claim | status |
+|---|---|
+| Code 33 = three quarters of acceleration in earnings, sales AND profit margins | **confirmed**, direct book quote: "Look for what I call a Code 33 Situation, three quarters of acceleration in earnings, sales and profit margins" |
+| the 20-25% growth test is QUARTERLY year-on-year, not TTM | **confirmed** — "year-over-year quarterly comparisons", 20%+ minimum, 40-50%+ exceptional |
+| "acceleration" means increasing, not flat | **confirmed** — "sequential increases in the growth rate (e.g. 10%, then 30%, then 50%)" |
+| sales growth >15%, margins expanding, as separate legs | confirmed |
+| never chase more than ~5% above the pivot | **confirmed** — "the entry should be the pivot, not several percent above it"; within ~5% |
+| bases run 3-65 weeks | confirmed |
+| pivot = high of the final contraction | confirmed |
+| dry-up = the lowest-volume DAYS sit in the final contraction | confirmed |
+| in cash ~50% of an average year; win rate under 50% | confirmed |
+
+**Corrections to statements I made to the user earlier:**
+
+1. **Breakout volume.** I said the source asks for "roughly 1.3-1.4x
+   (30-40% above average)". A direct screener source states **40-50%
+   above average**, i.e. 1.4-1.5x; other secondary sources say 30-40%.
+   Our frozen 1.5x is therefore at the strict end of a range that varies
+   by source, not above it — it is faithful. (The SPHR conclusion is
+   unaffected: its breakouts printed 0.50x and 0.75x, *below* average, so
+   no threshold anywhere in that range admits them.)
+2. **Stop placement.** I implied our fixed 8%-from-entry stop was
+   unfaithful. Sources describe him using **both** — structurally "just
+   below the low of the last contraction" **and** a 5-8% rule from
+   entry, with an average realised loss of 4-5% and a 10% maximum. Our
+   8% number is inside his stated range. What we actually lack is the
+   structural leg and the reward:risk floor before entry — a
+   simplification, not a contradiction. The earlier framing overstated it.
+3. **Loss-to-profit turnarounds.** I asserted he "explicitly likes"
+   them. **I could not find a source for that.** Retracted as
+   unverified. Excluding them therefore remains a limitation of the
+   implementation, but it is not a documented deviation from him.
+
+Everything in the fundamentals faithfulness audit above stands after this
+check, with deviation 4 (turnarounds) downgraded from "deviation" to
+"unverified".
+
 ### Results (full detail in FINDINGS.md)
 
 Acceptance gate: **FAIL** — SPHR 0 triggers, SMCI 0 triggers. Per section
