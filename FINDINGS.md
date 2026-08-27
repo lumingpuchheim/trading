@@ -1143,6 +1143,51 @@ carry information the price screen misses (right sign, right place — the
 fat winners), which is an argument for a wider universe and a cheaper
 technical filter, not for stacking this gate on this base.
 
+
+
+#### Correction to the above (same day, after a user challenge)
+
+The claim "unusable: it leaves 10 trades" conflated two different
+things and one half of it is wrong.
+
+**Rarity is not the defect.** Minervini is in cash roughly 50% of an
+average year and is deliberately selective; a signal that fires rarely
+is his design, not a broken rendering. Ten trades is fatal to
+*inference* (nothing can be concluded from n=5 per period) but it is not
+by itself fatal to *trading*.
+
+**The portfolio returned ~0 because it was never invested.** Average
+exposure with the fundamentals gate on: **0.28% (dev) and 0.45% (test)**.
+Ten slots at 10% each, five trades spread over twelve years — the
+account sat 99.7% in cash. A concentrated book of five high-conviction
+positions is a completely different object from five 10% slots in a
+mostly-idle ten-slot frame. Our portfolio layer cannot express his.
+
+**And the ten trades themselves were bad in a specific, mechanical way.**
+Nine losers, one +0.5% winner — but look at how they died:
+
+| | |
+|---|---|
+| exits by `sma` (close under the 50-day average) | **10 of 10** |
+| exits by the 8% stop | **0 of 10** |
+| loss range | -0.2% to -7.3% |
+| days held | 2, 4, 4, 5, 13, 21, 22, 30, 33, 35 |
+
+Not one trade ever fell 8%. They were all shaken out by the trend-death
+rule instead, four of them within a week. That is the predictable
+consequence of buying a breakout out of a *tight* base: the 50-day
+average sits a few percent under the entry, so the exit is a hair
+trigger on ordinary noise. The source method puts the stop under the
+final contraction's low and demands a reward:risk floor before entering
+— we implemented neither, and `LIMITATIONS.md` already listed both as
+not mechanised.
+
+So the fundamentals verdict stands as "no measurable improvement, and
+untestable at this sample size", but the -1.7% figures say nothing about
+fundamentals at all. They are an artifact of an exit rule that cuts
+every trade off at the knees and a sizing frame that leaves the capital
+idle. Both are pre-registered and neither was touched; changing either
+is a new pre-registration, not a fix to this one.
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
