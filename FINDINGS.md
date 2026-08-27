@@ -1591,6 +1591,41 @@ optimum. The user's proposed 20% default is NOT adopted on this
 evidence; 10% stands. A size scan on burned data was always going to be
 read-the-noise; recorded because ordered, weighted accordingly.
 
+### THE REAL-MONEY RUN: Comdirect fees + German tax, one continuous path (2026-08-27)
+
+`minervini_live_sim.py` — v5r through the simulator's actual engines:
+order fee 4.90 EUR + 0.25% clamped [9.90, 59.90] plus 2.50 venue fee
+(an ABSOLUTE charge, not the research backtest's flat 0.2%), and
+26.375% withheld on realised gains with the Aktien-Topf carry-forward
+and the 1,000 EUR yearly allowance. No dev/test split — one compounding
+path 2005-2026. Prices treated as EUR-equivalent; no FX leg, so this is
+still a best case. Bet size: flat 10% slots (user decision, reaffirmed).
+
+| book | total | CAGR | maxDD | trades | fees paid | tax paid | fees as % of GROSS profit | final |
+|---|---|---|---|---|---|---|---|---|
+| 20,000 EUR | **-10%** | -0.0% | -50% | 1,603 | **36,945 EUR** | 110 | **105%** | 18,097 EUR |
+| 100,000 EUR | +201% | +5.4% | -30% | 1,595 | 129,879 EUR | 75,326 | 32% | 301,123 EUR |
+| SPY, same span | **+844%** | **+11.0%** | — | 1 | ~0 | deferred | ~0% | — |
+
+**The 20,000 EUR book pays 105% of its gross profit in commissions** —
+the strategy earns money and hands all of it, plus a little more, to the
+broker. 1,603 round trips at ~12.40 EUR each on 2,000 EUR positions is
+0.62% per side, three times the 0.2% every research number in this file
+assumed. Tax is almost irrelevant there (110 EUR) because there were no
+net gains left to tax.
+
+The 100,000 EUR book survives the fee drag (0.32% per side) and
+compounds at 5.4%/yr — **half of SPY's 10.95%, with a 30% drawdown**.
+Annual series: losing years in 2007, 2010-12, 2015-16, 2019, 2022-23,
+2026; the whole result rests on 2013 (+43%), 2017 (+32%), 2020 (+34%),
+2021 (+21%).
+
+**Consequence for the whole Minervini line:** every prior number in this
+section was computed at a cost assumption the user's actual broker does
+not offer. At real fees the strategy is uninvestable below roughly
+100,000 EUR and merely mediocre above it. This supersedes the "worth a
+forward ledger" note: there is nothing to track.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the

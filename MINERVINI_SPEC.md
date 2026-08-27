@@ -501,6 +501,13 @@ Ablation verdicts, recorded permanently:
   percentile in both. It repairs a measured leak (63% of day-15 "eggs"
   recover) without touching anything else.
 
+**Bet size: FLAT 10% slots, final (user decision 2026-08-27).** The
+scan (5/10/15/20/25/33%) showed 20% worse than 10% in BOTH periods and a
+non-monotonic, variance-driven pattern overall; no size optimum exists in
+this data. 10% at an 8% stop is ~0.8% account risk per trade — below
+Minervini's own 1.25% floor, the correct posture for a system without
+his entry precision or judgement.
+
 **Standing configuration `v5r` = --v5 --e3** (repertoire, tennis-ball
 exits, strength ranking, flat 10% slots, binary light, 5-day re-entry
 after non-stop exits).
