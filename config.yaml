@@ -132,6 +132,20 @@ minervini_v4:                     # §10.1 + 10.2 overlay, applied by --v4 — F
   rank_selection: true            # slots fill by (RS-line-at-high, holds-up-when-
                                   # weak score, RS return), not alphabetically
 
+minervini_v5:                     # §11 repertoire, applied by --v5 — FROZEN
+  cheat_pause_days: 10            # pause ceiling = highest close of prior 10d
+  cheat_tight: 0.05               # last 5 closes within 5%
+  cheat_max_chase: 1.05           # close <= 1.05 x the pause ceiling
+  pb_high_window: 60              # pullback: a 60d-high close ...
+  pb_recent_days: 10              # ... within the last 10 days
+  pb_ma: 20                       # ... tagging the SMA20
+  pb_touch: 1.005                 # low <= 1.005 x SMA20, close >= SMA20
+  pp_double: 2.0                  # power play: 2x in 40 trading days
+  pp_lookback: 40
+  pp_flag_min: 10                 # flag length 10-30 days ...
+  pp_flag_max: 30
+  pp_max_corr: 0.20               # ... correcting no more than 20%
+
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2
   stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
   sma_exit: 50                    # close < SMA50 (trend death) -> sell next open

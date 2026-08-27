@@ -424,3 +424,74 @@ def weak_day_score(close: np.ndarray, spy_close: np.ndarray,
         if n > 0:
             out[i] = (cs[i] - cs[a]) / n
     return out
+
+
+def repertoire(bars: dict, cfg: dict, setup: np.ndarray, pivot: np.ndarray,
+               tmpl: np.ndarray, blackout_clear: np.ndarray | None = None) -> dict:
+    """The v5 entries (MINERVINI_SPEC.md section 11): cheat, pullback to
+    the 20-day, power play. Returns per-day trigger booleans (MOC fills at
+    that day's close) and a label array. The pivot breakout stays in
+    `signals`."""
+    m5 = cfg['minervini_v5']
+    m = cfg['minervini']
+    close = np.asarray(bars['close'], dtype=float)
+    low = np.asarray(bars['low'], dtype=float) if 'low' in bars \
+        else np.asarray(bars['open'], dtype=float)   # caller supplies low
+    volume = np.asarray(bars['volume'], dtype=float)
+    n = len(close)
+    c = pd.Series(close)
+    v_long = pd.Series(volume).rolling(m['dryup_long']).mean().to_numpy()
+    vol_ok = volume >= m['breakout_volume_mult'] * v_long
+    clear = np.ones(n, bool) if blackout_clear is None else blackout_clear
+
+    trig = np.zeros(n, bool)
+    label = np.zeros(n, dtype=np.int8)          # 1 cheat, 2 pullback, 3 power
+
+    # cheat: yesterday a setup; today crosses the 10d pause ceiling < P
+    ceil10 = c.rolling(m5['cheat_pause_days']).max().shift(1).to_numpy()
+    r5 = (c.rolling(5).max() / c.rolling(5).min() - 1.0).shift(1).to_numpy()
+    prev_setup = np.concatenate(([False], setup[:-1]))
+    prev_pivot = np.concatenate(([np.nan], pivot[:-1]))
+    cheat = (prev_setup & np.isfinite(ceil10) & (ceil10 < prev_pivot)
+             & (r5 <= m5['cheat_tight']) & (close > ceil10)
+             & (close <= m5['cheat_max_chase'] * ceil10) & vol_ok & clear)
+
+    # pullback to the SMA20 after a fresh 60d-high close
+    sma20 = c.rolling(m5['pb_ma']).mean().to_numpy()
+    hi60 = c.rolling(m5['pb_high_window']).max().to_numpy()
+    new60 = np.isfinite(hi60) & (close >= hi60 - 1e-12)
+    recent = pd.Series(new60).rolling(m5['pb_recent_days']).max().shift(1) \
+        .fillna(0).to_numpy().astype(bool)
+    pull = (tmpl & recent & np.isfinite(sma20)
+            & (low <= m5['pb_touch'] * sma20) & (close >= sma20) & clear)
+
+    # power play: doubled 10-40d ago, tight flag, breaks the flag high
+    dbl = np.zeros(n, bool)
+    lb = m5['pp_lookback']
+    with np.errstate(invalid='ignore'):
+        dbl[lb:] = close[lb:] / close[:-lb] >= m5['pp_double']
+    power = np.zeros(n, bool)
+    for i in np.flatnonzero(tmpl & vol_ok & clear):
+        i = int(i)
+        if i < m5['pp_flag_max'] + 1:
+            continue
+        ps = np.flatnonzero(dbl[max(0, i - lb):i - m5['pp_flag_min'] + 1])
+        if not len(ps):
+            continue
+        p0 = max(0, i - lb) + int(ps[-1])
+        flag = close[p0:i]
+        if len(flag) < m5['pp_flag_min'] or len(flag) > m5['pp_flag_max']:
+            continue
+        h = float(np.nanmax(flag))
+        if np.nanmin(flag) >= (1 - m5['pp_max_corr']) * h and close[i] > h:
+            power[i] = True
+
+    for arr, code in ((cheat, 1), (pull, 2), (power, 3)):
+        fresh = arr & ~trig
+        trig |= fresh
+        label[fresh] = code
+    # names worth a next-day order: base setups arm the cheat; a fresh
+    # 60d high arms the pullback; a recent doubling arms the power play
+    dbl_any = pd.Series(dbl).rolling(lb).max().fillna(0).to_numpy().astype(bool)
+    armed = (tmpl & recent) | (tmpl & dbl_any) | setup
+    return {'trigger': trig, 'label': label, 'armed': armed}

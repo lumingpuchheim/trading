@@ -402,6 +402,35 @@ structure: risk 1.25-2.5% of the account per trade, concentrate in
 size in half after a losing streak — exposure follows results, in both
 directions.
 
+## 11. v5 — the full entry repertoire (pre-registered 2026-08-27)
+
+User instruction: the repertoire was never specified; specify and build
+all of it. Constants frozen here before any run. Post-hoc caveat as in
+sections 9-10: both periods are burned; numbers are behaviour
+description. All entries share the v4 context: trend template,
+liquidity, market light, earnings blackout, MOC fill, tennis-ball
+exits, strength ranking, shared slots and cooldown.
+
+1. **Pivot breakout** — built (v3/v4). Unchanged.
+2. **Cheat (early entry inside the base).** Yesterday was a setup day
+   (valid base, price under the pivot P). The pause ceiling C = the
+   highest close of the prior 10 days, required strictly below P, with
+   the last 5 closes in a <= 5% range (the pause). Trigger: today's
+   close crosses C on >= 1.5x the 50-day volume, close <= 1.05 x C.
+   The low-cheat/cheat/handle distinction by height in the base is NOT
+   separately mechanised — one `cheat` label, declared.
+3. **Pullback to the 20-day line.** The stock printed a 60-day-high
+   close within the last 10 days; today's low touches the SMA20
+   (low <= 1.005 x SMA20) and the close holds it (close >= SMA20).
+   Quiet volume acceptable — pullbacks are quiet by nature. Label
+   `pullback`.
+4. **Power play.** Some day p in the last 10-40 days closed at >= 2.0x
+   its close 40 trading days earlier (the doubling). Since then: a flag
+   of 10-30 days whose lowest close stays >= 0.80 x the flag high H.
+   Trigger: today's close crosses H on >= 1.5x volume. No base, no
+   contraction, no dry-up required — velocity is the signal. Label
+   `power_play`.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)

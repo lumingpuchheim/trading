@@ -36,8 +36,9 @@ import numpy as np
 import pandas as pd
 
 from lppl_backtest import ROOT, load_config, metrics
-from minervini import (beat_gate, eps_gate, report_within, rs_line_at_high,
-                       rs_ok_matrix, rs_return, signals, weak_day_score)
+from minervini import (beat_gate, eps_gate, repertoire, report_within,
+                       rs_line_at_high, rs_ok_matrix, rs_return, signals,
+                       weak_day_score)
 
 START_EQUITY = 100_000.0
 PANEL_CACHE = 'minervini_panel_v2.npz'
@@ -70,6 +71,13 @@ def apply_v3(cfg: dict) -> dict:
     return cfg
 
 
+def apply_v5(cfg: dict) -> dict:
+    """v5 = v4 context + the section-11 entry repertoire."""
+    cfg = apply_v4(cfg)
+    cfg['minervini_trading']['repertoire'] = True
+    return cfg
+
+
 def apply_v4(cfg: dict) -> dict:
     """Overlay the frozen section-10 constants on top of v3."""
     cfg = apply_v3(cfg)
@@ -82,7 +90,7 @@ def apply_v4(cfg: dict) -> dict:
 
 def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                 beat: bool = False, v3: bool = False,
-                v4: bool = False) -> dict:
+                v4: bool = False, v5: bool = False) -> dict:
     """Per-day signal matrices (days x tickers) on the SPY calendar.
 
     fund=True additionally requires the SEPA pillar-2 EPS gate (spec
@@ -90,7 +98,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
     way, so the comparison isolates the fundamentals filter alone."""
     d = cfg['data']
     data_dir = ROOT / d['cache_dir']
-    cache = data_dir / (PANEL_CACHE_V4 if v4 else PANEL_CACHE_V3 if v3 else
+    cache = data_dir / ('minervini_panel_v5.npz' if v5 else
+                        PANEL_CACHE_V4 if v4 else PANEL_CACHE_V3 if v3 else
                         ((PANEL_CACHE_BOTH if fund else PANEL_CACHE_BEAT) if beat
                          else (PANEL_CACHE_FUND if fund else PANEL_CACHE)))
     spy = pd.read_parquet(data_dir / 'ohlcv' / f"{d['benchmark']}.parquet")
@@ -107,6 +116,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         n, k = len(cal), len(tickers)
         op = np.full((n, k), np.nan)
         hi = np.full((n, k), np.nan)
+        lo = np.full((n, k), np.nan)
         cl = np.full((n, k), np.nan)
         vol = np.full((n, k), np.nan)
         liquid = np.zeros((n, k), bool)
@@ -124,6 +134,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                             & (dvol > d['min_dollar_volume'])).to_numpy()
             op[:, j] = raw['open'].to_numpy()
             hi[:, j] = raw['high'].to_numpy()
+            lo[:, j] = raw['low'].to_numpy()
             cl[:, j] = c.ffill().to_numpy()
             vol[:, j] = raw['volume'].ffill().to_numpy()
 
@@ -171,14 +182,17 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         volx = np.full((n, k), np.nan)
         rsl_hi = np.zeros((n, k), bool)
         weak = np.full((n, k), np.nan)
+        rep_label = np.zeros((n, k), dtype=np.int8)
+        watch = np.zeros((n, k), bool)
         spy_np = spy['close'].to_numpy()
         for j in range(k):
             bars = {'open': op[:, j], 'high': hi[:, j], 'close': cl[:, j],
                     'volume': vol[:, j]}
             s = signals(bars, cfg, rs_ok=rs_ok[:, j], liquid=liquid[:, j])
-            if v4:
+            if v4 or v5:
                 rsl_hi[:, j] = rs_line_at_high(cl[:, j], spy_np)
                 weak[:, j] = weak_day_score(cl[:, j], spy_np, s['base_age'])
+
             template[:, j] = s['template'] & liquid[:, j]
             trigger_moc[:, j] = s['trigger_moc']
             fill_moc[:, j] = s['fill_moc']
@@ -191,6 +205,15 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                 cfg['minervini_trading']['sma_exit']).mean().to_numpy()
             volx[:, j] = vol[:, j] / pd.Series(vol[:, j]).rolling(
                 cfg['minervini']['dryup_long']).mean().to_numpy()
+            if v5:
+                rep = repertoire({'close': cl[:, j], 'low': lo[:, j],
+                                  'open': op[:, j], 'volume': vol[:, j]},
+                                 cfg, s['setup'], s['pivot'], s['template'])
+                extra = rep['trigger'] & ~trigger_moc[:, j]
+                trigger_moc[:, j] |= extra
+                fill_moc[extra, j] = cl[extra, j]
+                rep_label[:, j] = rep['label']
+                watch[:, j] = rep['armed'] | s['setup']
 
         blackout_days = cfg['minervini'].get('earnings_blackout_days', 0)
         if blackout_days:
@@ -205,6 +228,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                     continue
                 clear = ~report_within(rd, cal, blackout_days)
                 setup[:, j] &= clear
+                watch[:, j] &= clear
                 # entry days answer to the PREVIOUS day's setup verdict
                 trigger[1:, j] &= clear[:-1]
                 trigger_moc[1:, j] &= clear[:-1]
@@ -216,7 +240,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                  'trigger': trigger, 'vol_ok': vol_ok, 'fill_px': fill_px,
                  'trigger_moc': trigger_moc, 'fill_moc': fill_moc,
                  'volx': volx, 'pivot': pivot, 'last_i': last_i,
-                 'rs': rs, 'rsl_hi': rsl_hi, 'weak': weak}
+                 'rs': rs, 'rsl_hi': rsl_hi, 'weak': weak,
+                 'rep_label': rep_label, 'watch': watch}
         np.savez_compressed(cache, **panel)
         panel['tickers'] = tickers
 
@@ -416,7 +441,20 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                         and cooldown.get(j, -1) <= i and last_i[j] > i)
 
             if not is_control:
-                if rank_sel:
+                if tr.get('repertoire'):
+                    # v5: an order costs nothing until it fills; watch every
+                    # armed name, ranked, and let max_positions bind at entry
+                    rsl, wk, rsv = panel['rsl_hi'], panel['weak'], panel['rs']
+                    take = [j for j in sorted(
+                        day_pool,
+                        key=lambda j: (-int(rsl[i, j]),
+                                       -(wk[i, j] if np.isfinite(wk[i, j])
+                                         else -np.inf),
+                                       -(rsv[i, j] if np.isfinite(rsv[i, j])
+                                         else -np.inf),
+                                       tickers[j]))
+                        if usable(j)][:100]
+                elif rank_sel:
                     # v4 (spec 10.2): fill slots by strength, not alphabet —
                     # RS-line at a high first, then holds-up-when-weak,
                     # then raw RS; ticker only as the final determinism tie
@@ -467,14 +505,17 @@ def main() -> None:
     results.mkdir(exist_ok=True)
     fund = '--fund' in sys.argv
     beat = '--beat' in sys.argv
-    v4 = '--v4' in sys.argv
+    v5 = '--v5' in sys.argv
+    v4 = '--v4' in sys.argv or v5
     v3 = '--v3' in sys.argv or v4
-    if v4:
+    if v5:
+        cfg = apply_v5(cfg)
+    elif v4:
         cfg = apply_v4(cfg)
     elif v3:
         cfg = apply_v3(cfg)
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
-                        beat=beat, v3=v3 and not v4, v4=v4)
+                        beat=beat, v3=v3 and not v4, v4=v4 and not v5, v5=v5)
     cal = panel['calendar']
 
     print(f'panel: {len(panel["tickers"])} tickers, '
@@ -492,13 +533,14 @@ def main() -> None:
         periods[name] = (j0, j1)
 
     moc = '--moc' in sys.argv
-    tag = (('v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
+    tag = (('v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '
               f'{int(panel["trigger_moc"].sum())} entries available')
     n_ctl = cfg['minervini_trading']['n_controls']
-    setup_days = pool_by_day(panel['setup'])
+    strat_pool = panel['watch'] if v5 and 'watch' in panel else panel['setup']
+    setup_days = pool_by_day(strat_pool)
     tmpl_days = pool_by_day(panel['template'])
     summary, curves = {}, {}
     for pname, period in periods.items():

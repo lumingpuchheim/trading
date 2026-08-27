@@ -1433,6 +1433,36 @@ integration stays unbuilt. The Minervini line of work closes here
 unless the universe data is bought or the entry repertoire is specified
 — those are the only levers with an order of magnitude in them.
 
+### v5 — the full entry repertoire (spec section 11, run 2026-08-27, POST-HOC)
+
+User instruction: specify and build all of it. Cheat (pause ceiling
+inside the base), pullback-to-SMA20 after a fresh 60-day high, power
+play (2x in 40 days, tight flag), alongside the pivot breakout; v4
+exits and ranking; orders become watch-list-wide with the position cap
+binding at entry. Entry supply explodes: 80 -> 66,099 MOC entries.
+
+| | dev 2007-2018 | test 2019-2026 |
+|---|---|---|
+| v5 total | **+107.1%** (t 7.8, 824 trades) | **+146.7%** (t 7.4, 638 trades) |
+| avg trade / win rate / invested | +4.6% / 44% / 73% | +6.1% / 46% / 76% |
+| vs 200 controls | beats 84% (ctl +55.8%) | beats 98% (ctl +58.6%) |
+| SPY same window | +79.4% | +206.4% |
+
+First configuration positive in both periods and above its controls in
+both. Still BELOW buy-and-hold SPY in the test period. Exits use the
+whole v4 palette (383/257 sma, 172/120 egg, 142/131 stop, 121/107
+strength halves banked, breakeven 6/11).
+
+Caveats, in order: (1) fully post-hoc — every rule from v3 up was
+written after both periods were seen; (2) the pullback entry supplies
+the overwhelming majority of the 66k entries, so v5 is mostly "buy
+ranked leaders at the 20-day line", not a VCP system; (3) at 73-76%
+invested in a survivor universe the absolute numbers are heavily
+flattered — the controls share that bias, SPY does not; (4) t-stats
+assume independent trades and these overlap heavily. Nothing here is
+evidence; it is the first configuration whose forward paper ledger
+would be WORTH running.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the
