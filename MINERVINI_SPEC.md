@@ -253,6 +253,48 @@ Recorded, not fixed — fixing them is a new pre-registration.
    built on a mismeasurement. Section 6 is left as written because it is
    the pre-registered record; this is the correction.
 
+
+### Faithfulness audit of the fundamentals gate (section 8)
+
+Asked directly whether section 8 follows the source: **no, it is a
+partial and in one place a distorted rendering.** The deviations, worst
+first:
+
+1. **One metric of three.** Code 33 is EPS *and* sales *and* net margin,
+   each accelerating three quarters. Only EPS is cached. The other two
+   legs exist precisely to prove the earnings growth is real business
+   growth rather than cost-cutting, buybacks or one-offs — so what was
+   built passes exactly the low-quality earnings growth the missing legs
+   were designed to reject.
+2. **The 25% threshold was applied to the wrong quantity.** The source
+   asks for 20-25% growth in the most recent one to three *quarters*,
+   year on year. Section 8 applies it to trailing-twelve-month EPS
+   against the prior TTM. TTM smooths: it passes a company whose latest
+   quarter is decelerating hard behind three strong ones, and fails one
+   that has just inflected — which is the exact moment the method wants
+   to buy. This is not a data limitation; it is a substitution made
+   while writing the spec.
+3. **"Acceleration" was implemented as non-decreasing** (g1 >= g2 >= g3).
+   Acceleration means increasing. The `>=` admits flat growth.
+4. **Loss-to-profit inflections are excluded by construction.** Each
+   year-ago quarter is required to be positive so the growth ratio is
+   defined, which throws out the turnaround from a loss — a setup the
+   source explicitly likes.
+5. **No earnings surprise, no estimate revisions, no annual or 3-year
+   growth.** He uses beats against expectations and upward forward
+   revisions; no estimates are cached.
+6. **Applied as a hard binary gate on the setup day.** He uses
+   fundamentals to build a watchlist and to size conviction, not as an
+   on/off switch evaluated at the instant of the breakout.
+7. **The EPS series is as-reported and may be restated.** yfinance
+   supplies reported EPS by report date (`giants_data.py`); restatements
+   would mean using a number that was not known at the time. Small, but
+   it is a lookahead risk and it is not controlled.
+
+Points 2, 3 and 4 are mine and were avoidable with the data in hand.
+Points 1, 5 and 7 are data limitations. Point 6 is a modelling choice.
+Any future version should fix 2-4 before another number is generated.
+
 ### Results (full detail in FINDINGS.md)
 
 Acceptance gate: **FAIL** — SPHR 0 triggers, SMCI 0 triggers. Per section
