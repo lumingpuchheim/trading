@@ -46,6 +46,61 @@ universe — but the bias need not cancel exactly.
   every base traded independently (no position limits, no cooldown), so the
   model learns per-base economics, not portfolio-constrained ones.
 
+## What the Minervini model does NOT implement
+
+His method (SEPA) has five pillars: trend, fundamentals, catalyst, entry
+points, exit points. We built one and a half of them.
+
+**Not built at all**
+
+- **Fundamentals.** Accelerating earnings, sales and margins — his second
+  pillar and the thing that separates a leader from a chart that merely
+  looks like one. Our screen is 100% price and volume. `earnings_eps`
+  and `earnings_dates` are cached (Steady Giants uses them), so EPS
+  acceleration is buildable; revenue and margins are not cached.
+- **Catalyst.** New product, earnings surprise, contract, new management.
+  Nothing in the repo represents it.
+- **Industry-group leadership.** He buys the leader of a leading group.
+  Our relative strength is a single universe-wide percentile with no
+  sector or peer-group ranking.
+
+**Cannot be built with this data**
+
+- **Intraday volume pace.** He judges price and volume together while the
+  breakout is happening. Daily bars give one volume number, after the
+  close. Every entry convention we tried is a workaround for that single
+  missing input, and each workaround lost money in its own way.
+- **The universe is wrong for him twice over.** Current S&P 1500
+  constituents: survivorship-flattered, and it also *excludes his actual
+  hunting ground* — emerging small and mid caps, recent IPOs, names that
+  join the index years after the move he would have traded, or never.
+- **Float, turnover, institutional sponsorship.** Not cached.
+
+**Cannot be mechanised honestly**
+
+- **Contraction quality.** He reads shape: tight closes, symmetry, where
+  within each pullback the volume dries up, whether the final shakeout
+  undercuts a prior low. Our zigzag reduces all of that to a list of
+  depth percentages.
+- **Entry variety.** Pivot breakout is one of his entries. Undercut &
+  rally, the low cheat, pullbacks to the 10/20 EMA, power plays — none
+  are implemented.
+- **Position sizing and exposure.** Progressive exposure, pyramiding into
+  strength, cutting size after losses, scaling total exposure with market
+  health. We use flat 10% slots and a binary market light.
+- **Selling into strength.** He takes planned partial profits when a
+  stock gets extended. Our spec says winners run, with no profit target.
+- **Stop placement.** His stop sits under the final contraction's low and
+  the trade is skipped unless reward:risk is roughly 2:1 or better. Ours
+  is a flat 8% below the fill wherever the base low happens to be.
+- **Selectivity.** He passes on most qualifying setups. We take every one
+  alphabetically until the slots fill.
+
+**The tell.** Our rendering finds 238 volume-confirmed pivot breakouts in
+21 years across 1,496 names — roughly eleven a year, in a universe of
+large caps, for a method whose practitioner finds candidates weekly. The
+narrowness is ours, not his.
+
 ## LPPL strategy specifics
 
 - **The fit is stabilised, not validated.** The deterministic grid and the
