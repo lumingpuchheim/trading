@@ -915,6 +915,26 @@ Minervini's method:
   "sellers are exhausted" precondition was never true.
 - Random-walk control passed: 0 triggers in 48,000 synthetic stock-days.
 
+**Why it failed, in one chart** (`minervini_failures.py` ->
+`results/minervini_event_study.png`, `minervini_failure_cases.png`): the
+median price path of every trigger in the universe, 60 days either side of
+the breakout, against the median path of random template-passing days.
+
+| period | triggers | median 60d after trigger | median 60d after a random template day | share below the trigger close at 60d |
+|---|---|---|---|---|
+| dev | 120 | **+4.7%** | +2.4% | 35% |
+| test | 82 | **+0.5%** | +1.8% | 49% |
+
+In dev the breakout doubles the drift of simply owning a Stage-2 stock; in
+test it *halves* it — the signal is worse than the thing it filters, which
+is exactly what "beats 0 of 200 controls" says at the portfolio level. The
+median test breakout also sags ~3% in its first three weeks before
+recovering to flat, i.e. straight through the 8% stop and the SMA50, which
+is how a flat median turns into -3.5% per realised trade. The six worst
+trades are the same story individually: AXON -17.3% in ONE day (an 8%
+nominal stop filled on a gap) and +26% above that exit price 60 days later;
+OSW -19.8%, +17% above the exit 60 days later. Shakeouts, not trend deaths.
+
 So the strategy did not fail because Stage-2 breakouts are unbuyable; it
 failed because the frozen VCP definition is a *quiet-base* detector, and the
 names the spec was written for never go quiet. It selects the stocks that
