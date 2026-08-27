@@ -431,7 +431,25 @@ exits, strength ranking, shared slots and cooldown.
    contraction, no dry-up required — velocity is the signal. Label
    `power_play`.
 
-## 12. v6 — money engine and market engine (pre-registered 2026-08-27)
+## 12. v6 — money engine and market engine — REVERTED (decision 2026-08-27)
+
+**Decision, on user instruction, recorded permanently:** risk-based
+sizing, pyramiding and progressive exposure are REVERTED and are not
+part of any standing configuration. Reasoning: these levers are
+Minervini's *judgement* expressed as position size — he presses because
+he understands WHY the tape is paying, and pulls back because he senses
+why it is not. The system has no such judgement. A rulebook imitation of
+the behaviour without its cause is pretending to have judgement we do
+not have, and the measurement agrees: v6 degraded both periods
+(+107/+147 -> +44/+53), deepened drawdowns (-25/-23 -> -41/-31), and
+halved size exactly at bottoms. The market dimmer falls with them, same
+reasoning. Flat 10% equal-weight slots and the binary light stay — a
+size rule that CLAIMS nothing is the only honest one for a judgement-
+free system. `--v6` remains runnable solely to reproduce the recorded
+negative result. Do not re-propose these without new judgement-bearing
+inputs, not new curves.
+
+(Original pre-registration below, kept for provenance.)
 
 Specifies everything still missing that is not data-limited. 12.1 and
 12.2 are BUILT (--v6, on top of v5); 12.3 and 12.4 are specified only.
