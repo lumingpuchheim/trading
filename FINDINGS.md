@@ -1626,6 +1626,20 @@ not offer. At real fees the strategy is uninvestable below roughly
 100,000 EUR and merely mediocre above it. This supersedes the "worth a
 forward ledger" note: there is nothing to track.
 
+#### Tax deferral, measured (user challenge 2026-08-27)
+
+The user's point — withholding at every sale destroys compounding — is
+correct and is now quantified. 100k book: tax handed over along the way
+75,326 EUR, but final wealth is 159,997 EUR lower than the no-tax run:
+the extra ~85k is the compounding those withheld euros never did. Fair
+after-tax benchmark: SPY bought once and taxed once at the end returns
++622% after tax vs the strategy's +201% — deferral alone is worth more
+than the strategy's entire edge. The 20k book paid 110 EUR total tax
+because it had no net profit to tax (losses offset gains in the
+broker's pot); its -9.5% vs +7.4% no-tax gap is whole-share path noise
+at 2,000-EUR slots, not tax. Trade counts across books are equal within
+noise (1,603 vs 1,595); no book "trades more".
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the
