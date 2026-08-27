@@ -1550,15 +1550,19 @@ recover leak and is the only refinement that helps one period without
 hurting the other; the aging stop is dead code; and stacking everything
 is worse than picking — the methods interact. All post-hoc.
 
-**2026, the AI-bubble year, under v5** (SPY +12.8% YTD to Aug 25):
-strategy -0.3%, 105 trades, ~35% invested. The tape: entries all year
-(6-13/month), mostly non-AI industrials/financials — the ranked RS
-screen kept surfacing rotation names while mega-cap AI carried the
-index; repeated stops/eggs in July (FLEX -10.1%, AMAT -8.3%, MTRN
--9.7%) as the summer chop shook breakouts out, small greens elsewhere.
-The system neither rode the AI leaders (large caps rarely rest into
-valid bases mid-mania) nor blew up: it churned sideways while the index
-compounded — the 2021 story again, milder.
+**2026, the AI-bubble year, under v5** (SPY +12.8% YTD to Aug 25) —
+corrected after first being recorded from an incomplete printout:
+**-23.9% on 83 trades, 87.9% average invested** (year simulated flat
+Jan 1 to liquidation Aug 25). This is v5's worst stretch anywhere in
+the data and it is instructive: near-fully deployed in rotation names
+the ranked RS screen kept surfacing (industrials, financials, energy),
+while mega-cap AI — which rarely rests into valid bases mid-mania —
+carried the index. July alone shows the pattern: FLEX -10.1%, AMAT
+-8.3%, MTRN -9.7%, a string of stops and eggs as summer chop broke
+every breakout. Where 2021 saw the system safely in cash, the v5
+repertoire's throughput turned the same wrong-stock-selection problem
+into fully-invested losses. A live paper ledger would have surfaced
+exactly this within months — which is the argument for it.
 
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
