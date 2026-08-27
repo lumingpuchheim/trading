@@ -431,6 +431,45 @@ exits, strength ranking, shared slots and cooldown.
    contraction, no dry-up required — velocity is the signal. Label
    `power_play`.
 
+## 12. v6 — money engine and market engine (pre-registered 2026-08-27)
+
+Specifies everything still missing that is not data-limited. 12.1 and
+12.2 are BUILT (--v6, on top of v5); 12.3 and 12.4 are specified only.
+Post-hoc caveat unchanged and compounding: each layer written after the
+history was seen. The forward ledger is the only judge.
+
+### 12.1 Money engine (BUILT)
+
+- **Risk-based sizing**: each trade risks `risk_per_trade` = 1.25% of
+  equity; with the 8% stop that is a 15.6% position, capped at 20%.
+- **Pyramiding**: when a position first reaches 2R (+16%), add 50% of
+  the original share count at the next open, once, cash permitting.
+- **Progressive exposure**: if the sum of the last 5 closed trade
+  returns is negative, all new positions are cut to half size until the
+  tape pays again.
+- Staged selling and breakeven stay as built in v4/v3.
+
+### 12.2 Market engine (BUILT)
+
+The binary light becomes a four-point dimmer, one point each for:
+SPY > 200d SMA; SPY > 50d SMA; 20d vol <= its 756d 90th percentile;
+SPY 20d return > 0. Entries need score >= 2; every new position is
+scaled by score/4 (50%, 75%, 100%).
+
+### 12.3 Craft layer (specified, NOT built)
+
+Good-close count (close in the upper half of the day's range) and
+up-day/down-day volume ratio as additional ranking features; re-entry
+after a shakeout: cooldown drops 20 -> 5 days for names exited via
+`egg` or `sma` (never for stops); squat/reversal-recovery handling
+beyond the tennis-ball window.
+
+### 12.4 Judgment (irreducible, recorded as such)
+
+His discretionary veto — story, group, tape feel — is approximated by
+the ranking and cannot be built. Whatever gap remains after 12.1-12.3
+is attributed there, and no further mechanical layer should claim it.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)

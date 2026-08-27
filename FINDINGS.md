@@ -1463,6 +1463,32 @@ assume independent trades and these overlap heavily. Nothing here is
 evidence; it is the first configuration whose forward paper ledger
 would be WORTH running.
 
+### v6 — money and market engines (spec 12.1-12.2, run 2026-08-27, POST-HOC): they made it WORSE
+
+Risk-based sizing (1.25% risk -> 15.6% positions, 20% cap), one 2R
+pyramid add, half-size entries after a losing 5-trade stretch, and a
+4-point market dimmer replacing the binary light. Everything else = v5.
+
+| | dev | test |
+|---|---|---|
+| v5 | +107.1% (maxDD -25%), beats 84% of controls | +146.7% (-23%), beats 98% |
+| v6 | **+44.3%** (maxDD **-41%**), beats 62.5% | **+52.9%** (-31%), beats 54% |
+
+Both periods degrade, drawdowns deepen, control percentile collapses.
+Decomposition by mechanism: bigger positions concentrate the same trade
+stream (deeper DD); the streak rule halves size exactly after drawdowns
+— i.e. at bottoms — so recoveries compound at half throttle; the dimmer
+scales entries down in choppy stretches that v5 profited from; the
+pyramid add lifts the blended entry so stops and eggs fire earlier on
+the same paths. Mechanised "press when winning, pull back when losing"
+without his judgement about WHY the tape is paying is momentum-chasing
+one's own equity curve, and it subtracts. This is the cleanest evidence
+yet for section 12.4: the aggression layer is where the judgement lives,
+and a rulebook copy of it transfers WORSE than not having it.
+
+Standing configuration: **v5** (repertoire + tennis-ball exits + flat
+10% slots). v6 stays in the repo as the recorded negative result.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the

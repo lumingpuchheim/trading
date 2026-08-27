@@ -49,6 +49,17 @@ PANEL_CACHE_V3 = 'minervini_panel_v3.npz'
 PANEL_CACHE_V4 = 'minervini_panel_v4.npz'
 
 
+def market_dimmer(spy_close: pd.Series) -> np.ndarray:
+    """Spec 12.2: a four-point market score instead of a binary light."""
+    s = spy_close
+    v20 = s.pct_change().rolling(20).std()
+    pts = ((s > s.rolling(200).mean()).astype(int)
+           + (s > s.rolling(50).mean()).astype(int)
+           + (~(v20 > v20.rolling(756).quantile(0.90))).astype(int)
+           + (s.pct_change(20) > 0).astype(int))
+    return pts.to_numpy()
+
+
 def market_green(spy_close: pd.Series) -> np.ndarray:
     """The gate we already trust: SPY above its 200d SMA (trend) and 20d
     realised vol at or below its trailing 756d 90th percentile (calm)."""
@@ -68,6 +79,14 @@ def apply_v3(cfg: dict) -> dict:
     cfg['minervini']['earnings_blackout_days'] = v3['earnings_blackout_days']
     for key in ('decisive_break_frac', 'decisive_volume', 'breakeven_r'):
         cfg['minervini_trading'][key] = v3[key]
+    return cfg
+
+
+def apply_v6(cfg: dict) -> dict:
+    """v6 = v5 + the money and market engines (spec 12.1-12.2)."""
+    cfg = apply_v5(cfg)
+    for key, val in cfg['minervini_v6'].items():
+        cfg['minervini_trading'][key] = val
     return cfg
 
 
@@ -248,6 +267,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
     panel['calendar'] = cal
     panel['spy_close'] = spy['close']
     panel['green'] = market_green(spy['close'])
+    panel['dimmer'] = market_dimmer(spy['close'])
     return panel
 
 
@@ -284,6 +304,14 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     be_r = tr.get('breakeven_r', 0)
     be_level = 1.0 + be_r * (1.0 - tr['stop_loss'])
     protect = tr.get('protect_days', 0)           # v4 tennis-ball window
+    risk_frac = tr.get('risk_per_trade', 0.0)     # v6 money engine
+    pos_cap = tr.get('position_cap', 0.0)
+    pyr_frac = tr.get('pyramid_frac', 0.0)
+    streak_n = tr.get('streak_window', 0)
+    streak_mult = tr.get('streak_mult', 1.0)
+    dim_min = tr.get('dimmer_min_score', 0)
+    dimmer = panel.get('dimmer')
+    recent_rets: list[float] = []
     sell_at = tr.get('strength_sell_at', 0.0)
     sell_frac = tr.get('strength_sell_frac', 0.0)
     rank_sel = tr.get('rank_selection', False)
@@ -316,6 +344,7 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             'ret_net': px * (1 - cost) / (pos['entry_px'] * (1 + cost)) - 1,
             'exit_reason': reason})
         cooldown[j] = i + tr['reentry_cooldown']
+        recent_rets.append(px * (1 - cost) / (pos['entry_px'] * (1 + cost)) - 1)
         return pos['shares'] * px * (1 - cost)
 
     for i in range(j0, j1 + 1):
@@ -324,6 +353,22 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             pos = positions.pop(j)
             px = op[i, j] if np.isfinite(op[i, j]) else cl[i, j]
             cash += close_out(j, i, pos, px, pos['exit_reason'])
+
+        # 1a2. v6 pyramiding: the scheduled add fills at the open
+        for j in [j for j, p in positions.items() if p.get('add_due')]:
+            pos = positions[j]
+            pos['add_due'] = False
+            px = op[i, j] if np.isfinite(op[i, j]) else cl[i, j]
+            add = np.floor(pos.get('shares0', pos['shares']) * pyr_frac)
+            outflow = add * px * (1 + cost)
+            if add >= 1 and outflow <= cash:
+                # blended entry price keeps every exit rule consistent
+                tot = pos['shares'] + add
+                pos['entry_px'] = (pos['entry_px'] * pos['shares']
+                                   + px * add) / tot
+                pos['shares'] = tot
+                cash -= outflow
+                pos['added'] = True
 
         # 1b. v4 strength sales: half out at the open, rest keeps running
         for j in [j for j, p in positions.items() if p.get('sell_half')]:
@@ -355,12 +400,20 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             if j in positions or len(positions) >= tr['max_positions'] \
                     or not np.isfinite(px):
                 continue
-            shares = np.floor(tr['equal_weight_fraction'] * eq_prev / px)
+            frac = tr['equal_weight_fraction']
+            if risk_frac:
+                frac = min(risk_frac / (1.0 - tr['stop_loss']), pos_cap)
+                if streak_n and len(recent_rets) >= streak_n                         and sum(recent_rets[-streak_n:]) < 0:
+                    frac *= streak_mult
+                if dimmer is not None:
+                    frac *= dimmer[i] / 4.0
+            shares = np.floor(frac * eq_prev / px)
             outflow = shares * px * (1 + cost)
             if shares < 1 or outflow > cash:
                 continue
             positions[j] = {'shares': shares, 'entry_px': px, 'entry_i': i,
-                            'entry_date': cal[i], 'exit_reason': None}
+                            'entry_date': cal[i], 'exit_reason': None,
+                            'shares0': shares}
             cash -= outflow
 
         # 3. decisions at the close
@@ -391,6 +444,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['exit_reason'] = 'sma'
             if be_r and not pos.get('be') and c >= be_level * pos['entry_px']:
                 pos['be'] = True
+                if pyr_frac and not pos.get('added') and not pos['exit_reason']:
+                    pos['add_due'] = True
             # v4 bookkeeping: tennis-ball recovery + the strength sale.
             # A pullback = any close under the running post-entry peak;
             # recovery = a later close above that peak.
@@ -419,12 +474,20 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                         or not np.isfinite(px)
                         or len(positions) >= tr['max_positions']):
                     continue
-                shares = np.floor(tr['equal_weight_fraction'] * eq_prev / px)
+                frac = tr['equal_weight_fraction']
+                if risk_frac:
+                    frac = min(risk_frac / (1.0 - tr['stop_loss']), pos_cap)
+                    if streak_n and len(recent_rets) >= streak_n                             and sum(recent_rets[-streak_n:]) < 0:
+                        frac *= streak_mult
+                    if dimmer is not None:
+                        frac *= dimmer[i] / 4.0
+                shares = np.floor(frac * eq_prev / px)
                 outflow = shares * px * (1 + cost)
                 if shares < 1 or outflow > cash:
                     continue
                 positions[j] = {'shares': shares, 'entry_px': px, 'entry_i': i,
-                                'entry_date': cal[i], 'exit_reason': None}
+                                'entry_date': cal[i], 'exit_reason': None,
+                                'shares0': shares}
                 cash -= outflow
 
         orders = {j: day for j, day in orders.items() if day > i}
@@ -432,7 +495,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         # 4. place tomorrow's orders
         exiting = sum(1 for p in positions.values() if p['exit_reason'])
         slots = tr['max_positions'] - (len(positions) - exiting) - len(orders)
-        if slots > 0 and green[i] and i + 1 < len(cal):
+        market_ok = (dimmer[i] >= dim_min) if (dimmer is not None and dim_min)             else green[i]
+        if slots > 0 and market_ok and i + 1 < len(cal):
             slot_days += slots
             day_pool = pool_days[i]
 
@@ -505,10 +569,13 @@ def main() -> None:
     results.mkdir(exist_ok=True)
     fund = '--fund' in sys.argv
     beat = '--beat' in sys.argv
-    v5 = '--v5' in sys.argv
+    v6 = '--v6' in sys.argv
+    v5 = '--v5' in sys.argv or v6
     v4 = '--v4' in sys.argv or v5
     v3 = '--v3' in sys.argv or v4
-    if v5:
+    if v6:
+        cfg = apply_v6(cfg)
+    elif v5:
         cfg = apply_v5(cfg)
     elif v4:
         cfg = apply_v4(cfg)
@@ -533,7 +600,7 @@ def main() -> None:
         periods[name] = (j0, j1)
 
     moc = '--moc' in sys.argv
-    tag = (('v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
+    tag = (('v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '

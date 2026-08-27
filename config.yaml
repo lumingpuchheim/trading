@@ -146,6 +146,15 @@ minervini_v5:                     # §11 repertoire, applied by --v5 — FROZEN
   pp_flag_max: 30
   pp_max_corr: 0.20               # ... correcting no more than 20%
 
+minervini_v6:                     # §12.1-12.2, applied by --v6 — FROZEN
+  risk_per_trade: 0.0125          # 1.25% of equity at the 8% stop -> 15.6% position
+  position_cap: 0.20              # never more than 20% in one name
+  pyramid_at_r: 2                 # add once at +2R ...
+  pyramid_frac: 0.5               # ... 50% of the original shares
+  streak_window: 5                # last 5 closed trades negative in sum ...
+  streak_mult: 0.5                # ... -> half-size entries until repaired
+  dimmer_min_score: 2             # market: entries need >= 2 of 4 points
+
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2
   stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
   sma_exit: 50                    # close < SMA50 (trend death) -> sell next open
