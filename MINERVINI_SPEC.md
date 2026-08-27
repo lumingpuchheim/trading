@@ -486,6 +486,36 @@ climax exits (20 stays after stops). E4 aging stop — from day 60 the
 stop rises to the entry price. Runs: v5, +E1, +E2, +E3, +E4, v7(all),
 both periods. Post-hoc; forward ledger judges.
 
+### 12.5 decision (2026-08-27): KEEP E3 only — standing configuration "v5r"
+
+Ablation verdicts, recorded permanently:
+- **E1 climax sell-all: REJECTED.** Hurts both periods (-21/-52 pts).
+  The distribution's whole edge lives in the +50-100% right tail; a rule
+  that sells everything at +25% amputates precisely that. Do not
+  re-propose profit caps of any form on this system.
+- **E2 volume-weighted weakness: REJECTED.** Dev +71 pts, test -28 pts —
+  a regime bet, not an improvement; fails the both-periods bar.
+- **E4 aging stop: REMOVED, dead code.** The 2R-breakeven rule always
+  fires first; in 1,467 trades it never triggered once.
+- **E3 fast re-entry: KEPT.** Dev +41 pts, test neutral, 97th control
+  percentile in both. It repairs a measured leak (63% of day-15 "eggs"
+  recover) without touching anything else.
+
+**Standing configuration `v5r` = --v5 --e3** (repertoire, tennis-ball
+exits, strength ranking, flat 10% slots, binary light, 5-day re-entry
+after non-stop exits).
+
+**The bets we take (v5r, geometric, documented as the reference):**
+dev 828 bets (~69/yr): arithmetic +4.99%, **geometric +3.92%** per bet,
+P(win) 45%, median -0.70%. Test 639 (~84/yr): arithmetic +6.07%,
+**geometric +4.55%**, P(win) 46%, median -0.52%. The median bet loses;
+the top 5% of bets carry >half the profit; at 10% slots the volatility
+drag at account level is negligible. Every qualifying bet must be taken
+— jackpots are not identifiable in advance. Known failure mode (2026):
+when index leadership narrows to mega-caps that never base, the
+repertoire deploys fully into rotation names and loses while the index
+rises (-23.9% vs +12.8% YTD).
+
 ### 12.3 Craft layer (specified, NOT built)
 
 Good-close count (close in the upper half of the day's range) and
