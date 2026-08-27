@@ -474,6 +474,18 @@ SPY > 200d SMA; SPY > 50d SMA; 20d vol <= its 756d 90th percentile;
 SPY 20d return > 0. Entries need score >= 2; every new position is
 scaled by score/4 (50%, 75%, 100%).
 
+### 12.5 Exit refinements — ablation (pre-registered 2026-08-27, POST-HOC)
+
+Four sourced exit mechanisms, each toggleable ALONE so the contribution
+of every method is visible, plus all-on (v7). Frozen: E1 climax — close
+>= 1.25x entry AND a single day of >= +5% -> sell ALL next open. E2
+volume-weighted weakness — the SMA50 exit fires only on above-average
+volume (quiet drift below the line is tolerated; replaces the 1%-depth
+alternative). E3 re-entry — cooldown 5 days after egg/sma/breakeven/
+climax exits (20 stays after stops). E4 aging stop — from day 60 the
+stop rises to the entry price. Runs: v5, +E1, +E2, +E3, +E4, v7(all),
+both periods. Post-hoc; forward ledger judges.
+
 ### 12.3 Craft layer (specified, NOT built)
 
 Good-close count (close in the upper half of the day's range) and

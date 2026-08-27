@@ -20,25 +20,26 @@ import numpy as np
 import pandas as pd
 
 from lppl_backtest import ROOT, load_config
-from minervini_backtest import apply_v3, build_panel, pool_by_day, simulate
+from minervini_backtest import apply_v5, build_panel, pool_by_day, simulate
 
 
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     year = int(args[0]) if args else 2021
     use_v2 = '--v2' in sys.argv
-    ver = 'v2' if use_v2 else 'v3'
+    ver = 'v2' if use_v2 else 'v5'
 
     cfg = load_config()
     if not use_v2:
-        cfg = apply_v3(cfg)
-    panel = build_panel(cfg, v3=not use_v2)
+        cfg = apply_v5(cfg)
+    panel = build_panel(cfg, v5=not use_v2)
     cal = panel['calendar']
     j0 = int(cal.searchsorted(pd.Timestamp(f'{year}-01-01')))
     j1 = int(cal.searchsorted(pd.Timestamp(f'{year}-12-31'), side='right')) - 1
 
     trades, equity, avg_inv, _ = simulate(
-        panel, cfg, (j0, j1), pool_days=pool_by_day(panel['setup']), moc=True)
+        panel, cfg, (j0, j1),
+        pool_days=pool_by_day(panel.get('watch', panel['setup'])), moc=True)
 
     days = cal[j0:j1 + 1]
     setups = pd.Series(panel['setup'][j0:j1 + 1].sum(axis=1), index=days)

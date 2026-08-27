@@ -312,6 +312,11 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     dim_min = tr.get('dimmer_min_score', 0)
     dimmer = panel.get('dimmer')
     recent_rets: list[float] = []
+    e1 = tr.get('exit_climax', False)
+    e2 = tr.get('exit_vol_weak', False)
+    e3 = tr.get('reentry_fast', False)
+    e4 = tr.get('aging_stop', False)
+    v7c = cfg.get('minervini_v7', {})
     sell_at = tr.get('strength_sell_at', 0.0)
     sell_frac = tr.get('strength_sell_frac', 0.0)
     rank_sel = tr.get('rank_selection', False)
@@ -343,7 +348,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             'days_held': i - pos['entry_i'],
             'ret_net': px * (1 - cost) / (pos['entry_px'] * (1 + cost)) - 1,
             'exit_reason': reason})
-        cooldown[j] = i + tr['reentry_cooldown']
+        cd = tr['reentry_cooldown']
+        if e3 and reason != 'stop':
+            cd = v7c['reentry_fast_days']
+        cooldown[j] = i + cd
         recent_rets.append(px * (1 - cost) / (pos['entry_px'] * (1 + cost)) - 1)
         return pos['shares'] * px * (1 - cost)
 
@@ -426,6 +434,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['exit_reason'] = 'failed_breakout'
             elif c <= tr['stop_loss'] * pos['entry_px']:
                 pos['exit_reason'] = 'stop'
+            elif e4 and i - pos['entry_i'] >= v7c['aging_stop_day']                     and c <= v7c['aging_stop_level'] * pos['entry_px']:
+                pos['exit_reason'] = 'aged'
+            elif e1 and c >= v7c['climax_min_gain'] * pos['entry_px']                     and i > pos['entry_i']                     and c / cl[i - 1, j] - 1 >= v7c['climax_day_ret']:
+                pos['exit_reason'] = 'climax'
             elif protect and i - pos['entry_i'] < protect:
                 pass          # v4 tennis-ball window: only the stop may sell
             elif protect and i - pos['entry_i'] == protect \
@@ -436,9 +448,11 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 # v3: a position that reached 2R may not become a loss
                 pos['exit_reason'] = 'breakeven'
             elif np.isfinite(sma50[i, j]) and c < sma50[i, j] and (
+                    (volx is not None and np.isfinite(volx[i, j])
+                     and volx[i, j] > 1.0) if e2 else (
                     c < (1.0 - dec_frac) * sma50[i, j]
                     or (dec_vol and volx is not None
-                        and np.isfinite(volx[i, j]) and volx[i, j] > 1.0)):
+                        and np.isfinite(volx[i, j]) and volx[i, j] > 1.0))):
                 # v2: any close below the SMA50 (dec_frac 0, dec_vol off)
                 # v3: only a DECISIVE break — >1% below, or on volume
                 pos['exit_reason'] = 'sma'
@@ -569,8 +583,9 @@ def main() -> None:
     results.mkdir(exist_ok=True)
     fund = '--fund' in sys.argv
     beat = '--beat' in sys.argv
+    v7 = '--v7' in sys.argv
     v6 = '--v6' in sys.argv
-    v5 = '--v5' in sys.argv or v6
+    v5 = '--v5' in sys.argv or v6 or v7
     v4 = '--v4' in sys.argv or v5
     v3 = '--v3' in sys.argv or v4
     if v6:
@@ -581,6 +596,10 @@ def main() -> None:
         cfg = apply_v4(cfg)
     elif v3:
         cfg = apply_v3(cfg)
+    for flag, key in (('--e1', 'exit_climax'), ('--e2', 'exit_vol_weak'),
+                      ('--e3', 'reentry_fast'), ('--e4', 'aging_stop')):
+        if flag in sys.argv or v7:
+            cfg['minervini_trading'][key] = True
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
                         beat=beat, v3=v3 and not v4, v4=v4 and not v5, v5=v5)
     cal = panel['calendar']
@@ -600,7 +619,8 @@ def main() -> None:
         periods[name] = (j0, j1)
 
     moc = '--moc' in sys.argv
-    tag = (('v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
+    ab = ''.join(f[2:] for f in ('--e1','--e2','--e3','--e4') if f in sys.argv)
+    tag = (('v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '

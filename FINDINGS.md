@@ -1529,6 +1529,37 @@ the stop sells local bottoms, the price of capped disasters. No exit
 rule is leaking badly; the leak is the structural one every
 trend-follower pays: you only ever sell what has stopped going up.
 
+### Exit ablation E1-E4 (spec 12.5, run 2026-08-27, POST-HOC) and the 2026 year
+
+Each refinement alone on top of v5, then all together — so each method's
+contribution is visible:
+
+| variant | dev | test | verdict |
+|---|---|---|---|
+| v5 baseline | +107.1% (ctl 84%) | +146.7% (ctl 98%) | — |
+| E1 climax sell-all | +86.0% (74%) | +94.3% (80%) | **HURTS both** — sells the +100% tail at +25% |
+| E2 volume-weighted weakness | **+178.6% (100%)** | **+119.1%... see note** | helps dev strongly, costs test ~28 pts |
+| E3 fast re-entry | **+148.4% (97%)** | **+146.8% (97%)** | **helps dev +41 pts, test neutral — the only clean winner** |
+| E4 aging stop | +107.1% (84%) | +146.7% (98%) | never fires; inert |
+| v7 all four | +107.1% (82%) | +140.5% (96%) | E1 cancels E2+E3 |
+
+Clear per-method answers: the climax rule is a tail-amputator (rejected);
+tolerating quiet drift below the SMA50 (E2) is a large dev win with a
+test cost; fast re-entry after shakeouts (E3) recovers the 63%-of-eggs-
+recover leak and is the only refinement that helps one period without
+hurting the other; the aging stop is dead code; and stacking everything
+is worse than picking — the methods interact. All post-hoc.
+
+**2026, the AI-bubble year, under v5** (SPY +12.8% YTD to Aug 25):
+strategy -0.3%, 105 trades, ~35% invested. The tape: entries all year
+(6-13/month), mostly non-AI industrials/financials — the ranked RS
+screen kept surfacing rotation names while mega-cap AI carried the
+index; repeated stops/eggs in July (FLEX -10.1%, AMAT -8.3%, MTRN
+-9.7%) as the summer chop shook breakouts out, small greens elsewhere.
+The system neither rode the AI leaders (large caps rarely rest into
+valid bases mid-mania) nor blew up: it churned sideways while the index
+compounded — the 2021 story again, milder.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the

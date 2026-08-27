@@ -155,6 +155,13 @@ minervini_v6:                     # §12.1-12.2, applied by --v6 — FROZEN
   streak_mult: 0.5                # ... -> half-size entries until repaired
   dimmer_min_score: 2             # market: entries need >= 2 of 4 points
 
+minervini_v7:                     # §12.5 exit refinements — FROZEN
+  climax_min_gain: 1.25           # E1: >= +25% and ...
+  climax_day_ret: 0.05            # ... a +5% day -> sell all next open
+  reentry_fast_days: 5            # E3: fast cooldown after non-stop exits
+  aging_stop_day: 60              # E4: from day 60 ...
+  aging_stop_level: 1.00          # ... no loss allowed (stop at entry)
+
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2
   stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
   sma_exit: 50                    # close < SMA50 (trend death) -> sell next open
