@@ -1188,6 +1188,56 @@ fundamentals at all. They are an artifact of an exit rule that cuts
 every trade off at the knees and a sizing frame that leaves the capital
 idle. Both are pre-registered and neither was touched; changing either
 is a new pre-registration, not a fix to this one.
+### Fundamentals v2 — the faithfulness fixes (pre-registered in spec 8b), and they made it WORSE
+
+The section-8 gate had three deviations that were mine, not the data's:
+it applied the 20-25% test to trailing-twelve-month EPS instead of the
+most recent quarter, coded "acceleration" as non-decreasing instead of
+rising, and discarded loss-to-profit turnarounds by requiring every
+year-ago quarter to be positive. All three were fixed and re-frozen
+before the run (spec section 8b): growth measured as
+`(q[-k] - q[-k-4]) / |q[-k-4]|` so a swing from -$1.00 to +$0.50 scores
++150%; F1 on the most recent quarter only; F2 strictly rising over three
+comparisons (g1 > g2 > g3 > g4).
+
+**As a portfolio filter it is still unusable**, and for the same reason
+as before — average exposure 0.57% (dev) and 0.99% (test):
+
+| gate | template days | setups | fills | MOC entries | dev | test |
+|---|---|---|---|---|---|---|
+| none | 906,079 | 11,171 | 4,676 | 238 | -12.4% (113 trades) | -7.9% (83) |
+| section 8 (sloppy) | 56,028 | 660 | 290 | 11 | -1.7% (5) | -1.7% (5) |
+| section 8b (faithful) | 76,973 | 936 | 358 | 21 | -2.9% (9) | -3.5% (9) |
+
+**The measurement with power reverses the earlier result.** Same 4,585
+buy-stop fills, 60-day forward return from the fill, split by each gate:
+
+| gate | PASS n | PASS mean | FAIL mean | difference | t | dev / test |
+|---|---|---|---|---|---|---|
+| section 8 (TTM, >=, no turnarounds) | 287 | +4.41% | +1.86% | **+2.55%** | 2.03 | +0.28% / +5.71% |
+| section 8b (quarterly, >, turnarounds) | 357 | +1.35% | +2.08% | **-0.73%** | -0.67 | -0.17% / -1.25% |
+
+The faithful gate has **no edge, slightly negative, and negative in both
+periods**. The +2.55% from the sloppy version was noise — exactly as
+flagged when it was reported (one regime, t barely over 2, identical
+medians and win rates). Making the implementation correct did not make
+the strategy better; it made the answer trustworthy, and the trustworthy
+answer is "nothing here".
+
+Note the direction of the trap: the *less* faithful implementation
+produced the *more* attractive number. Had the faithfulness audit not
+been run, this repo would be carrying a +2.55% "fundamentals help"
+finding that does not survive being implemented properly.
+
+**Still missing, with the measurement that rules it out.** Code 33 needs
+sales and margins accelerating alongside EPS. The provider returns
+**5 quarters for AAPL, 6 for POWL** against the 8 required — not enough
+for the backtest, not enough for a live scan either. Analyst estimate
+revisions: current snapshot only, no history, not testable on this
+source at all. So this remains one leg of three, and the
+quality-of-earnings check that catches EPS lifted by buybacks or
+cost-cutting is still absent.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

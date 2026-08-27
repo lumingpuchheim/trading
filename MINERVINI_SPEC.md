@@ -181,6 +181,64 @@ MOC entries, so the comparison will be low-powered and a sign flip in
 one period would not be evidence of much. Trade counts are reported
 alongside every number.
 
+## 8b. Fundamentals gate v2 — the faithfulness fixes (pre-registered 2026-08-27)
+
+Section 8 is superseded. The source verification above confirmed three
+deviations that were mine, not the data's, and they are corrected here
+before any v2 number exists. One run, both periods, nothing moved after.
+
+**Growth measure, defined once so turnarounds work.** For the k-th most
+recent report, compare it with the same quarter a year earlier:
+
+    g_k = (q[-k] - q[-k-4]) / |q[-k-4]|,  defined when q[-k-4] != 0
+
+The absolute value in the denominator is the whole point: a company that
+went from -$1.00 to +$0.50 scores +150% rather than an undefined or
+negative number, so a swing from loss to profit is measured instead of
+being silently dropped. Section 8 required every year-ago quarter to be
+positive and therefore discarded exactly those inflections.
+
+**F0 depth.** At least 8 quarterly reports with a non-null EPS (g4 needs
+q[-8]).
+
+**F1 growth — the MOST RECENT QUARTER, not TTM.** Require `q[-1] > 0`
+(a shrinking loss is not growth) and **g1 >= 0.25**. The source asks for
+20-25% year-on-year in the most recent one to three quarters; the most
+recent quarter is the strictest reading of "most recent" and is the one
+frozen here. Section 8 applied the threshold to trailing-twelve-month
+EPS, which smooths away the inflection the method exists to buy.
+
+**F2 acceleration — three quarters, strictly rising.** Require
+**g1 > g2 > g3 > g4**: three consecutive quarters in which the growth
+rate accelerated, which is what "three quarters of acceleration" says.
+Section 8 used `>=` over two comparisons, admitting flat growth.
+
+**F3 freshness.** Latest report within 120 calendar days. Unchanged.
+
+### Legs that stay unbuilt, with the measurement that rules them out
+
+- **Sales and profit margins.** Code 33 needs both, accelerating for
+  three quarters, which requires 8 quarters of history. The provider
+  returns **5 quarters for AAPL and 6 for POWL** (measured 2026-08-27).
+  Not enough for the backtest and not enough for a live scan either. Two
+  of Code 33's three legs remain missing, and with them the
+  quality-of-earnings check that catches EPS lifted by buybacks or
+  cost-cutting. **This gate is therefore still not Code 33.**
+- **Analyst estimate revisions.** The provider exposes only a current
+  snapshot, no history at all. Not testable, now or ever, on this source.
+- **Earnings beats.** Available from ~2014 (50 quarters per ticker,
+  with EPS estimate, reported EPS and surprise %). That covers the test
+  period but not the development period, so a beat requirement cannot be
+  part of a gate that must be judged in BOTH periods. It is therefore
+  measured separately, as a descriptive split of test-period entries,
+  and is not part of F0-F3.
+
+**Comparison protocol.** Identical to section 8: one run of the
+market-on-close convention with the gate on, both periods, 200
+entry-rate-matched controls from the template-AND-fundamentals pool,
+against the published no-fundamentals baseline (dev -12.4%, test -7.9%)
+and the section-8 gate (5 trades per period). Reported whatever it says.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)

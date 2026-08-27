@@ -110,10 +110,10 @@ minervini:                        # Stage-2 breakout — FROZEN by MINERVINI_SPE
   buy_stop_offset: 0.001          # resting buy stop just over the pivot
   max_chase: 0.05                 # never pay more than 5% over the pivot
 
-minervini_fundamentals:           # SEPA pillar 2 — FROZEN by MINERVINI_SPEC.md §8
-  min_quarters: 8                 # F0: quarterly EPS reports needed
-  ttm_growth_min: 0.25            # F1: TTM EPS vs prior TTM, >= +25%
-  accel_quarters: 3               # F2: g1 >= g2 >= g3 (Code 33's EPS leg)
+minervini_fundamentals:           # SEPA pillar 2 — FROZEN by MINERVINI_SPEC.md §8b
+  min_quarters: 8                 # F0: quarterly EPS reports needed (g4 uses q[-8])
+  quarter_growth_min: 0.25        # F1: MOST RECENT quarter vs a year ago, >= +25%
+  accel_quarters: 3               # F2: g1 > g2 > g3 > g4, strictly rising
   max_report_age_days: 120        # F3: latest report no older than this
 
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2

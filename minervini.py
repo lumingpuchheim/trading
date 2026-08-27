@@ -95,15 +95,29 @@ def rs_ok_matrix(rs: np.ndarray, liquid: np.ndarray, cfg: dict) -> np.ndarray:
     return elig & (masked >= thr[:, None])
 
 
+def yoy_growth(q: np.ndarray, k: int) -> float:
+    """Year-on-year growth of the k-th most recent quarter (k=1 is the
+    latest), scaled by the ABSOLUTE year-ago value so a swing from a loss
+    to a profit is measured rather than dropped: -1.00 -> +0.50 scores
+    +150%. NaN when the year-ago quarter is exactly zero."""
+    prior = q[-k - 4]
+    if prior == 0:
+        return np.nan
+    return (q[-k] - prior) / abs(prior)
+
+
 def eps_gate(report_dates: np.ndarray, eps: np.ndarray,
              calendar: pd.DatetimeIndex, cfg: dict) -> np.ndarray:
-    """SEPA pillar 2, the EPS leg of Code 33 (MINERVINI_SPEC.md section 8).
+    """SEPA pillar 2, the EPS leg of Code 33 (MINERVINI_SPEC.md 8b).
 
-    Per calendar day: is the latest quarterly EPS picture, using only
-    reports dated on or before that day, growing >= `ttm_growth_min` on a
-    TTM basis AND accelerating for `accel_quarters` consecutive
-    year-on-year comparisons, from a report no older than
-    `max_report_age_days`?
+    Per calendar day, using only reports dated on or before that day:
+
+      F0  at least `min_quarters` reports
+      F1  the MOST RECENT quarter is profitable and grew at least
+          `quarter_growth_min` year on year (not a TTM average)
+      F2  the growth rate rose in each of the last `accel_quarters`
+          comparisons: g1 > g2 > g3 > g4, strictly
+      F3  that latest report is no older than `max_report_age_days`
 
     The verdict only changes when a new report lands, so it is evaluated
     once per report and broadcast onto the calendar.
@@ -111,29 +125,24 @@ def eps_gate(report_dates: np.ndarray, eps: np.ndarray,
     f = cfg['minervini_fundamentals']
     n_days = len(calendar)
     out = np.zeros(n_days, dtype=bool)
-    q = np.asarray(eps, dtype=float)
-    n = len(q)
+    q_all = np.asarray(eps, dtype=float)
+    n = len(q_all)
     if n < f['min_quarters']:
         return out
 
     def verdict(k: int) -> bool:
-        """Using the first k reports (q[:k]) as everything known so far."""
+        """Using the first k reports (q_all[:k]) as everything known."""
         if k < f['min_quarters']:
             return False
-        h = q[:k]
-        ttm, prior = h[-4:].sum(), h[-8:-4].sum()
-        if not (ttm > 0 and prior > 0):
+        q = q_all[:k]
+        if not q[-1] > 0:                      # F1: a shrinking loss is not growth
             return False
-        if ttm / prior - 1.0 < f['ttm_growth_min']:
+        g = [yoy_growth(q, j + 1) for j in range(f['accel_quarters'] + 1)]
+        if not np.isfinite(g).all():
             return False
-        growth = []
-        for lag in range(f['accel_quarters']):
-            cur, yr_ago = h[-1 - lag], h[-5 - lag]
-            if not yr_ago > 0:
-                return False
-            growth.append(cur / yr_ago - 1.0)
-        # growth[0] is the newest: g1 >= g2 >= g3
-        return all(a >= b for a, b in zip(growth, growth[1:]))
+        if g[0] < f['quarter_growth_min']:
+            return False
+        return all(a > b for a, b in zip(g, g[1:]))   # F2: strictly rising
 
     passes = np.array([verdict(k) for k in range(n + 1)])
     known = np.searchsorted(report_dates, calendar.to_numpy(), side='right')
