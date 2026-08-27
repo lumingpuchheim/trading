@@ -127,3 +127,47 @@ championship.
 
 None of the results in FINDINGS should be read as a test of Minervini's
 method. They test this list's YES column.
+
+---
+
+## Fidelity audit against sourced principles (2026-08-27)
+
+Principles pulled from public sources (TraderLion, Deepvue, ChartMill,
+tradingsim, finermarketpoints — secondary; the books remain unread
+here), then every one measured against the 196 market-on-close trades
+(`results/minervini_v2_moc_audit.csv`). Audit only; no code changed.
+
+### Signal rules the code VIOLATES
+
+| sourced principle | what the code does | measured damage |
+|---|---|---|
+| "The pattern forms **higher lows** — each contraction's bottom should be higher than the previous ... a stock that keeps undercutting prior lows is not showing strong demand; breaking below prior consolidation lows demonstrates distribution" | only checks that contraction DEPTHS shrink; never compares the LEVELS of the lows | **39% of all trades (76/196) were taken on a base whose final low undercut the prior low** — distribution-shaped bases. They averaged -1.36% vs -0.81% for higher-low bases. STRA is the exhibit |
+| "Buying a stock **just ahead of earnings** ... you won't have time to build a profit cushion before the release" | no earnings awareness at entry | **23% of entries had a report within 3 weeks; those trades averaged -1.97% vs -0.63%** — three times the loss rate. 11% were within one week |
+| sell on a "**decisive** break below the 50-day, especially **on volume**"; use the 50d as a trailing stop **after breakeven**, not from day one | ANY close below the SMA50, from the day of entry, sells at the next open | 176 of 196 exits are this rule; **57% fired with the close within 1% of the average**, 39% on below-average volume, 28% both — shakeout sales his wording explicitly excludes |
+| "a position that shows 2R profit should never turn into a loss" (breakeven-or-better) | no breakeven rule exists | winners like POWL/CMI gave back to the hair-trigger SMA instead |
+
+### Signal rules the code SATISFIES (measured, not assumed)
+
+| sourced principle | measured |
+|---|---|
+| "strongest VCPs form after a **+30-100% prior advance**" | median advance from the 52-week low into the base rim: **+76%; zero trades under +30%** (template condition 7 does this work) |
+| pivot = final contraction's high, near the base rim | median pivot **2.4% below the rim**; only 13% more than 5% below. (A final swing high slightly under the rim is normal cup-and-handle geometry; the sourced requirement is rising LOWS, not rising highs) |
+| 2-6 contractions, each smaller; final 3-10% | enforced (>= 2, strictly decreasing, <= 10%; the 3% zigzag floor supplies the lower bound) |
+| volume dry-up in the final, tightest contraction | quiet day <= 75% of the 50d mean within the last 5 days |
+| breakout volume 40-50% above average | 1.5x enforced |
+| never chase more than ~5% past the pivot | enforced |
+| stop 7-8% max from entry | 8% enforced |
+| base length 3-65 weeks, correction <= 35% | enforced |
+| trend template, all nine conditions | enforced (verified visually and in tests) |
+
+### Bottom line of this audit
+
+The trend template, the pivot, the tightening, both volume rules, the
+chase guard and the stop size are faithful. The code violates the source
+in three places, all measurable in the trades: it accepts
+**distribution-shaped bases** (no higher-lows test, 39% of entries), it
+**buys into imminent earnings** (23% of entries, triple the loss), and it
+**sells leaders on indecisive 50-day grazes** (57% of its own exits).
+None of these are data limitations — daily bars contain the lows, the
+report calendar is cached, and volume on the exit day is known. They are
+spec omissions, fixable only by a new pre-registration.
