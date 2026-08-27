@@ -48,6 +48,10 @@ universe — but the bias need not cancel exactly.
 
 ## What the Minervini model does NOT implement
 
+**The complete, systematic inventory is `MINERVINI_COVERAGE.md`** — built
+by enumerating the code and the method separately and cross-checking.
+This section is the summary; the coverage file is the list.
+
 His method (SEPA) has five pillars: trend, fundamentals, catalyst, entry
 points, exit points. We built one and a half of them.
 

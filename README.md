@@ -70,7 +70,9 @@ python minervini_backtest.py       # v1 audit + controls (historical)
 python minervini_failures.py       # v1 event study + six worst trades
 ```
 
-See FINDINGS for both verdicts and the open spec decision.
+`MINERVINI_COVERAGE.md` is the complete inventory of which parts of the
+method are implemented, which cannot be with this data, and which simply
+are not. See FINDINGS for the verdicts.
 
 ## Interpretation choices (where the spec left room)
 

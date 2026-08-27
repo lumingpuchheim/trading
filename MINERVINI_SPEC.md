@@ -447,6 +447,9 @@ entries, over 21 years and 1,496 names.
 
 ### NOT built (and why)
 
+**Superseded by `MINERVINI_COVERAGE.md`**, the single complete inventory.
+What follows is the earlier partial summary, kept for provenance.
+
 The signal layer is complete against this spec. The *method* is not: SEPA
 has five pillars — trend, fundamentals, catalyst, entry points, exit
 points — and this spec only ever addressed trend and entry, plus a
