@@ -67,6 +67,15 @@ def market_light(cfg: dict) -> dict:
             'sma200': float(spy.rolling(200).mean().iloc[-1])}
 
 
+def _shortlist(rows: list[dict], max_buyable: int,
+               max_blocked: int = 10) -> list[dict]:
+    """Keep the best buyable names AND a sample of blocked ones, so the
+    report always shows what was filtered out and why."""
+    ok = [r for r in rows if r['buyable']][:max_buyable]
+    no = [r for r in rows if not r['buyable']][:max_blocked]
+    return ok + no
+
+
 def scan_lppl(cfg: dict, light: dict, max_names: int = 25) -> list[dict]:
     """Universe scan for lppl_dip2 entry candidates."""
     g = cfg['lppl']
@@ -99,7 +108,7 @@ def scan_lppl(cfg: dict, light: dict, max_names: int = 25) -> list[dict]:
                       f"{100 * (c[-1] / hi20 - 1):+.1f}% from 20d high",
             'votes': st['votes'], 'tc_date': st['tc_date']})
     out.sort(key=lambda r: (-r['votes'], r['symbol']))
-    return out[:max_names]
+    return _shortlist(out, max_names)
 
 
 def scan_giants(cfg: dict, light: dict, max_names: int = 25) -> list[dict]:
@@ -165,8 +174,8 @@ def scan_giants(cfg: dict, light: dict, max_names: int = 25) -> list[dict]:
                     'price': r['price'], 'buyable': not blocked,
                     'reason': '; '.join(blocked), 'detail': detail,
                     'votes': 0, 'tc_date': None, 'r2': r['r2']})
-    out.sort(key=lambda x: (not x['buyable'], -x['r2']))
-    return out[:max_names]
+    out.sort(key=lambda x: -x['r2'])
+    return _shortlist(out, max_names)
 
 
 def warnings_for(symbols: list[str], cfg: dict) -> list[dict]:
