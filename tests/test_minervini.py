@@ -353,3 +353,24 @@ def test_report_within_blackout_window():
     expect = (gap.astype(int) >= 0) & (gap.astype(int) <= 21)
     assert (hit == expect).all()
     assert not hit[-1], 'days after the last known report are clear'
+
+
+# ---------------------------------------------------- v4 (spec section 10)
+
+def test_rs_line_at_high_flags_the_ratio_not_the_price():
+    spy = np.full(300, 100.0)
+    close = np.concatenate([np.full(260, 50.0), np.linspace(50, 60, 40)])
+    flag = mv.rs_line_at_high(close, spy)
+    assert flag[-1], 'ratio at a 250d high must flag'
+    spy2 = np.concatenate([np.full(260, 100.0), np.linspace(100, 130, 40)])
+    assert not mv.rs_line_at_high(close, spy2)[-1], \
+        'price up but LAGGING the market is not leadership'
+
+
+def test_weak_day_score_measures_only_spy_down_days():
+    spy = np.array([100, 99, 100, 98, 100, 97, 100.0])
+    close = np.array([50, 50.5, 50, 50.5, 50, 50.5, 50.0])  # up on down days
+    age = np.array([0, 0, 0, 0, 0, 0, 6])
+    sc = mv.weak_day_score(close, spy, age)
+    assert sc[-1] == pytest.approx(0.01, abs=2e-3), \
+        'the score is the mean stock return on SPY down-days in the base'

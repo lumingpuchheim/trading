@@ -1371,6 +1371,34 @@ patience can be pre-registered honestly, but its backtest numbers on
 this history would be post-hoc by construction; the honest judge would
 be the simulator's forward ledger.
 
+### v4 (spec section 10.1 + 10.2, run 2026-08-27 — POST-HOC by construction)
+
+Implemented on user approval: tennis-ball window (first 15 days only the
+8% stop can sell; at day 15 a name below entry that never recovered its
+post-entry high is sold as an `egg`), sell half at +20% afterwards, v3
+trend rules beyond that; slots fill by strength ranking (RS-line at a
+250d high, holds-up-on-SPY-down-days score, raw RS) instead of
+alphabetically. Both periods were already seen when these rules were
+chosen; every number below is post-hoc and is recorded as behaviour
+description, not evidence.
+
+| | dev 2007-2018 | test 2019-2026 |
+|---|---|---|
+| v3 | -5.7%, 40 trades, avg -1.45%, t -1.42 | -3.7%, 23, avg -1.59%, t -0.81 |
+| v4 | **-3.3%**, 44 rows, avg **+0.80%**, t +0.59 | **-0.9%**, 25, avg **+2.37%**, t +0.94 |
+| vs controls | 20.5th pct (ctl median +2.6%) | 38th pct (ctl median +0.8%) |
+
+First configuration in the project with a positive average trade in both
+periods. The exits behave as designed: sma churn 38->22 and 19->10, eggs
+removed at day 15 (14 dev / 7 test), only 4/4 stops, and the strength
+sales banked +20.3% / +25.6% on their halves. Equity is still slightly
+negative because the arithmetic is dollar-weighted: the +20% banked rows
+are HALF positions while every loser is full-size (full-size rows still
+average -1.2% / -0.8%), and average exposure is 3-4%. Still below the
+control medians. Interpretation stops here: the rules were written after
+the data was seen, so the forward paper ledger is the only judge this
+configuration will ever get.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the

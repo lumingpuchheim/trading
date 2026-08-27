@@ -125,6 +125,13 @@ minervini_v3:                     # §9 overlay, applied by --v3 — FROZEN
   decisive_volume: true           # ... or below it on above-average volume
   breakeven_r: 2                  # a +2R winner may not become a loss
 
+minervini_v4:                     # §10.1 + 10.2 overlay, applied by --v4 — FROZEN
+  protect_days: 15                # tennis-ball window: only the 8% stop may sell
+  strength_sell_at: 1.20          # from day 15 on, sell half at +20% ...
+  strength_sell_frac: 0.5         # ... and let the rest run on the v3 trend rules
+  rank_selection: true            # slots fill by (RS-line-at-high, holds-up-when-
+                                  # weak score, RS return), not alphabetically
+
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2
   stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
   sma_exit: 50                    # close < SMA50 (trend death) -> sell next open

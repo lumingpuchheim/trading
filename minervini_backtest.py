@@ -36,8 +36,8 @@ import numpy as np
 import pandas as pd
 
 from lppl_backtest import ROOT, load_config, metrics
-from minervini import (beat_gate, eps_gate, report_within, rs_ok_matrix,
-                       rs_return, signals)
+from minervini import (beat_gate, eps_gate, report_within, rs_line_at_high,
+                       rs_ok_matrix, rs_return, signals, weak_day_score)
 
 START_EQUITY = 100_000.0
 PANEL_CACHE = 'minervini_panel_v2.npz'
@@ -45,6 +45,7 @@ PANEL_CACHE_FUND = 'minervini_panel_v2_fund.npz'
 PANEL_CACHE_BEAT = 'minervini_panel_v2_beat.npz'
 PANEL_CACHE_BOTH = 'minervini_panel_v2_both.npz'
 PANEL_CACHE_V3 = 'minervini_panel_v3.npz'
+PANEL_CACHE_V4 = 'minervini_panel_v4.npz'
 
 
 def market_green(spy_close: pd.Series) -> np.ndarray:
@@ -69,8 +70,19 @@ def apply_v3(cfg: dict) -> dict:
     return cfg
 
 
+def apply_v4(cfg: dict) -> dict:
+    """Overlay the frozen section-10 constants on top of v3."""
+    cfg = apply_v3(cfg)
+    v4 = cfg['minervini_v4']
+    for key in ('protect_days', 'strength_sell_at', 'strength_sell_frac',
+                'rank_selection'):
+        cfg['minervini_trading'][key] = v4[key]
+    return cfg
+
+
 def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
-                beat: bool = False, v3: bool = False) -> dict:
+                beat: bool = False, v3: bool = False,
+                v4: bool = False) -> dict:
     """Per-day signal matrices (days x tickers) on the SPY calendar.
 
     fund=True additionally requires the SEPA pillar-2 EPS gate (spec
@@ -78,7 +90,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
     way, so the comparison isolates the fundamentals filter alone."""
     d = cfg['data']
     data_dir = ROOT / d['cache_dir']
-    cache = data_dir / (PANEL_CACHE_V3 if v3 else
+    cache = data_dir / (PANEL_CACHE_V4 if v4 else PANEL_CACHE_V3 if v3 else
                         ((PANEL_CACHE_BOTH if fund else PANEL_CACHE_BEAT) if beat
                          else (PANEL_CACHE_FUND if fund else PANEL_CACHE)))
     spy = pd.read_parquet(data_dir / 'ohlcv' / f"{d['benchmark']}.parquet")
@@ -157,10 +169,16 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         pivot = np.full((n, k), np.nan)
         sma50 = np.full((n, k), np.nan)
         volx = np.full((n, k), np.nan)
+        rsl_hi = np.zeros((n, k), bool)
+        weak = np.full((n, k), np.nan)
+        spy_np = spy['close'].to_numpy()
         for j in range(k):
             bars = {'open': op[:, j], 'high': hi[:, j], 'close': cl[:, j],
                     'volume': vol[:, j]}
             s = signals(bars, cfg, rs_ok=rs_ok[:, j], liquid=liquid[:, j])
+            if v4:
+                rsl_hi[:, j] = rs_line_at_high(cl[:, j], spy_np)
+                weak[:, j] = weak_day_score(cl[:, j], spy_np, s['base_age'])
             template[:, j] = s['template'] & liquid[:, j]
             trigger_moc[:, j] = s['trigger_moc']
             fill_moc[:, j] = s['fill_moc']
@@ -197,7 +215,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                  'sma50': sma50, 'template': template, 'setup': setup,
                  'trigger': trigger, 'vol_ok': vol_ok, 'fill_px': fill_px,
                  'trigger_moc': trigger_moc, 'fill_moc': fill_moc,
-                 'volx': volx, 'pivot': pivot, 'last_i': last_i}
+                 'volx': volx, 'pivot': pivot, 'last_i': last_i,
+                 'rs': rs, 'rsl_hi': rsl_hi, 'weak': weak}
         np.savez_compressed(cache, **panel)
         panel['tickers'] = tickers
 
@@ -239,6 +258,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     dec_vol = tr.get('decisive_volume', False)
     be_r = tr.get('breakeven_r', 0)
     be_level = 1.0 + be_r * (1.0 - tr['stop_loss'])
+    protect = tr.get('protect_days', 0)           # v4 tennis-ball window
+    sell_at = tr.get('strength_sell_at', 0.0)
+    sell_frac = tr.get('strength_sell_frac', 0.0)
+    rank_sel = tr.get('rank_selection', False)
     if moc:
         fill_px, trigger = panel['fill_moc'], panel['trigger_moc']
     else:
@@ -277,6 +300,24 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             px = op[i, j] if np.isfinite(op[i, j]) else cl[i, j]
             cash += close_out(j, i, pos, px, pos['exit_reason'])
 
+        # 1b. v4 strength sales: half out at the open, rest keeps running
+        for j in [j for j, p in positions.items() if p.get('sell_half')]:
+            pos = positions[j]
+            pos['sell_half'] = False
+            half = np.floor(pos['shares'] / 2)
+            px = op[i, j] if np.isfinite(op[i, j]) else cl[i, j]
+            if half >= 1:
+                cash += half * px * (1 - cost)
+                trades.append({
+                    'ticker': tickers[j], 'entry_date': pos['entry_date'],
+                    'exit_date': cal[i], 'entry_px': pos['entry_px'],
+                    'exit_px': px, 'days_held': i - pos['entry_i'],
+                    'ret_net': px * (1 - cost)
+                               / (pos['entry_px'] * (1 + cost)) - 1,
+                    'exit_reason': 'strength'})
+                pos['shares'] -= half
+                pos['half_sold'] = True
+
         # 2. yesterday's resting orders: the strategy's fill happens
         #    intraday at the buy stop, the control's at the open. Under
         #    moc the fill waits for step 3b, at the close.
@@ -307,6 +348,12 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['exit_reason'] = 'failed_breakout'
             elif c <= tr['stop_loss'] * pos['entry_px']:
                 pos['exit_reason'] = 'stop'
+            elif protect and i - pos['entry_i'] < protect:
+                pass          # v4 tennis-ball window: only the stop may sell
+            elif protect and i - pos['entry_i'] == protect \
+                    and c < pos['entry_px'] and not pos.get('recovered'):
+                # never bounced back over its post-entry high: an egg
+                pos['exit_reason'] = 'egg'
             elif pos.get('be') and c <= pos['entry_px']:
                 # v3: a position that reached 2R may not become a loss
                 pos['exit_reason'] = 'breakeven'
@@ -319,6 +366,23 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['exit_reason'] = 'sma'
             if be_r and not pos.get('be') and c >= be_level * pos['entry_px']:
                 pos['be'] = True
+            # v4 bookkeeping: tennis-ball recovery + the strength sale.
+            # A pullback = any close under the running post-entry peak;
+            # recovery = a later close above that peak.
+            if protect:
+                peak = pos.get('peak2', c)
+                if c > peak:
+                    if pos.get('dipped'):
+                        pos['recovered'] = True
+                    pos['peak2'] = c
+                elif c < peak:
+                    pos['dipped'] = True
+                if sell_at and not pos.get('half_sold') \
+                        and not pos.get('sell_half') \
+                        and i - pos['entry_i'] >= protect \
+                        and c >= sell_at * pos['entry_px'] \
+                        and not pos['exit_reason']:
+                    pos['sell_half'] = True
 
         # 3b. market-on-close entries: price above the pivot AND volume
         #     confirmed, both read at this close, bought at this close
@@ -352,11 +416,26 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                         and cooldown.get(j, -1) <= i and last_i[j] > i)
 
             if not is_control:
-                # more setups than free slots: alphabetical, the only
-                # tie-break the spec leaves open (RS is a membership
-                # filter, never a slot priority)
-                take = [j for j in sorted(day_pool, key=lambda j: tickers[j])
+                if rank_sel:
+                    # v4 (spec 10.2): fill slots by strength, not alphabet —
+                    # RS-line at a high first, then holds-up-when-weak,
+                    # then raw RS; ticker only as the final determinism tie
+                    rsl, wk, rsv = panel['rsl_hi'], panel['weak'], panel['rs']
+                    take = [j for j in sorted(
+                        day_pool,
+                        key=lambda j: (-int(rsl[i, j]),
+                                       -(wk[i, j] if np.isfinite(wk[i, j])
+                                         else -np.inf),
+                                       -(rsv[i, j] if np.isfinite(rsv[i, j])
+                                         else -np.inf),
+                                       tickers[j]))
                         if usable(j)][:slots]
+                else:
+                    # v2/v3: alphabetical, the only tie-break those specs
+                    # leave open (RS is a membership filter there)
+                    take = [j for j in sorted(day_pool,
+                                              key=lambda j: tickers[j])
+                            if usable(j)][:slots]
             else:
                 draws = int((rng.random(slots) < entry_rate).sum())
                 take = []
@@ -388,11 +467,14 @@ def main() -> None:
     results.mkdir(exist_ok=True)
     fund = '--fund' in sys.argv
     beat = '--beat' in sys.argv
-    v3 = '--v3' in sys.argv
-    if v3:
+    v4 = '--v4' in sys.argv
+    v3 = '--v3' in sys.argv or v4
+    if v4:
+        cfg = apply_v4(cfg)
+    elif v3:
         cfg = apply_v3(cfg)
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
-                        beat=beat, v3=v3)
+                        beat=beat, v3=v3 and not v4, v4=v4)
     cal = panel['calendar']
 
     print(f'panel: {len(panel["tickers"])} tickers, '
@@ -410,7 +492,7 @@ def main() -> None:
         periods[name] = (j0, j1)
 
     moc = '--moc' in sys.argv
-    tag = (('v3' if v3 else 'v2') + ('_moc' if moc else '')
+    tag = (('v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '

@@ -392,3 +392,35 @@ def signals(bars: dict, cfg: dict, rs_ok: np.ndarray | None = None,
             'stop_px': stop_px, 'vol_ok': vol_ok, 'zigzag': zz,
             'trigger_moc': trigger_moc,
             'fill_moc': np.where(trigger_moc, close, np.nan)}
+
+
+def rs_line_at_high(close: np.ndarray, spy_close: np.ndarray,
+                    window: int = 250) -> np.ndarray:
+    """Anticipating leadership (spec 10.2): is the stock/SPY ratio at its
+    `window`-day high today? True while the RATIO leads even if the price
+    itself still sits under the pivot."""
+    with np.errstate(invalid='ignore', divide='ignore'):
+        r = np.asarray(close, dtype=float) / np.asarray(spy_close, dtype=float)
+    hi = pd.Series(r).rolling(window, min_periods=window).max().to_numpy()
+    return np.isfinite(r) & np.isfinite(hi) & (r >= hi)
+
+
+def weak_day_score(close: np.ndarray, spy_close: np.ndarray,
+                   base_age: np.ndarray) -> np.ndarray:
+    """Holds-up-when-weak (spec 10.2): the stock's average daily return on
+    the SPY down-days inside its own base, per day. NaN without a base or
+    without any SPY down-day in it. Leaders fall least, so higher = better."""
+    c = np.asarray(close, dtype=float)
+    ret = np.concatenate(([np.nan], c[1:] / c[:-1] - 1.0))
+    spy = np.asarray(spy_close, dtype=float)
+    down = np.concatenate(([False], spy[1:] < spy[:-1]))
+    x = np.where(down & np.isfinite(ret), ret, 0.0)
+    cs = np.cumsum(x)
+    cnt = np.cumsum(down.astype(np.int64))
+    out = np.full(len(c), np.nan)
+    for i in np.flatnonzero(np.asarray(base_age) > 0):
+        a = i - int(base_age[i])
+        n = cnt[i] - cnt[a]
+        if n > 0:
+            out[i] = (cs[i] - cs[a]) / n
+    return out
