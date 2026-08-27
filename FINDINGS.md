@@ -1489,6 +1489,35 @@ and a rulebook copy of it transfers WORSE than not having it.
 Standing configuration: **v5** (repertoire + tennis-ball exits + flat
 10% slots). v6 stays in the repo as the recorded negative result.
 
+### v5 anatomy: EV per bet, distribution, sell quality (2026-08-27); v6 REVERTED
+
+**v6 revert, documented in the spec:** risk sizing, pyramiding and
+progressive exposure are Minervini's judgement expressed as position
+size. The system has none; imitating the behaviour without its cause
+degraded both periods and halved size at bottoms. Flat 10% slots and
+the binary light stand — the only size rule that claims nothing.
+
+**Expected value of a bet (v5):** dev +4.57% per trade (824), test
++6.08% (638). But the MEDIAN trade loses (-0.84% / -0.55%): P(win) is
+44/46%, sd 17-21%, skew +4.5/+3.5. The 75th percentile is +14-16%, the
+99th +53%/+100%. **The top 5% of trades supply 54-57% of all profit.**
+This is a lottery-with-an-edge profile — his stated profile — and it is
+why every equal-weight bet must be taken: skipping "mediocre" signals
+forfeits unidentifiable jackpots.
+
+**Sell quality: mediocre and consistent.** Median stock we sell is
++3.9% higher 60 days later, ~60% are higher across ALL exit reasons —
+we systematically sell things that keep going up (in a survivor
+universe that drifts up, partly unavoidable). Median exit banks 92.5%
+of the position's peak close. By reason: `strength` halves are excellent
+(99.4% of peak, avg +23.2% banked); `sma` exits keep 91% of peak with
++9.6% avg — working; `egg` exits cost little (-3.2%) but 63% of eggs
+are higher 60d later — the day-15 verdict is early, tolerable as cheap
+insurance; `stop` exits (-10.4%) see the stock +4.5% median afterwards —
+the stop sells local bottoms, the price of capped disasters. No exit
+rule is leaking badly; the leak is the structural one every
+trend-follower pays: you only ever sell what has stopped going up.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the
