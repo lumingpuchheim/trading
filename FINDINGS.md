@@ -1446,7 +1446,7 @@ binding at entry. Entry supply explodes: 80 -> 66,099 MOC entries.
 | v5 total | **+107.1%** (t 7.8, 824 trades) | **+146.7%** (t 7.4, 638 trades) |
 | avg trade / win rate / invested | +4.6% / 44% / 73% | +6.1% / 46% / 76% |
 | vs 200 controls | beats 84% (ctl +55.8%) | beats 98% (ctl +58.6%) |
-| SPY same window | +79.4% | +206.4% |
+| SPY same window | +126.1% | +242.4% |
 
 First configuration positive in both periods and above its controls in
 both. Still BELOW buy-and-hold SPY in the test period. Exits use the
