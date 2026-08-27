@@ -943,6 +943,72 @@ not accumulation. Per protocol there are no rescue scans: no constant was
 moved after seeing a number, and the simulator integration (build order
 step 3) is not built.
 
+### v2 (2026-08-27, MINERVINI_SPEC.md rewritten) — acceptance gate FAILED, backtest NOT RUN
+
+The v1 audit above sent me to the source. Four of v1's five mechanics
+deviate from Minervini's published method, and each deviation is
+load-bearing for a failure:
+
+| # | v1 (rejected) | source method | v2 |
+|---|---|---|---|
+| 1 | pivot = 60-day high | high of the final contraction | last confirmed swing high near the rim |
+| 2 | base age 20-90 (90 unreachable) | bases run 3-65 weeks | 15-325 days |
+| 3 | dry-up = 10d MEAN <= 75% of 50d mean | quiet DAYS in the final contraction | any of the last 5 days <= 75% |
+| 4 | std ordering over fixed 10/20/40d blocks | successive shallower pullbacks | zigzag depths strictly decreasing |
+| 5 | fill next open (median +2.9%/+3.8% over pivot; 24%/36% of fills > +5%) | buy stop at the pivot, never chase > 5% | intraday buy stop at pivot x 1.001, chase guard, failed-breakout eject |
+
+v2 is implemented (`minervini.py`, `minervini_gate.py`, 24 tests). Per
+the spec's own build order the acceptance gate ran BEFORE the portfolio
+backtest. **It failed, so no v2 backtest exists — no equity curve, no
+control distribution, nothing to be tempted by.**
+
+**Gate result, frozen v2 rules:** SPHR 0 setups / 0 triggers in
+2025-09..2026-01; SMCI 0 / 0 in the amended 2023-06..2024-01 window.
+
+**Cause 1 — my spec is wrong, not just unlucky.** v2 anchors the base at
+the 325-day rim and measures both the age and the contraction chain from
+it. When a stock prints a marginal new high mid-base, the rim jumps
+forward: the age resets to ~zero AND the earlier contractions are
+truncated out of the count. SPHR's whole escalator is eaten this way
+(`age_1` .. `age_14` on 43 of 105 days, `no_anchor` — rim is today — on
+17 more). SMCI's January-2024 base dies as `only_1_contractions`: its
+real structure is 32.22 -> 28.06 (-12.9%), 34.37 -> 31.14 (-9.4%), a
+textbook two-contraction VCP, but the 34.37 marginal high becomes the
+rim and deletes the first contraction from the sequence.
+
+**The measured fix** (`minervini_gate.py --chain`, diagnostic only, not
+committed as behaviour): anchor the base at the START OF THE CONTRACTION
+CHAIN — walk back while pullbacks keep deepening, stop at the left edge.
+SPHR then produces 4 setups and **2 triggers, both filled at $84.67**,
+below the spec's $100 bar. Case 3 would pass.
+
+**Cause 2 — and this one is about the stocks, not the code.** Those two
+SPHR breakouts printed **0.50x and 0.75x** the 50-day mean volume. Not
+marginal: they are *below-average-volume* breakouts, and the source
+itself asks for roughly 1.3-1.4x ("30-40% above average"), so no
+defensible threshold rescues them. SPHR climbed on quiet tape. Under any
+volume-confirmed reading its breakouts are unconfirmed and get ejected
+the next morning.
+
+SMCI is the mirror image. With the chain fix, 3 days in the amended
+window pass the FULL base structure (2023-07-26, 2023-10-04, 2023-10-05,
+each a 2-contraction base with a pivot at the rim) — and **none of them
+dry up**: their volume sits at 0.78x, 0.93x and 0.86x the 50-day mean
+against a 0.75x requirement. Across the window the template and dry-up
+each hold on 40+ days; they simply never hold on the same days as a
+completed base. SMCI advanced by gapping over its pivots
+(`already_above_pivot` on 26 days), which a don't-chase method refuses
+by construction.
+
+**Where this leaves the idea.** Two named stocks, chosen in advance as
+the reason to build this recommender, both turn out to lack the volume
+signature the method is built on — one breaks out too quietly, the other
+never rests quietly at all. That is a substantive result about the
+premise, obtained without a single look at a P&L curve. The spec needs a
+decision (fix the anchor and re-gate; drop or replace the SMCI case;
+revisit the volume constants against the source) before any v2 number
+deserves to exist.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

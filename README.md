@@ -41,29 +41,36 @@ python lppl_detect.py      # detector -> data/lppl_flags.parquet (~30 min, 7 cor
 python lppl_backtest.py    # -> results/lppl_* tables and charts
 ```
 
-## Minervini Stage-2 breakout (third idea — rejected, see FINDINGS)
+## Minervini Stage-2 breakout (third idea — v1 rejected, v2 gated)
 
 Buys strength instead of dips: a nine-condition trend template (relative
-strength = top 30% of the liquid universe that day) plus a mechanical VCP
-(base age 20-90 days, contracting return volatility, a 10-day range inside
-8%, volume dried up to 75% of its 50-day mean), bought when the close clears
-the 60-day pivot on 1.5x volume while the market light is green. Exits: 8%
-stop or a close below the SMA50. Every constant was frozen in
-`MINERVINI_SPEC.md` before the first run, so the backtest is an audit, not a
-fit; the honest comparison is 200 random portfolios that buy random
-template-passing stocks on random days under identical mechanics.
+strength = top 30% of the liquid universe that day) plus a base of
+progressively shallower pullbacks with volume drying up, bought with a
+resting buy stop just over the top of the last pullback — never chasing
+more than 5% past it. Exits: 8% stop or a close below the SMA50.
+
+**v1** froze the constants before the first run and was rejected by the
+audit: dev +7.5% (t 0.63, 62nd percentile of 200 random-template
+controls), test -23.7% (t -3.0, below all 200). A source audit afterwards
+showed four of its five mechanics deviated from the published method, so
+`MINERVINI_SPEC.md` was rewritten as **v2** (book-faithful pivot, 3-week
+minimum base, quiet DAYS instead of a quiet 10-day mean, shallower-dips
+test, buy-stop fill with a chase guard).
+
+v2's signal core is implemented, but its acceptance gate FAILS — SPHR and
+SMCI both produce zero triggers — so **no v2 backtest has been run**, per
+the spec's own build order. The gate script prints the exact condition
+that eats every day of each case window.
 
 ```
-python minervini_backtest.py            # audit + random-template controls
-python minervini_backtest.py --cases    # SPHR / SMCI acceptance case studies
-python minervini_backtest.py --rebuild  # recompute the cached signal panel
+python minervini_gate.py           # acceptance gate + rejection funnel
+python minervini_gate.py --chain   # diagnostic: base anchored at the
+                                   # contraction chain instead of the rim
+python minervini_backtest.py       # v1 audit + controls (historical)
+python minervini_failures.py       # v1 event study + six worst trades
 ```
 
-Result: dev +7.5% (t 0.63, 62nd percentile of the controls), test -23.7%
-(t -3.0, below all 200 controls). Rejected, and both pre-registered
-acceptance cases (SPHR, SMCI) fail to trigger at all — `tests/test_minervini.py`
-carries them as strict xfails with the diagnosis. The simulator integration
-in the spec's build order was therefore not built.
+See FINDINGS for both verdicts and the open spec decision.
 
 ## Interpretation choices (where the spec left room)
 
