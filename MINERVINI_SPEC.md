@@ -263,6 +263,47 @@ Both over both periods, market-on-close convention, 200 entry-rate
 matched controls from the matching pool, plus the high-powered split of
 all 4,585 buy-stop fills by F4. Reported whatever they say.
 
+## 9. v3 — the three sourced violations, fixed (pre-registered 2026-08-27)
+
+The fidelity audit (MINERVINI_COVERAGE.md) found three places where the
+code violates the sourced method, none of them data-limited. The user
+approved fixing exactly these three. Constants frozen here, one run
+(market-on-close convention, both periods, 200 entry-rate-matched
+controls), nothing moved afterwards.
+
+**Epistemic status:** the blackout window and the decisiveness threshold
+were chosen after the audit measured those splits descriptively on the
+same history (trade returns by earnings proximity; SMA-exit depth and
+volume). No portfolio P&L under these rules has been seen. That is a
+weaker pre-registration than v2's and is stated as such.
+
+1. **Higher lows** (`require_higher_lows: true`): every contraction
+   trough in the base must sit strictly ABOVE the previous trough —
+   ascending bottoms, the sourced "demand absorbing supply". A base
+   whose final low undercuts a prior low is distribution and is not a
+   setup. (Was: only the depths had to shrink; 39% of v2's trades sat
+   on undercutting bases.)
+2. **Earnings blackout** (`earnings_blackout_days: 21`): a name is not a
+   setup while its next known report is within 21 calendar days — no
+   time to build the cushion the source demands. A name with no known
+   upcoming report is clear (absence of a calendar is not evidence of
+   an imminent report). (Was: 23% of entries within 3 weeks of a
+   report, at triple the average loss.)
+3. **Decisive trend exit + breakeven-or-better**
+   (`decisive_break_frac: 0.01`, `decisive_volume: true`,
+   `breakeven_r: 2`): the 50-day exit fires only on a DECISIVE break —
+   close more than 1% below the SMA50, or any close below it on
+   above-average volume (> the 50d mean). And once a position has shown
+   a profit of 2R (R = the 8% stop distance, so +16%), a later close at
+   or below the entry price sells at the next open: a 2R winner must
+   not become a loss. (Was: any close below the SMA50 from day one;
+   57% of exits fired within 1% of the average.)
+
+Everything else — template, base, pivot, dry-up, volume confirmation,
+chase guard, 8% stop, slots, costs, cooldown, controls — unchanged from
+v2. The 8% stop still caps every loss; rule 3 only removes the
+hair-trigger, it does not widen the risk.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)

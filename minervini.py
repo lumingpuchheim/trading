@@ -180,6 +180,21 @@ def beat_gate(report_dates: np.ndarray, surprise_pct: np.ndarray,
     return beat[known] & fresh
 
 
+def report_within(report_dates: np.ndarray, calendar: pd.DatetimeIndex,
+                  days: int) -> np.ndarray:
+    """Per calendar day: is the NEXT known report within `days` calendar
+    days (today included)? Days past the last known report are clear —
+    absence of a calendar is not evidence of an imminent report."""
+    cal = calendar.to_numpy()
+    nxt = np.searchsorted(report_dates, cal, side='left')
+    out = np.zeros(len(cal), dtype=bool)
+    has = nxt < len(report_dates)
+    if has.any():
+        gap = (report_dates[nxt[has]] - cal[has]).astype('timedelta64[D]')
+        out[has] = gap.astype(int) <= days
+    return out
+
+
 def zigzag(close: np.ndarray, threshold: float) -> dict:
     """Confirmed alternating swing highs and lows on closes.
 
@@ -276,10 +291,11 @@ def _base_day(close: np.ndarray, i: int, zz: dict, depth: np.ndarray,
     if close[i] >= pivot:
         return None                          # already through: not a setup
 
-    depths = []
+    depths, lows = [], []
     s = last
     while s >= 1 and hi_idx[s] >= b_i:
         depths.append(depth[s])
+        lows.append(float(zz['price'][s]))
         s -= 2
     k = len(depths)
     if k < m['min_contractions'] or depths[0] > m['final_contraction_max']:
@@ -288,6 +304,12 @@ def _base_day(close: np.ndarray, i: int, zz: dict, depth: np.ndarray,
     for a_, b_ in zip(depths, depths[1:]):
         if not a_ < b_:
             return None
+    if m.get('require_higher_lows'):
+        # v3: ascending bottoms — a base undercutting a prior low is
+        # distribution, not contraction (lows[0] is the newest)
+        for a_, b_ in zip(lows, lows[1:]):
+            if not a_ > b_:
+                return None
     return pivot, age, k
 
 

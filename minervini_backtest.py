@@ -36,13 +36,15 @@ import numpy as np
 import pandas as pd
 
 from lppl_backtest import ROOT, load_config, metrics
-from minervini import beat_gate, eps_gate, rs_ok_matrix, rs_return, signals
+from minervini import (beat_gate, eps_gate, report_within, rs_ok_matrix,
+                       rs_return, signals)
 
 START_EQUITY = 100_000.0
 PANEL_CACHE = 'minervini_panel_v2.npz'
 PANEL_CACHE_FUND = 'minervini_panel_v2_fund.npz'
 PANEL_CACHE_BEAT = 'minervini_panel_v2_beat.npz'
 PANEL_CACHE_BOTH = 'minervini_panel_v2_both.npz'
+PANEL_CACHE_V3 = 'minervini_panel_v3.npz'
 
 
 def market_green(spy_close: pd.Series) -> np.ndarray:
@@ -54,8 +56,21 @@ def market_green(spy_close: pd.Series) -> np.ndarray:
     return (trend & calm).to_numpy()
 
 
+def apply_v3(cfg: dict) -> dict:
+    """Overlay the frozen section-9 constants (MINERVINI_SPEC.md):
+    higher lows, earnings blackout, decisive trend exit, breakeven."""
+    import copy
+    cfg = copy.deepcopy(cfg)
+    v3 = cfg['minervini_v3']
+    cfg['minervini']['require_higher_lows'] = v3['require_higher_lows']
+    cfg['minervini']['earnings_blackout_days'] = v3['earnings_blackout_days']
+    for key in ('decisive_break_frac', 'decisive_volume', 'breakeven_r'):
+        cfg['minervini_trading'][key] = v3[key]
+    return cfg
+
+
 def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
-                beat: bool = False) -> dict:
+                beat: bool = False, v3: bool = False) -> dict:
     """Per-day signal matrices (days x tickers) on the SPY calendar.
 
     fund=True additionally requires the SEPA pillar-2 EPS gate (spec
@@ -63,8 +78,9 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
     way, so the comparison isolates the fundamentals filter alone."""
     d = cfg['data']
     data_dir = ROOT / d['cache_dir']
-    cache = data_dir / ((PANEL_CACHE_BOTH if fund else PANEL_CACHE_BEAT) if beat
-                        else (PANEL_CACHE_FUND if fund else PANEL_CACHE))
+    cache = data_dir / (PANEL_CACHE_V3 if v3 else
+                        ((PANEL_CACHE_BOTH if fund else PANEL_CACHE_BEAT) if beat
+                         else (PANEL_CACHE_FUND if fund else PANEL_CACHE)))
     spy = pd.read_parquet(data_dir / 'ohlcv' / f"{d['benchmark']}.parquet")
     cal = spy.index
 
@@ -140,6 +156,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         fill_moc = np.full((n, k), np.nan)
         pivot = np.full((n, k), np.nan)
         sma50 = np.full((n, k), np.nan)
+        volx = np.full((n, k), np.nan)
         for j in range(k):
             bars = {'open': op[:, j], 'high': hi[:, j], 'close': cl[:, j],
                     'volume': vol[:, j]}
@@ -154,12 +171,33 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
             pivot[:, j] = s['pivot']
             sma50[:, j] = pd.Series(cl[:, j]).rolling(
                 cfg['minervini_trading']['sma_exit']).mean().to_numpy()
+            volx[:, j] = vol[:, j] / pd.Series(vol[:, j]).rolling(
+                cfg['minervini']['dryup_long']).mean().to_numpy()
+
+        blackout_days = cfg['minervini'].get('earnings_blackout_days', 0)
+        if blackout_days:
+            sp = pd.concat([pd.read_parquet(q) for q in
+                            (data_dir / 'earnings_surprise.parquet',
+                             data_dir / 'earnings_surprise_rest.parquet')
+                            if q.exists()]).sort_values('date')
+            by_rep = {t: g['date'].to_numpy() for t, g in sp.groupby('ticker')}
+            for j, t in enumerate(tickers):
+                rd = by_rep.get(t)
+                if rd is None:
+                    continue
+                clear = ~report_within(rd, cal, blackout_days)
+                setup[:, j] &= clear
+                # entry days answer to the PREVIOUS day's setup verdict
+                trigger[1:, j] &= clear[:-1]
+                trigger_moc[1:, j] &= clear[:-1]
+            print(f'earnings blackout ({blackout_days}cd): '
+                  f'{int(setup.sum())} setup days remain')
 
         panel = {'tickers': np.array(tickers), 'open': op, 'close': cl,
                  'sma50': sma50, 'template': template, 'setup': setup,
                  'trigger': trigger, 'vol_ok': vol_ok, 'fill_px': fill_px,
                  'trigger_moc': trigger_moc, 'fill_moc': fill_moc,
-                 'pivot': pivot, 'last_i': last_i}
+                 'volx': volx, 'pivot': pivot, 'last_i': last_i}
         np.savez_compressed(cache, **panel)
         panel['tickers'] = tickers
 
@@ -196,6 +234,11 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     cal = panel['calendar']
     tickers = panel['tickers']
     op, cl, sma50 = panel['open'], panel['close'], panel['sma50']
+    volx = panel.get('volx')
+    dec_frac = tr.get('decisive_break_frac', 0.0)
+    dec_vol = tr.get('decisive_volume', False)
+    be_r = tr.get('breakeven_r', 0)
+    be_level = 1.0 + be_r * (1.0 - tr['stop_loss'])
     if moc:
         fill_px, trigger = panel['fill_moc'], panel['trigger_moc']
     else:
@@ -264,8 +307,18 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['exit_reason'] = 'failed_breakout'
             elif c <= tr['stop_loss'] * pos['entry_px']:
                 pos['exit_reason'] = 'stop'
-            elif np.isfinite(sma50[i, j]) and c < sma50[i, j]:
+            elif pos.get('be') and c <= pos['entry_px']:
+                # v3: a position that reached 2R may not become a loss
+                pos['exit_reason'] = 'breakeven'
+            elif np.isfinite(sma50[i, j]) and c < sma50[i, j] and (
+                    c < (1.0 - dec_frac) * sma50[i, j]
+                    or (dec_vol and volx is not None
+                        and np.isfinite(volx[i, j]) and volx[i, j] > 1.0)):
+                # v2: any close below the SMA50 (dec_frac 0, dec_vol off)
+                # v3: only a DECISIVE break — >1% below, or on volume
                 pos['exit_reason'] = 'sma'
+            if be_r and not pos.get('be') and c >= be_level * pos['entry_px']:
+                pos['be'] = True
 
         # 3b. market-on-close entries: price above the pivot AND volume
         #     confirmed, both read at this close, bought at this close
@@ -335,8 +388,11 @@ def main() -> None:
     results.mkdir(exist_ok=True)
     fund = '--fund' in sys.argv
     beat = '--beat' in sys.argv
+    v3 = '--v3' in sys.argv
+    if v3:
+        cfg = apply_v3(cfg)
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
-                        beat=beat)
+                        beat=beat, v3=v3)
     cal = panel['calendar']
 
     print(f'panel: {len(panel["tickers"])} tickers, '
@@ -354,8 +410,8 @@ def main() -> None:
         periods[name] = (j0, j1)
 
     moc = '--moc' in sys.argv
-    tag = (('v2_moc' if moc else 'v2') + ('_fund' if fund else '')
-           + ('_beat' if beat else ''))
+    tag = (('v3' if v3 else 'v2') + ('_moc' if moc else '')
+           + ('_fund' if fund else '') + ('_beat' if beat else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '
               f'{int(panel["trigger_moc"].sum())} entries available')

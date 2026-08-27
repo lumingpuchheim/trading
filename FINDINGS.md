@@ -1288,6 +1288,47 @@ Sales and margins: not obtainable (5-6 quarters against 8 needed).
 Analyst revisions: no history at all. Nothing found makes the strategy
 profitable, and nothing found rescues it from its controls.
 
+### v3 — the three violations fixed (spec section 9), run 2026-08-27
+
+User-approved fixes, pre-registered before the run: (1) higher lows —
+every contraction trough strictly above the previous; (2) earnings
+blackout — no setup with a report inside 21 calendar days; (3) decisive
+trend exit (close > 1% below the SMA50, or below it on above-average
+volume) plus breakeven-or-better at 2R. Everything else frozen. Epistemic
+caveat recorded in the spec: the blackout window and decisiveness
+threshold were informed by the audit's descriptive splits on this same
+history.
+
+| | setups | MOC entries | dev | test |
+|---|---|---|---|---|
+| v2 | 11,171 | 238 | -12.4% (113 trades, t -1.58) | -7.9% (83, t -0.56) |
+| v3 | 4,575 | 80 | **-5.7%** (40 trades, t -1.42) | **-3.7%** (23, t -0.81) |
+
+Loss roughly halved in both periods — and still a loss in both, still
+under the controls (14th / 20th percentile; control medians +1.7% /
++0.8%). Average trade actually got WORSE (-1.45% / -1.59% vs -1.13% /
+-0.87%): the fixes removed trades and softened the exit churn, they did
+not turn bad entries good. Exits: 57/63 still the (now decisive) trend
+break, 5 stops, 1 breakeven.
+
+**The worst v3 trade shows what remains after the rules are faithful.**
+CGNX, bought 2026-06-29 at 68.26: perfect template, 22-day base with
+rising lows (-14.1% then -5.9%, second trough ABOVE the first), quiet
+days present, breakout 1.52x volume, prior report seven weeks back (a
++37% beat), next report five-plus weeks ahead — every v3 rule satisfied.
+The stock ran +6% in two days to 72.32, reversed, and fell to a decisive
+SMA50 break in a flat market (SPY +1.3% over the hold). Sold -10.7% in
+12 days. Nothing in the sourced, mechanisable rule set flags this entry;
+it is the residual risk of the setup itself, priced at a 27-31% win rate
+in our universe. What separates that from the practitioner's results is
+what remains unmechanised: judgement about WHICH qualifying setup to
+take, sizing, and the wider universe — see MINERVINI_COVERAGE.md.
+
+Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
+configuration of this method on this data has beaten owning random
+Stage-2 stocks. The rules are now as faithful as daily bars allow; the
+gap to the source is no longer in the rules.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

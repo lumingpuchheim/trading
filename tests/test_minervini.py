@@ -306,3 +306,50 @@ def test_smci_has_the_trend_and_the_quiet_days_but_never_a_base():
     s, w = c['signals'], c['window']
     assert (s['template'] & s['dryup'])[w].sum() > 40
     assert not s['setup'][w].any()
+
+
+# ----------------------------------------------------- v3 (spec section 9)
+
+def lower_low_base() -> dict:
+    """Same escalator shape but the second contraction UNDERCUTS the first
+    low (88 -> 87.3) while still being shallower in depth (12% -> 10%)."""
+    lead = np.concatenate([np.full(130, 20.0), np.linspace(20, 100, 200)])
+    down1 = np.linspace(99, 88, 8)            # -12% from 100
+    up1 = np.linspace(89, 97, 6)
+    down2 = np.linspace(96, 87.5, 5)          # -9.8% from 97, LOWER low
+    up2 = np.array([90.0, 93.5, 95.5, 96.4])
+    close = np.concatenate([lead, down1, up1, down2, up2, [98.0]])
+    n = len(close)
+    volume = np.concatenate([np.full(n - 24, 1_000_000.0),
+                             np.full(23, 300_000.0), [3_000_000.0]])
+    high = close * 1.005
+    high[-1] = 98.5
+    op = close.copy()
+    op[-1] = 96.6
+    return bars_from(close, volume, high, op)
+
+
+def test_higher_lows_rule_rejects_an_undercutting_base():
+    bars = lower_low_base()
+    v2 = mv.signals(bars, CFG)
+    assert v2['setup'].any(), 'v2 (depths only) accepts the undercutting base'
+    v3cfg = {**CFG, 'minervini': {**M, 'require_higher_lows': True}}
+    assert not mv.signals(bars, v3cfg)['setup'].any(), \
+        'v3 must reject a base whose final low undercuts the prior low'
+
+
+def test_higher_lows_rule_keeps_the_healthy_escalator():
+    v3cfg = {**CFG, 'minervini': {**M, 'require_higher_lows': True}}
+    s = mv.signals(escalator(), v3cfg)
+    assert s['setup'][-2] and s['trigger'][-1], \
+        'ascending-bottom bases must still trigger under v3'
+
+
+def test_report_within_blackout_window():
+    cal = pd.bdate_range('2024-01-01', periods=40)
+    reports = np.array([np.datetime64('2024-02-01')])
+    hit = mv.report_within(reports, cal, 21)
+    gap = (np.datetime64('2024-02-01') - cal.to_numpy()).astype('timedelta64[D]')
+    expect = (gap.astype(int) >= 0) & (gap.astype(int) <= 21)
+    assert (hit == expect).all()
+    assert not hit[-1], 'days after the last known report are clear'

@@ -149,7 +149,8 @@ def main() -> None:
     results = ROOT / cfg['backtest']['results_dir']
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     period = 'dev' if '--period' in sys.argv and 'dev' in sys.argv else 'test'
-    trades = pd.read_csv(results / f'minervini_v2_moc_{period}_trades.csv',
+    ver = 'v3' if '--v3' in sys.argv else 'v2'
+    trades = pd.read_csv(results / f'minervini_{ver}_moc_{period}_trades.csv',
                          parse_dates=['entry_date', 'exit_date'])
     worst = '--worst' in sys.argv
     want = args or (list(trades.nsmallest(3, 'ret_net')['ticker']) if worst

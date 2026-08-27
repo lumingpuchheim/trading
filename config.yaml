@@ -118,6 +118,13 @@ minervini_fundamentals:           # SEPA pillar 2 — FROZEN by MINERVINI_SPEC.m
   require_beat: false             # F4 (§8c): latest report beat consensus;
                                   # enabled by --beat, never both-ways scanned
 
+minervini_v3:                     # §9 overlay, applied by --v3 — FROZEN
+  require_higher_lows: true       # every trough strictly above the previous
+  earnings_blackout_days: 21      # no setup with a report inside 21 calendar days
+  decisive_break_frac: 0.01       # trend exit: close > 1% below the SMA50 ...
+  decisive_volume: true           # ... or below it on above-average volume
+  breakeven_r: 2                  # a +2R winner may not become a loss
+
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2
   stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
   sma_exit: 50                    # close < SMA50 (trend death) -> sell next open
