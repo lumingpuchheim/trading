@@ -95,6 +95,57 @@ def rs_ok_matrix(rs: np.ndarray, liquid: np.ndarray, cfg: dict) -> np.ndarray:
     return elig & (masked >= thr[:, None])
 
 
+def eps_gate(report_dates: np.ndarray, eps: np.ndarray,
+             calendar: pd.DatetimeIndex, cfg: dict) -> np.ndarray:
+    """SEPA pillar 2, the EPS leg of Code 33 (MINERVINI_SPEC.md section 8).
+
+    Per calendar day: is the latest quarterly EPS picture, using only
+    reports dated on or before that day, growing >= `ttm_growth_min` on a
+    TTM basis AND accelerating for `accel_quarters` consecutive
+    year-on-year comparisons, from a report no older than
+    `max_report_age_days`?
+
+    The verdict only changes when a new report lands, so it is evaluated
+    once per report and broadcast onto the calendar.
+    """
+    f = cfg['minervini_fundamentals']
+    n_days = len(calendar)
+    out = np.zeros(n_days, dtype=bool)
+    q = np.asarray(eps, dtype=float)
+    n = len(q)
+    if n < f['min_quarters']:
+        return out
+
+    def verdict(k: int) -> bool:
+        """Using the first k reports (q[:k]) as everything known so far."""
+        if k < f['min_quarters']:
+            return False
+        h = q[:k]
+        ttm, prior = h[-4:].sum(), h[-8:-4].sum()
+        if not (ttm > 0 and prior > 0):
+            return False
+        if ttm / prior - 1.0 < f['ttm_growth_min']:
+            return False
+        growth = []
+        for lag in range(f['accel_quarters']):
+            cur, yr_ago = h[-1 - lag], h[-5 - lag]
+            if not yr_ago > 0:
+                return False
+            growth.append(cur / yr_ago - 1.0)
+        # growth[0] is the newest: g1 >= g2 >= g3
+        return all(a >= b for a, b in zip(growth, growth[1:]))
+
+    passes = np.array([verdict(k) for k in range(n + 1)])
+    known = np.searchsorted(report_dates, calendar.to_numpy(), side='right')
+    fresh = np.zeros(n_days, dtype=bool)
+    has = known > 0
+    if has.any():
+        age = (calendar.to_numpy()[has]
+               - report_dates[known[has] - 1]).astype('timedelta64[D]')
+        fresh[has] = age.astype(int) <= f['max_report_age_days']
+    return passes[known] & fresh
+
+
 def zigzag(close: np.ndarray, threshold: float) -> dict:
     """Confirmed alternating swing highs and lows on closes.
 

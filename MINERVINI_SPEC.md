@@ -134,6 +134,53 @@ the "setting up" list — names in the setup state shown as BLOCKED
 "waiting for breakout above P x 1.001" with the exact trigger price.
 The incremental updater must store volume alongside close.
 
+## 8. Fundamentals gate — SEPA pillar 2 (pre-registered 2026-08-27, before any run)
+
+Added because pillar 2 was never specified and never built. Declared in
+full here, before the code exists and before any number is seen; one
+run, both periods, no thresholds moved afterwards.
+
+**What the source asks for.** "Code 33": three consecutive quarters of
+year-on-year acceleration in EPS, sales AND profit margins, with
+quarterly EPS growth of at least 20-25% YoY and sales growth above 15%.
+
+**What this cache can supply.** Quarterly EPS by report date
+(`earnings_eps.parquet`, 1,494 tickers, 948 with history from 2007 or
+earlier, median 95 quarters). **Sales and margins are not cached.** So
+this gate is the EPS leg of Code 33 — one of its three metrics — and
+must be read as a partial implementation, not as Code 33.
+
+**The gate**, evaluated on the setup day using only reports dated on or
+before that day (`q[-1]` = latest such report):
+
+- **F0 depth.** At least 8 quarterly reports with a non-null EPS.
+- **F1 growth.** TTM = sum(q[-4:]), prior TTM = sum(q[-8:-4]). Require
+  both > 0 and **TTM / prior TTM - 1 >= 0.25** (the top of the source's
+  stated 20-25% minimum, taken as the single frozen number).
+- **F2 acceleration, three quarters.** With
+  g1 = q[-1]/q[-5] - 1, g2 = q[-2]/q[-6] - 1, g3 = q[-3]/q[-7] - 1
+  (each requiring its year-ago quarter > 0), require **g1 >= g2 >= g3** —
+  the EPS leg of Code 33's three consecutive accelerating quarters.
+- **F3 freshness.** The latest report is within **120 calendar days** of
+  the decision day; otherwise the fundamentals are stale and the name is
+  excluded.
+
+A name failing any of F0-F3 is not a setup, exactly as if the trend
+template had failed. Nothing else changes: same base, same pivot, same
+dry-up, same exits, same slots, same costs.
+
+**Comparison protocol.** One run of the market-on-close convention —
+the only entry daily bars can express without an invented rule — with
+the gate on, both periods, against 200 entry-rate-matched controls drawn
+from the template-AND-fundamentals pool. The published no-fundamentals
+MOC numbers (dev -12.4%, test -7.9%) are the baseline. Whatever comes
+out is reported; there is no second threshold to try.
+
+**Expected cost, declared in advance:** the gate can only reduce the 238
+MOC entries, so the comparison will be low-powered and a sign flip in
+one period would not be evidence of much. Trade counts are reported
+alongside every number.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)
@@ -217,6 +264,7 @@ explicit instruction, in preference to hand-amending the rules.
 | v1 next-open chase (superseded) | +7.5% (t 0.63) | -23.7% (t -3.0) | 104 / 76 | 63% / 0% |
 | v2 buy stop + eject (this spec) | -42.8% (t -5.46) | -31.3% (t -1.76) | 1122 / 1200 | 0% / 0% |
 | v2 market-on-close | -12.4% (t -1.58) | -7.9% (t -0.56) | 113 / 83 | 3.5% / 16% |
+| v2 MOC + fundamentals (section 8) | -1.7% (5 trades) | -1.7% (5 trades) | 5 / 5 | no power |
 
 Universe funnel: 906,079 template stock-days -> 11,171 setup days ->
 4,676 buy-stop fills -> 402 volume-confirmed -> 238 market-on-close
@@ -229,8 +277,14 @@ has five pillars — trend, fundamentals, catalyst, entry points, exit
 points — and this spec only ever addressed trend and entry, plus a
 simplified exit. Full inventory in `LIMITATIONS.md`; the headline gaps:
 
-- **Never specified here, never built:** fundamentals (earnings/sales/
-  margin acceleration), catalyst, industry-group leadership.
+- **Fundamentals: BUILT (section 8), EPS leg only.** `minervini.eps_gate`
+  + `--fund`. Sales and margins are not in the cache, so two of Code 33's
+  three metrics are still missing. As a filter it leaves 5 trades per
+  period — unusable. Measured on 4,585 fills instead, passing names run
+  +4.41% vs +1.86% over 60 days (t 2.03), but the medians match and the
+  gap is almost entirely test-period. See FINDINGS.
+- **Never specified here, never built:** catalyst, industry-group
+  leadership.
 - **Cannot be built on this data:** intraday volume pace (the input both
   failed fill conventions were working around), a point-in-time
   emerging-growth universe (ours is *current* S&P 1500 — survivorship-

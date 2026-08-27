@@ -1095,6 +1095,54 @@ intraday volume pace, and the discretionary judgement of contraction
 quality that no zigzag reproduces. That is a data limitation, stated as
 such, not a verdict on Minervini.
 
+### Fundamentals gate (SEPA pillar 2, pre-registered in MINERVINI_SPEC.md section 8)
+
+Pillar 2 had never been specified or built. The cache carries quarterly
+EPS by report date (1,494 tickers, 948 from 2007 or earlier, median 95
+quarters) but no sales and no margins, so what was built is **the EPS leg
+of Code 33 — one of its three metrics**. Frozen before the run: >= 8
+reports, TTM EPS growth >= +25% over the prior TTM, three consecutive
+year-on-year quarterly comparisons non-decreasing (g1 >= g2 >= g3), and
+the latest report no older than 120 calendar days. One run, both periods.
+
+**As a portfolio filter it is unusable: it leaves 10 trades in 21 years.**
+
+| | template stock-days | setup days | buy-stop fills | MOC entries | dev | test |
+|---|---|---|---|---|---|---|
+| MOC, no fundamentals | 906,079 | 11,171 | 4,676 | 238 | -12.4% (113 trades) | -7.9% (83) |
+| MOC + fundamentals | 56,028 | 660 | 290 | **11** | -1.7% (**5 trades**) | -1.7% (**5**) |
+
+The gate passes 2.7% of stock-days: per report event, the growth leg
+passes 24.8% and the acceleration leg 18.1%, and jointly 3.7%. That
+rarity is faithful — Minervini presents Code 33 as a rare, powerful
+condition — but intersected with an already-rare VCP base it leaves
+nothing to trade. Five trades a period is not a result in either
+direction, and no threshold was moved to make it bigger.
+
+**Measured where there IS power** — all 4,585 buy-stop fills, split by
+the gate as read on the setup day, 60-day forward return from the fill:
+
+| | n | mean +60d | median +60d | share positive |
+|---|---|---|---|---|
+| fundamentals PASS | 287 | **+4.41%** | +1.65% | 53.7% |
+| fundamentals FAIL | 4,298 | +1.86% | +1.37% | 53.7% |
+
+Difference +2.55%, Welch **t = 2.03**. By period: dev +0.28% (n=168),
+test +5.71% (n=119). So the honest reading is **a real but small and
+unevenly distributed effect**: the medians are nearly identical (+1.65%
+vs +1.37%) and the share of positive outcomes is identical to the
+decimal, so the gate is not improving the typical breakout at all — it
+is picking up a thin right tail, almost entirely in the test period. One
+regime, 119 observations, t barely over 2. This is exactly the shape of
+result this repo has learned to distrust.
+
+**Verdict: it does not make the strategy better.** It cannot, at these
+counts — the filter and the setup are both rare and their intersection
+is empty for practical purposes. What it does show is that fundamentals
+carry information the price screen misses (right sign, right place — the
+fat winners), which is an argument for a wider universe and a cheaper
+technical filter, not for stacking this gate on this base.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
