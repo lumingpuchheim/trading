@@ -10,7 +10,8 @@ One figure per trade, two panels:
   bottom — volume with its 50-day mean, the dry-up days that qualified
            the base marked, and the breakout day's volume multiple.
 
-Run: python minervini_showcase.py              # default three trades
+Run: python minervini_showcase.py              # default three winners
+     python minervini_showcase.py --worst      # the three worst trades
      python minervini_showcase.py DOCN CMI     # pick your own tickers
      python minervini_showcase.py --period dev
 """
@@ -133,7 +134,8 @@ def draw(ticker: str, trade, cfg: dict, results) -> None:
     axv.set_xlim(dates[0], dates[-1])
     ax.set_xlim(dates[0], dates[-1])
 
-    out = results / f'minervini_buy_{ticker}.png'
+    tag = 'loss' if trade.ret_net < 0 else 'buy'
+    out = results / f'minervini_{tag}_{ticker}.png'
     fig.savefig(out, dpi=120, bbox_inches='tight')
     plt.close(fig)
     print(f'  {ticker}: base {setup_i - base_start}d, {len(chain)} contractions '
@@ -149,14 +151,18 @@ def main() -> None:
     period = 'dev' if '--period' in sys.argv and 'dev' in sys.argv else 'test'
     trades = pd.read_csv(results / f'minervini_v2_moc_{period}_trades.csv',
                          parse_dates=['entry_date', 'exit_date'])
-    want = args or DEFAULT[period]
-    print(f'{period} period:')
+    worst = '--worst' in sys.argv
+    want = args or (list(trades.nsmallest(3, 'ret_net')['ticker']) if worst
+                    else DEFAULT[period])
+    print(f'{period} period ({"worst" if worst else "best"} trades):')
     for t in want:
         row = trades[trades['ticker'] == t]
         if not len(row):
             print(f'  {t}: no trade in {period}')
             continue
-        draw(t, row.nlargest(1, 'ret_net').iloc[0], cfg, results)
+        pick = (row.nsmallest(1, 'ret_net') if worst
+                else row.nlargest(1, 'ret_net')).iloc[0]
+        draw(t, pick, cfg, results)
 
 
 if __name__ == '__main__':
