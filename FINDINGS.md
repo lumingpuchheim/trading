@@ -1009,6 +1009,55 @@ decision (fix the anchor and re-gate; drop or replace the SMCI case;
 revisit the volume constants against the source) before any v2 number
 deserves to exist.
 
+### v2 backtest, run on a FAILED gate at the user's instruction (2026-08-27)
+
+The spec forbids this run. The user preferred a measured verdict to any
+hand-amendment of the rules, so the frozen v2 constants were audited as
+they stand. Recorded with that provenance attached.
+
+| period | total | trades | avg trade | t | maxDD | vs 200 controls |
+|---|---|---|---|---|---|---|
+| dev 2007-2018 | **-42.8%** | 1,122 | -0.49% | **-5.46** | -43.3% | **beats 0 of 200** (ctl median +30.3%) |
+| test 2019-2026 | **-31.3%** | 1,200 | -0.29% | -1.76 | -35.0% | **beats 0 of 200** (ctl median +30.9%) |
+
+Worse than v1 in both periods, and the reason is not the entry: it is a
+design fault in the spec that only a run could expose.
+
+**The failed-breakout eject is the whole strategy.** Exits: dev 1,007 of
+1,122 trades `failed_breakout`, test 1,101 of 1,200 — 90% and 92%. Of
+4,676 buy-stop fills over 21 years, only **402 (8.6%)** closed with the
+required 1.5x volume. So the rule as written enters every touch of every
+pivot, then pays a 0.40% round trip to discover, at the close, that the
+volume never came. The overnight move it collects for that fee is
+**+0.08% median**. Fifteen hundred times over. That is the entire loss:
+avg trade -0.49% dev against a -0.40% cost floor.
+
+v1 chased (bought the next open after a confirmed close) and lost 24% OOS.
+v2 refuses to chase but, with daily bars, cannot know volume at the
+moment the stop fills — so it buys first and asks later. Those are the
+only two entries daily data permits, and both are wrong: real-time volume
+pace is intraday information the source method uses and this data cannot
+supply. **The honest conclusion is that this method is not testable on
+daily bars, not that it is unprofitable.**
+
+**Does the volume verdict carry information?** Yes, a little, and the
+sign is right (`minervini_failures.py --v2`, descriptive, no variants):
+median path from the fill price over 4,585 fills —
+
+| group | n | +5d | +20d | +60d |
+|---|---|---|---|---|
+| volume-confirmed (1.5x+) | 395 | +0.95% | +0.53% | **+2.48%** |
+| unconfirmed | 4,190 | +0.25% | +0.65% | +1.24% |
+
+Confirmed breakouts do outrun unconfirmed ones by ~1.2 points over three
+months. That gap is far too small to survive 0.4% per round trip at this
+turnover, and the strategy pays the toll on the 91% it then throws away.
+
+**Universe funnel:** 906,079 template stock-days -> 11,171 setup days ->
+4,676 buy-stop fills -> 402 volume-confirmed. v1 produced 202 triggers in
+the same universe; v2's book-faithful base is ~23x more permissive, which
+was the point, and it changed the answer not at all.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

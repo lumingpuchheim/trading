@@ -12,8 +12,11 @@ Two pictures, both from the frozen signal panel:
    before to 60 days after the breakout, dev vs test, against the median
    path of random template-passing days (the control's entries).
 
-Run: python minervini_failures.py
+Run: python minervini_failures.py        # v1 cases + event study
+     python minervini_failures.py --v2  # v2 volume-confirmation study
 """
+
+import sys
 
 import matplotlib
 matplotlib.use('Agg')
@@ -137,11 +140,76 @@ def event_study(panel: dict, cfg: dict, results) -> None:
 def main() -> None:
     cfg = load_config()
     results = ROOT / cfg['backtest']['results_dir']
+    if '--v2' in sys.argv:
+        v2_confirmation_study(cfg, results)
+        return
     panel = build_panel(cfg)
     case_panels(panel, cfg, results)
     event_study(panel, cfg, results)
     print(f'charts -> {results}/minervini_failure_cases.png, '
           f'minervini_event_study.png')
+
+
+
+
+def v2_confirmation_study(cfg: dict, results) -> None:
+    """v2 descriptive study (no strategy variants): the median path after a
+    buy-stop fill, split by whether the breakout day closed with 1.5x
+    volume. Answers whether the volume verdict carries information, and
+    what the `failed_breakout` eject actually pays to find out."""
+    from minervini_backtest import build_panel as build_v2
+    panel = build_v2(cfg)
+    cal, cl, op, fp = (panel['calendar'], panel['close'], panel['open'],
+                       panel['fill_px'])
+    n, W = len(cal), WINDOW
+    rows, cols = np.nonzero(panel['trigger'])
+    keep = rows < n - W - 1
+    rows, cols = rows[keep], cols[keep]
+    conf = panel['vol_ok'][rows, cols]
+
+    paths = np.full((len(rows), W + 1), np.nan)
+    for k, (i, j) in enumerate(zip(rows, cols)):
+        seg = cl[i:i + W + 1, j]
+        if np.isfinite(seg).all() and np.isfinite(fp[i, j]) and fp[i, j] > 0:
+            paths[k] = seg / fp[i, j]
+    ok = np.isfinite(paths).all(axis=1)
+    paths, conf = paths[ok], conf[ok]
+
+    overnight = np.array([op[i + 1, j] / fp[i, j] - 1
+                          for i, j in zip(rows, cols)
+                          if np.isfinite(op[i + 1, j]) and np.isfinite(fp[i, j])])
+    cost = 2 * cfg['minervini_trading']['cost_per_side']
+
+    x = np.arange(W + 1)
+    plt.figure(figsize=(12, 7))
+    for lab, mask, color in [('volume-confirmed (1.5x+)', conf, 'tab:blue'),
+                             ('unconfirmed -> ejected next open', ~conf, 'tab:red')]:
+        P = paths[mask]
+        plt.plot(x, np.median(P, axis=0), color=color, lw=2,
+                 label=f'{lab}  (n={len(P)}, +60d {np.median(P[:, -1]) - 1:+.1%})')
+    plt.axhline(1.0, color='black', lw=0.6, alpha=0.4)
+    plt.axhline(1 - cost, color='crimson', ls=':', lw=1,
+                label=f'round-trip cost ({cost:.1%}) — what every eject pays')
+    plt.xlabel('trading days after the buy-stop fill')
+    plt.ylabel('close / fill price (median)')
+    plt.title('Minervini v2: 4,585 buy-stop fills, split by the volume verdict')
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(results / 'minervini_v2_confirmation.png', dpi=120)
+    plt.close()
+    pd.DataFrame({'group': ['confirmed', 'unconfirmed'],
+                  'n': [int(conf.sum()), int((~conf).sum())],
+                  'med_5d': [float(np.median(paths[conf][:, 5]) - 1),
+                             float(np.median(paths[~conf][:, 5]) - 1)],
+                  'med_20d': [float(np.median(paths[conf][:, 20]) - 1),
+                              float(np.median(paths[~conf][:, 20]) - 1)],
+                  'med_60d': [float(np.median(paths[conf][:, -1]) - 1),
+                              float(np.median(paths[~conf][:, -1]) - 1)],
+                  }).to_csv(results / 'minervini_v2_confirmation.csv', index=False)
+    print(f'overnight fill -> next open: median {np.median(overnight):+.2%}, '
+          f'round-trip cost {cost:.2%}')
+    print(f'chart -> {results}/minervini_v2_confirmation.png')
 
 
 if __name__ == '__main__':
