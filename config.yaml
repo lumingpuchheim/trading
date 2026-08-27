@@ -84,6 +84,39 @@ lppl_trading:                     # 8% stop, tc exit, equal weight
   dip_only_max_hold: 60           # dip_only ablation has no tc; time cap instead
   episode_gap: 20                 # flag off this many trading days = the bubble episode ended
 
+minervini:                        # Stage-2 breakout — FROZEN by MINERVINI_SPEC.md
+  sma_fast: 50                    # trend template, conditions 1-6
+  sma_mid: 150
+  sma_slow: 200
+  sma_slow_rising_lookback: 21    # SMA200 higher than 21 trading days ago
+  week52_window: 250              # trading days used for the 52-week levels
+  min_above_52w_low: 1.30         # condition 7
+  min_of_52w_high: 0.75           # condition 8
+  rs_lookback: 126                # condition 9: trailing 126d return ...
+  rs_top_fraction: 0.30           # ... in the top 30% of the liquid universe
+  pivot_window: 60                # pivot = highest close of the last 60 days ...
+  pivot_exclude_recent: 5         # ... excluding the last 5 (base needs a left side)
+  base_age_min: 20                # pivot high set 20-90 trading days ago
+  base_age_max: 90
+  contraction_short: 10           # std(returns) 10d < prior 20d < prior 40d
+  contraction_mid: 20
+  contraction_long: 40
+  tight_window: 10                # (max-min)/max of the last 10 closes ...
+  tight_max_range: 0.08           # ... <= 8%
+  dryup_short: 10                 # 10d mean volume ...
+  dryup_long: 50                  # ... <= 75% of the 50d mean
+  dryup_max_ratio: 0.75
+  breakout_volume_mult: 1.5       # trigger: volume >= 1.5 x 50d mean volume
+
+minervini_trading:                # portfolio mechanics, identical to lppl_dip2
+  stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
+  sma_exit: 50                    # close < SMA50 (trend death) -> sell next open
+  max_positions: 10
+  equal_weight_fraction: 0.10
+  cost_per_side: 0.002
+  reentry_cooldown: 20
+  n_controls: 200                 # random template-passing control portfolios
+
 trading:                          # section 6 — FIXED, never tuned
   stop_loss: 0.92                 # exit if close <= 0.92 x entry
   sma_exit: 50                    # exit if close < 50-day SMA

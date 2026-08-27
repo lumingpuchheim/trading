@@ -41,6 +41,30 @@ python lppl_detect.py      # detector -> data/lppl_flags.parquet (~30 min, 7 cor
 python lppl_backtest.py    # -> results/lppl_* tables and charts
 ```
 
+## Minervini Stage-2 breakout (third idea — rejected, see FINDINGS)
+
+Buys strength instead of dips: a nine-condition trend template (relative
+strength = top 30% of the liquid universe that day) plus a mechanical VCP
+(base age 20-90 days, contracting return volatility, a 10-day range inside
+8%, volume dried up to 75% of its 50-day mean), bought when the close clears
+the 60-day pivot on 1.5x volume while the market light is green. Exits: 8%
+stop or a close below the SMA50. Every constant was frozen in
+`MINERVINI_SPEC.md` before the first run, so the backtest is an audit, not a
+fit; the honest comparison is 200 random portfolios that buy random
+template-passing stocks on random days under identical mechanics.
+
+```
+python minervini_backtest.py            # audit + random-template controls
+python minervini_backtest.py --cases    # SPHR / SMCI acceptance case studies
+python minervini_backtest.py --rebuild  # recompute the cached signal panel
+```
+
+Result: dev +7.5% (t 0.63, 62nd percentile of the controls), test -23.7%
+(t -3.0, below all 200 controls). Rejected, and both pre-registered
+acceptance cases (SPHR, SMCI) fail to trigger at all — `tests/test_minervini.py`
+carries them as strict xfails with the diagnosis. The simulator integration
+in the spec's build order was therefore not built.
+
 ## Interpretation choices (where the spec left room)
 
 - The range/volume normalisation baseline is the mean over the 120 days

@@ -863,6 +863,66 @@ anti-bubbles vs trailing 756d 80th pct. Pre-registered claims: 2021-H2
   delivered +12% over seven live years — the definitive exhibit for why
   the test audit exists, retiring the RS and sector-cohort trophies.
 
+## Minervini Stage-2 breakout (2026-08-27 — pre-registered in MINERVINI_SPEC.md, REJECTED)
+
+Third recommender, the only buy-STRENGTH system tested here: nine-condition
+trend template (RS = top 30% of the liquid universe by trailing 126d return,
+a membership filter, never a slot priority) + mechanical VCP (base age 20-90d,
+std contraction 10d < prior 20d < prior 40d, 10-day range <= 8%, 10d volume
+<= 75% of 50d) + close above the 60-day pivot on >= 1.5x mean volume, market
+light green. Exits: 8% stop or close < SMA50. Zero tunables, both periods
+reported, nothing selected (`minervini.py`, `minervini_backtest.py`).
+
+Universe funnel, 1,496 names 2005-2026: 906,079 template stock-days ->
+13,292 setup days (all four VCP conditions, pivot not yet cleared) -> **202
+breakout triggers in 21 years**. The conjunction is brutal: among template
+days, base-age passes 24%, contraction 25%, tightness 71%, volume dry-up
+14% — all four together, 1.6%.
+
+| period | total | ann | trades | avg trade | t | maxDD | avg invested | vs 200 controls |
+|---|---|---|---|---|---|---|---|---|
+| dev 2007-2018 | +7.5% | +0.6% | 104 | +0.83% | 0.63 | -15.7% | 13.3% | beats 62.5% (ctl median +3.8%) |
+| test 2019-2026 | **-23.7%** | -3.5% | 76 | **-3.49%** | **-2.98** | -25.2% | 10.7% | **beats 0 of 200** (ctl median +4.0%) |
+
+**Verdict: rejected.** The bar was "positive and non-collapsed in BOTH". Dev
+is indistinguishable from owning random Stage-2 stocks (62nd percentile of
+the control distribution — the controls are entry-rate matched, 107 vs 104
+trades in dev, 75 vs 76 in test). Test is a sign flip with a t of -3.0 that
+loses to **every one of the 200 random-template controls**. Since the
+controls buy random template-passing names on random days under identical
+slots, cooldown, market light and exits, the only thing that differs is the
+VCP/pivot timing — so the timing is what destroyed the test period, not the
+universe. Worst year 2021 (24 trades, -6.3% each): breakouts in the meme /
+post-COVID melt-up failed immediately and the SMA50 exit paid the churn.
+Exits ran 77% trend-death / 23% stop in dev, 62/38 in test; median hold 27
+days dev, 17 test — the winners never got a chance to run.
+
+**The acceptance case studies failed — both of them.** SPHR produced 0
+triggers (2 setup days in its whole history) and SMCI 0 in H1 2023, so by
+the spec's own rule ("must pass before the backtest is trusted") the numbers
+above are reported as an audit of the frozen constants rather than of
+Minervini's method:
+
+- **SPHR 2025-09..2026-01, below $100:** the template held on 70 of the 105
+  days — the premise of the spec was right, this is exactly the phase
+  STEADY_GIANTS and LPPL_DIP2 both miss. What never formed was a *base*.
+  The pivot is the highest close of the trailing 60 days excluding the last
+  5; an escalator that steps to new highs every 5-15 days resets the pivot
+  age before it can reach the required 20 days. Base age passed on 7 of 105
+  days, volume dry-up on 7 — never on the same day.
+- **SMCI H1 2023:** 102 template days, 37 base-age days, and **zero**
+  dry-up days: it accumulated on rising volume the entire way up, so the
+  "sellers are exhausted" precondition was never true.
+- Random-walk control passed: 0 triggers in 48,000 synthetic stock-days.
+
+So the strategy did not fail because Stage-2 breakouts are unbuyable; it
+failed because the frozen VCP definition is a *quiet-base* detector, and the
+names the spec was written for never go quiet. It selects the stocks that
+pause and dry up — and in the test period those pauses were distribution,
+not accumulation. Per protocol there are no rescue scans: no constant was
+moved after seeing a number, and the simulator integration (build order
+step 3) is not built.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
