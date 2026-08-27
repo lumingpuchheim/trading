@@ -226,18 +226,42 @@ Section 8 used `>=` over two comparisons, admitting flat growth.
   cost-cutting. **This gate is therefore still not Code 33.**
 - **Analyst estimate revisions.** The provider exposes only a current
   snapshot, no history at all. Not testable, now or ever, on this source.
-- **Earnings beats.** Available from ~2014 (50 quarters per ticker,
-  with EPS estimate, reported EPS and surprise %). That covers the test
-  period but not the development period, so a beat requirement cannot be
-  part of a gate that must be judged in BOTH periods. It is therefore
-  measured separately, as a descriptive split of test-period entries,
-  and is not part of F0-F3.
+- **Earnings beats — CORRECTION, and section 8c below.** I first wrote
+  that this data only reaches ~2014 and could therefore never be a
+  both-period gate. That was wrong: it came from a probe with a low row
+  limit. Fetched properly, the provider returns a median of **96
+  quarters per ticker back to 1998**, covering 572 tickers in 2007 and
+  780 by 2018 — both periods. The beat leg is therefore buildable and is
+  pre-registered in section 8c.
 
 **Comparison protocol.** Identical to section 8: one run of the
 market-on-close convention with the gate on, both periods, 200
 entry-rate-matched controls from the template-AND-fundamentals pool,
 against the published no-fundamentals baseline (dev -12.4%, test -7.9%)
 and the section-8 gate (5 trades per period). Reported whatever it says.
+
+## 8c. Earnings-beat leg (pre-registered 2026-08-27, before any run)
+
+The "catalyst" pillar's cheapest observable: did the company beat the
+consensus estimate on its latest report? `data/earnings_surprise.parquet`
+(ticker, report date, EPS estimate, reported EPS, surprise %) — fetched
+for the whole universe, median 96 quarters per ticker, 1998-2026, 98.8%
+of rows carrying a surprise figure. Known on the report date, so using it
+from that date forward is causal.
+
+**F4 beat.** The most recent report on or before the decision day has
+**surprise_pct > 0**. Names with no surprise figure for that report fail
+F4 rather than passing by default.
+
+Two runs, declared together, so neither is a scan:
+
+1. **F4 alone** on top of the technical setup (no EPS gate) — is the
+   catalyst worth anything by itself?
+2. **F4 + the section 8b EPS gate** — the two fundamentals legs together.
+
+Both over both periods, market-on-close convention, 200 entry-rate
+matched controls from the matching pool, plus the high-powered split of
+all 4,585 buy-stop fills by F4. Reported whatever they say.
 
 ---
 
@@ -412,7 +436,10 @@ explicit instruction, in preference to hand-amending the rules.
 | v1 next-open chase (superseded) | +7.5% (t 0.63) | -23.7% (t -3.0) | 104 / 76 | 63% / 0% |
 | v2 buy stop + eject (this spec) | -42.8% (t -5.46) | -31.3% (t -1.76) | 1122 / 1200 | 0% / 0% |
 | v2 market-on-close | -12.4% (t -1.58) | -7.9% (t -0.56) | 113 / 83 | 3.5% / 16% |
-| v2 MOC + fundamentals (section 8) | -1.7% (5 trades) | -1.7% (5 trades) | 5 / 5 | no power |
+| v2 MOC + fundamentals (section 8, sloppy) | -1.7% (5 trades) | -1.7% (5 trades) | 5 / 5 | no power |
+| v2 MOC + fundamentals (section 8b, faithful) | -2.9% (9 trades) | -3.5% (9 trades) | 9 / 9 | no power |
+| v2 MOC + earnings beat (section 8c) | -9.3% (t -1.28) | -3.5% (t -0.22) | 91 / 67 | 8.5% / 23% |
+| v2 MOC + beat + EPS gate | -3.2% (8 trades) | -3.5% (9 trades) | 8 / 9 | no power |
 
 Universe funnel: 906,079 template stock-days -> 11,171 setup days ->
 4,676 buy-stop fills -> 402 volume-confirmed -> 238 market-on-close
@@ -425,14 +452,26 @@ has five pillars — trend, fundamentals, catalyst, entry points, exit
 points — and this spec only ever addressed trend and entry, plus a
 simplified exit. Full inventory in `LIMITATIONS.md`; the headline gaps:
 
-- **Fundamentals: BUILT (section 8), EPS leg only.** `minervini.eps_gate`
-  + `--fund`. Sales and margins are not in the cache, so two of Code 33's
-  three metrics are still missing. As a filter it leaves 5 trades per
-  period — unusable. Measured on 4,585 fills instead, passing names run
-  +4.41% vs +1.86% over 60 days (t 2.03), but the medians match and the
-  gap is almost entirely test-period. See FINDINGS.
-- **Never specified here, never built:** catalyst, industry-group
-  leadership.
+- **Catalyst: PARTLY BUILT (section 8c).** `minervini.beat_gate` +
+  `--beat`, fed by `fetch_surprise.py` (1,495 names, median 96 quarters
+  back to 1998). The only fundamentals element that improves both
+  periods while leaving the strategy runnable (-12.4%/-7.9% ->
+  -9.3%/-3.5%, 91/67 trades), but still negative and still under its
+  controls; the underlying effect is +0.35% per 60 days, t 0.52. The
+  rest of the catalyst pillar — products, contracts, management — is not
+  represented at all.
+- **Fundamentals: BUILT (sections 8 and 8b), EPS leg only.** `minervini.eps_gate`
+  + `--fund`. Section 8b corrected three deviations that were mine
+  (quarterly not TTM, strictly rising, turnarounds measurable). Sales and
+  margins remain unobtainable — the provider returns 5-6 quarters against
+  the 8 Code 33 needs — so this is still one leg of three. As a filter it
+  leaves 9 trades per period. Measured on 4,585 fills, the faithful gate
+  scores +1.35% vs +2.08% (t -0.67, negative in both periods); the
+  sloppy section-8 version's apparent +2.55% (t 2.03) did not survive
+  being implemented correctly. See FINDINGS.
+- **Never specified here, never built:** industry-group leadership.
+  Analyst estimate revisions are impossible on this source (current
+  snapshot only, no history).
 - **Cannot be built on this data:** intraday volume pace (the input both
   failed fill conventions were working around), a point-in-time
   emerging-growth universe (ours is *current* S&P 1500 — survivorship-

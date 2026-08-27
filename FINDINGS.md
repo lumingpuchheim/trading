@@ -1238,6 +1238,56 @@ source at all. So this remains one leg of three, and the
 quality-of-earnings check that catches EPS lifted by buybacks or
 cost-cutting is still absent.
 
+### Catalyst leg: earnings beats (spec 8c) — the only fundamentals element that survives
+
+**A data correction first.** I had recorded that surprise history only
+reaches ~2014 and could never be a both-period gate. That was wrong — it
+came from a probe with a low row limit. Fetched properly
+(`fetch_surprise.py`, 1,495 of 1,496 names, ~45 min), the provider gives
+a **median 96 quarters per ticker back to 1998**: 572 names covered in
+2007, 780 by 2018. Both periods.
+
+**F4:** the most recent report on or before the decision day beat
+consensus (surprise_pct > 0); no figure = fail, same 120-day staleness
+rule. Two configurations declared together before running.
+
+| configuration | dev | test | trades | avg invested | vs 200 controls |
+|---|---|---|---|---|---|
+| MOC, no fundamentals | -12.4% | -7.9% | 113 / 83 | 10.3% / 10.9% | 3.5% / 16% |
+| **+ F4 beat only** | **-9.3%** (t -1.28) | **-3.5%** (t -0.22) | 91 / 67 | 8.4% / 8.9% | 8.5% / 23% |
+| + EPS gate 8b only | -2.9% | -3.5% | 9 / 9 | 0.6% / 1.0% | 9% / 6.5% |
+| + both | -3.2% | -3.5% | 8 / 9 | 0.4% / 1.0% | 6.5% / 14.5% |
+
+**F4 is the only fundamentals element that improves both periods while
+keeping the strategy runnable.** It lifts dev from -12.4% to -9.3% and
+test from -7.9% to -3.5% and still leaves 91/67 trades and ~9% average
+exposure, where the EPS gate leaves 9 trades and 1% exposure. Stacking
+the EPS gate on top of it adds nothing and destroys the sample again.
+
+**But it is still negative in both periods and still loses to its own
+controls** (8.5th and 23rd percentile), and the high-powered split says
+why — 4,583 buy-stop fills, 60-day forward return from the fill:
+
+| | n | mean | median | win rate |
+|---|---|---|---|---|
+| followed a beat | 3,711 | +2.09% | +1.49% | 53.9% |
+| did not | 872 | +1.74% | +1.09% | 53.1% |
+
+Difference **+0.35%, t = 0.52** — and remarkably stable across periods
+(dev +0.26%, test +0.44%). The sign is right, it replicates, and it is
+far too small to matter: per-trade sigma is ~18%, and 81% of breakouts
+follow a beat anyway, so F4 barely filters. What it mostly does is
+remove a fifth of the trades, which is why the portfolio numbers move at
+all.
+
+**Summary of SEPA pillar 2 + catalyst on this data.** EPS acceleration
+(faithfully implemented): no edge, slightly negative, unusable as a
+filter. Earnings beats: right sign, replicates across both periods,
+magnitude ~0.35% per 60 days — real but economically irrelevant here.
+Sales and margins: not obtainable (5-6 quarters against 8 needed).
+Analyst revisions: no history at all. Nothing found makes the strategy
+profitable, and nothing found rescues it from its controls.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

@@ -155,6 +155,31 @@ def eps_gate(report_dates: np.ndarray, eps: np.ndarray,
     return passes[known] & fresh
 
 
+def beat_gate(report_dates: np.ndarray, surprise_pct: np.ndarray,
+              calendar: pd.DatetimeIndex, cfg: dict) -> np.ndarray:
+    """SEPA catalyst leg (MINERVINI_SPEC.md 8c): did the most recent
+    report on or before each day beat consensus?
+
+    A report with no surprise figure fails rather than passing by
+    default, and the same `max_report_age_days` staleness rule applies as
+    for the EPS gate."""
+    f = cfg['minervini_fundamentals']
+    n_days = len(calendar)
+    out = np.zeros(n_days, dtype=bool)
+    sp = np.asarray(surprise_pct, dtype=float)
+    if not len(sp):
+        return out
+    beat = np.concatenate(([False], np.isfinite(sp) & (sp > 0)))
+    known = np.searchsorted(report_dates, calendar.to_numpy(), side='right')
+    has = known > 0
+    fresh = np.zeros(n_days, dtype=bool)
+    if has.any():
+        age = (calendar.to_numpy()[has]
+               - report_dates[known[has] - 1]).astype('timedelta64[D]')
+        fresh[has] = age.astype(int) <= f['max_report_age_days']
+    return beat[known] & fresh
+
+
 def zigzag(close: np.ndarray, threshold: float) -> dict:
     """Confirmed alternating swing highs and lows on closes.
 

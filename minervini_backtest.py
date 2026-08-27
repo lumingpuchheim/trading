@@ -36,11 +36,13 @@ import numpy as np
 import pandas as pd
 
 from lppl_backtest import ROOT, load_config, metrics
-from minervini import eps_gate, rs_ok_matrix, rs_return, signals
+from minervini import beat_gate, eps_gate, rs_ok_matrix, rs_return, signals
 
 START_EQUITY = 100_000.0
 PANEL_CACHE = 'minervini_panel_v2.npz'
 PANEL_CACHE_FUND = 'minervini_panel_v2_fund.npz'
+PANEL_CACHE_BEAT = 'minervini_panel_v2_beat.npz'
+PANEL_CACHE_BOTH = 'minervini_panel_v2_both.npz'
 
 
 def market_green(spy_close: pd.Series) -> np.ndarray:
@@ -52,7 +54,8 @@ def market_green(spy_close: pd.Series) -> np.ndarray:
     return (trend & calm).to_numpy()
 
 
-def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False) -> dict:
+def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
+                beat: bool = False) -> dict:
     """Per-day signal matrices (days x tickers) on the SPY calendar.
 
     fund=True additionally requires the SEPA pillar-2 EPS gate (spec
@@ -60,7 +63,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False) -> dict:
     way, so the comparison isolates the fundamentals filter alone."""
     d = cfg['data']
     data_dir = ROOT / d['cache_dir']
-    cache = data_dir / (PANEL_CACHE_FUND if fund else PANEL_CACHE)
+    cache = data_dir / ((PANEL_CACHE_BOTH if fund else PANEL_CACHE_BEAT) if beat
+                        else (PANEL_CACHE_FUND if fund else PANEL_CACHE))
     spy = pd.read_parquet(data_dir / 'ohlcv' / f"{d['benchmark']}.parquet")
     cal = spy.index
 
@@ -111,6 +115,21 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False) -> dict:
                                          g['eps'].to_numpy(), cal, cfg)
             print(f'fundamentals gate: {int(liquid.sum())} liquid+qualifying '
                   f'stock-days')
+
+        if beat:
+            sp = pd.concat([pd.read_parquet(q) for q in
+                            (data_dir / 'earnings_surprise.parquet',
+                             data_dir / 'earnings_surprise_rest.parquet')
+                            if q.exists()]).sort_values('date')
+            by_beat = {t: g for t, g in sp.groupby('ticker')}
+            for j, t in enumerate(tickers):
+                g = by_beat.get(t)
+                if g is None:
+                    liquid[:, j] = False
+                    continue
+                liquid[:, j] &= beat_gate(g['date'].to_numpy(),
+                                          g['surprise_pct'].to_numpy(), cal, cfg)
+            print(f'beat gate: {int(liquid.sum())} liquid+qualifying stock-days')
 
         template = np.zeros((n, k), bool)
         setup = np.zeros((n, k), bool)
@@ -315,7 +334,9 @@ def main() -> None:
     results = ROOT / bt['results_dir']
     results.mkdir(exist_ok=True)
     fund = '--fund' in sys.argv
-    panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund)
+    beat = '--beat' in sys.argv
+    panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
+                        beat=beat)
     cal = panel['calendar']
 
     print(f'panel: {len(panel["tickers"])} tickers, '
@@ -333,7 +354,8 @@ def main() -> None:
         periods[name] = (j0, j1)
 
     moc = '--moc' in sys.argv
-    tag = ('v2_moc' if moc else 'v2') + ('_fund' if fund else '')
+    tag = (('v2_moc' if moc else 'v2') + ('_fund' if fund else '')
+           + ('_beat' if beat else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '
               f'{int(panel["trigger_moc"].sum())} entries available')
