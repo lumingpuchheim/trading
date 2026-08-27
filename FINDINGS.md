@@ -1640,6 +1640,26 @@ broker's pot); its -9.5% vs +7.4% no-tax gap is whole-share path noise
 at 2,000-EUR slots, not tax. Trade counts across books are equal within
 noise (1,603 vs 1,595); no book "trades more".
 
+#### Revolut fee schedule (user request): book size stops mattering — the verdict does not change
+
+Revolut Standard modelled as 0.25% of volume, min 1 EUR, no fixed cost
+(the 1 free trade/month is immaterial at ~12 trades/month). With
+proportional fees the two books behave almost identically — the user's
+proportionality expectation, confirmed:
+
+| book | total | /yr | maxDD | fees | tax | final |
+|---|---|---|---|---|---|---|
+| 20,000 | +214.7% | +5.45% | -30% | 25,443 | 12,805 | 62,950 |
+| 100,000 | +234.1% | +5.74% | -30% | 128,978 | 89,581 | 334,061 |
+| SPY b&h after tax | +622% | +9.6% | — | ~0 | once at end | 144,556 / 721,724 |
+
+The Comdirect fixed-fee floor was the entire small-book problem: on
+Revolut the 20k book goes from -10% to +215%. Fees and tax now scale
+with the book, as they should. The strategy is investable at any size
+on a proportional-fee broker — and still earns roughly half of
+after-tax SPY buy-and-hold, with a -30% drawdown. The final ranking is
+unchanged: deferral + zero turnover beats the edge.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the
