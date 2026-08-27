@@ -1505,6 +1505,17 @@ This is a lottery-with-an-edge profile — his stated profile — and it is
 why every equal-weight bet must be taken: skipping "mediocre" signals
 forfeits unidentifiable jackpots.
 
+#### Geometric correction (user request)
+
+Per-bet geometric mean: dev **+3.52%** (arithmetic +4.57%, volatility
+drag 1.05%), test **+4.56%** (+6.08%, drag 1.52%). At the account level
+each trade is a 10% slot, so the geometric per-trade account impact is
++0.44% / +0.59% — the drag at slot size is negligible, which is itself
+an argument for the flat small slots the user reinstated: at 10% the
+lottery-ticket variance barely touches compounding; at v6's 15-20%
+positions the same variance was already biting (drag scales with the
+square of position size).
+
 **Sell quality: mediocre and consistent.** Median stock we sell is
 +3.9% higher 60 days later, ~60% are higher across ALL exit reasons —
 we systematically sell things that keep going up (in a survivor
