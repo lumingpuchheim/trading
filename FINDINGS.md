@@ -1324,6 +1324,53 @@ in our universe. What separates that from the practitioner's results is
 what remains unmechanised: judgement about WHICH qualifying setup to
 take, sizing, and the wider universe — see MINERVINI_COVERAGE.md.
 
+#### Addendum: what is actually missing (paired measurement, 2026-08-27)
+
+A user challenge ("you bet too timidly? I don't think so") forced the
+expectancy arithmetic, and it kills the sizing explanation I had been
+leaning on:
+
+- **Sizing cannot be the missing piece.** Our expectancy per trade is
+  negative (-1.45% dev, -1.59% test). Scaling a negative-edge bet up
+  scales the losses up. Aggression amplifies an edge; it cannot create
+  one. Kelly for a negative-edge game is zero. The 2021 "0.5% invested"
+  observation explains only why our losses are SMALL, not why they are
+  losses.
+- **The win-rate arithmetic localises the gap.** With our own realised
+  payoffs (avg win +7.2%/+16.1%, avg loss -4.7%/-5.3%), breakeven needs
+  a 40% (dev) / 25% (test) win rate; we realise 28%/17%. At the
+  practitioner's ~50% rate, our own payoff profile would earn +1.2% and
+  +5.4% per trade.
+- **The paired test: the exits are the largest measured destroyer.**
+  The SAME 61 v3 entries, two ways:
+
+  | | realised (our exits) | held 60 days flat |
+  |---|---|---|
+  | dev | -1.45%, 28% winners | **+4.05%, 60% winners** |
+  | test | -0.89%, 19% winners | **+7.21%, 76% winners** |
+
+  Median realised hold: 21 days. The faithful v3 entry stream reaches a
+  breakeven-competent win rate all by itself if simply left alone for
+  three months; our exit regime — even the v3 "decisive" version —
+  converts it to negative by selling the shakeout before the recovery.
+  This is the DIP-buyer exit-law lesson appearing on the breakout side:
+  responsive exits die.
+
+So the missing pieces, ranked by measurement: (1) an exit philosophy
+that holds through the shakeout — structural stop, patience, selling
+strength rather than weakness; (2) selection among setups (the controls
+still beat us under identical exits, so entries add negative value vs
+random Stage-2 names); (3) the universe; (4) sizing, dead last, only
+relevant once expectancy is positive.
+
+**Declared trap, so it is not walked into later:** adopting "hold 60
+days" as a rule NOW would be a post-hoc exit scan on data that has
+already been seen — the exact move the exit-law lesson forbids. Both
+periods are burned for exit selection. A v4 with a structural stop and
+patience can be pre-registered honestly, but its backtest numbers on
+this history would be post-hoc by construction; the honest judge would
+be the simulator's forward ledger.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the
