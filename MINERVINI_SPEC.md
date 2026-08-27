@@ -134,13 +134,130 @@ the "setting up" list — names in the setup state shown as BLOCKED
 "waiting for breakout above P x 1.001" with the exact trigger price.
 The incremental updater must store volume alongside close.
 
-## Build order
+---
 
-1. Rewrite `minervini.py` signal functions to this spec + unit tests
-   (escalator, random walk, zigzag reference checks, no-lookahead
-   truncation test, SPHR + SMCI acceptance cases).
-2. Run the acceptance gate. Report it to the user pass or fail.
-3. Only on a green gate: `minervini_backtest.py` under the new signals
-   (buy-stop fills, chase guard, failed-breakout eject), controls,
-   both periods, FINDINGS entry win or lose.
-4. Simulator integration after the verdict is on the table.
+## BUILD STATUS (updated 2026-08-27, after implementation)
+
+This section is a record, written after the fact. Everything above it is
+the pre-registered specification and has not been edited since the gate
+ran; everything stated here is what the code actually does.
+
+### Implemented and verified
+
+| spec section | code | tests |
+|---|---|---|
+| 1. Trend template, all nine conditions | `minervini.trend_template`, `rs_ok_matrix` | 7 unit tests + visual audit (`minervini_showcase.py`) |
+| 2. Confirmed swing structure | `minervini.zigzag` | 3 unit tests (alternation, confirmation never precedes the swing, sub-threshold noise ignored) |
+| 2. Base rim + prior-cycle re-anchor | `minervini.anchor_base` | 1 unit test |
+| 2. Age, contractions, pivot, dry-up | `minervini._base_day`, `vcp`-side of `signals` | 5 unit tests |
+| 3. Buy stop, chase guard, gap fill | `minervini.signals` -> `trigger`, `fill_px` | 4 unit tests |
+| 3. Volume confirmation | `signals` -> `vol_ok` | 1 unit test |
+| 4. Exits (8% stop, SMA50, failed_breakout, delisted) | `minervini_backtest.simulate` | exercised by the audit |
+| 5. Portfolio + 200 entry-rate-matched controls | `minervini_backtest` | — |
+| 6. Acceptance gate | `minervini_gate.py` | 2 strict xfails + 2 diagnosis tests |
+| no-lookahead | truncation test over every output | 1 unit test |
+
+24 tests, all green (2 as strict xfails: the acceptance cases).
+
+### Deviations from this spec that the code carries
+
+1. **A third fill convention was added** after the audit, at the user's
+   instruction: market-on-close (`--moc`). Price above the pivot and 1.5x
+   volume are both knowable at the close, so it buys there and needs no
+   eject. Sections 3 and 4 above describe the buy-stop convention only;
+   both are implemented and both are reported.
+2. Nothing else. No constant in sections 1-4 was changed after any run.
+
+### Defects IN THIS SPECIFICATION, found by implementing it
+
+Recorded, not fixed — fixing them is a new pre-registration.
+
+1. **The base anchor is wrong (section 2).** Anchoring the base at the
+   325-day rim and measuring age *and* the contraction chain from it
+   means a marginal new high inside a base resets the age to zero and
+   deletes the earlier contractions. SMCI's real January-2024 structure
+   (-12.9% then -9.4%, a valid two-contraction base) is scored
+   `only_1_contractions`; SPHR dies as `age_1..age_14` on 43 of 105 days.
+   Measured fix (`minervini_gate.py --chain`, diagnostic only): anchor at
+   the START of the contraction chain — walk back while pullbacks keep
+   deepening. SPHR then passes its acceptance case with 2 triggers at
+   $84.67.
+2. **The `failed_breakout` eject (section 3) is not Minervini.** He does
+   not buy an unconfirmed breakout and sell it the next morning; he does
+   not buy it at all. This invented rule produced 90-92% of all trades
+   and most of the loss. It exists only because a buy stop fills before
+   the day's volume is knowable.
+3. **The confirmed-trough requirement (section 2) is a zigzag artifact.**
+   Requiring the final low to have recovered 3% before a setup exists
+   means a base whose recovery gaps straight through the pivot never
+   produces a setup day at all — which is precisely what happened to
+   SMCI in January 2024.
+4. **`base_age_max` (325) can never bind** while `base_lookback` is also
+   325 and the rim must precede today. Harmless, but it is not a real
+   constraint.
+5. **A factual error in section 6, case 3.** It states SPHR's October
+   2025 pause "lasted 33 trading days". That number was carried over
+   from a v1 diagnostic whose pivot excluded the last 5 days, so it kept
+   counting while the stock was already printing new highs. Measured
+   properly, SPHR's longest stretch without a new all-time-high close in
+   the whole acceptance window is **16 trading days** (max drawdown from
+   the running high, 15.3%). The 15-day minimum is therefore right at
+   the edge for SPHR rather than comfortably satisfied — the case was
+   built on a mismeasurement. Section 6 is left as written because it is
+   the pre-registered record; this is the correction.
+
+### Results (full detail in FINDINGS.md)
+
+Acceptance gate: **FAIL** — SPHR 0 triggers, SMCI 0 triggers. Per section
+6 the backtest should not have been run; it was run anyway on the user's
+explicit instruction, in preference to hand-amending the rules.
+
+| entry convention | dev | test | trades | vs 200 controls |
+|---|---|---|---|---|
+| v1 next-open chase (superseded) | +7.5% (t 0.63) | -23.7% (t -3.0) | 104 / 76 | 63% / 0% |
+| v2 buy stop + eject (this spec) | -42.8% (t -5.46) | -31.3% (t -1.76) | 1122 / 1200 | 0% / 0% |
+| v2 market-on-close | -12.4% (t -1.58) | -7.9% (t -0.56) | 113 / 83 | 3.5% / 16% |
+
+Universe funnel: 906,079 template stock-days -> 11,171 setup days ->
+4,676 buy-stop fills -> 402 volume-confirmed -> 238 market-on-close
+entries, over 21 years and 1,496 names.
+
+### NOT built (and why)
+
+The signal layer is complete against this spec. The *method* is not: SEPA
+has five pillars — trend, fundamentals, catalyst, entry points, exit
+points — and this spec only ever addressed trend and entry, plus a
+simplified exit. Full inventory in `LIMITATIONS.md`; the headline gaps:
+
+- **Never specified here, never built:** fundamentals (earnings/sales/
+  margin acceleration), catalyst, industry-group leadership.
+- **Cannot be built on this data:** intraday volume pace (the input both
+  failed fill conventions were working around), a point-in-time
+  emerging-growth universe (ours is *current* S&P 1500 — survivorship-
+  flattered and it excludes his actual hunting ground), float and
+  institutional sponsorship.
+- **Not mechanised:** contraction quality as a shape rather than a list
+  of depths; his other entries (undercut & rally, low cheat, pullback to
+  the 10/20 EMA, power play); position sizing, pyramiding and progressive
+  exposure; selling into strength; a stop under the final contraction's
+  low with a reward:risk floor; and selectivity — he passes on most
+  qualifying setups, we take every one alphabetically until the slots
+  fill.
+- **Section 7 (simulator integration): not built.** It was gated on a
+  passing verdict and there is none.
+
+## Build order — status
+
+1. **DONE** — `minervini.py` rewritten to this spec, 24 tests in
+   `tests/test_minervini.py`.
+2. **DONE — FAILED** — `minervini_gate.py`; reported before any backtest.
+3. **RUN ANYWAY, on user instruction** — `minervini_backtest.py`
+   (buy-stop) and `--moc`; controls, both periods, FINDINGS entries for
+   both. The gate failure is recorded alongside every number.
+4. **NOT BUILT** — simulator integration was gated on a passing verdict.
+
+Supporting scripts written along the way, all committed:
+`minervini_gate.py` (acceptance gate + rejection funnel + `--chain`
+diagnostic), `minervini_failures.py` (v1 event study, six worst trades,
+`--v2` volume-confirmation study), `minervini_showcase.py` (per-trade
+anatomy: trend, base, contractions, dry-up, buy, exit).
