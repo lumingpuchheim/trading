@@ -105,13 +105,16 @@ def scan_lppl(cfg: dict, light: dict, max_names: int = 25) -> list[dict]:
 def scan_giants(cfg: dict, light: dict, max_names: int = 25) -> list[dict]:
     """Universe scan for Steady-Giants qualifiers (STEADY_GIANTS_SPEC)."""
     from giants_features import div_record, slope_r2, ttm_eps
+    from sim.costs import load_sim_config
+    sim_cfg = load_sim_config()
     d = cfg['data']
     divs = pd.read_parquet(DATA / 'dividends.parquet')
     eps = pd.read_parquet(DATA / 'earnings_eps.parquet') \
         .dropna(subset=['eps']).sort_values('date')
     div_by = {t: g for t, g in divs.groupby('ticker')}
     eps_by = {t: g for t, g in eps.groupby('ticker')}
-    pe_hist = _pe_history()
+    pe_pct = sim_cfg['signals']['giants_pe_percentile']
+    pe_hist = _pe_history(pe_pct)
 
     rows, vols = [], []
     for t in universe():
@@ -147,15 +150,17 @@ def scan_giants(cfg: dict, light: dict, max_names: int = 25) -> list[dict]:
         blocked = []
         if r['vol'] > cut_vol:
             blocked.append('not in the calmest third of the market')
-        p90 = pe_hist.get(r['symbol'])
-        if p90 is not None and r['pe'] > p90:
+        cap = pe_hist.get(r['symbol'])
+        if cap is not None and r['pe'] > cap:
             blocked.append(f"P/E {r['pe']:.1f} above its own history "
-                           f'p90 ({p90:.1f}) — too expensive now')
+                           f"p{int(100 * pe_pct)} ({cap:.1f}) — too "
+                           'expensive now')
         if not light['green']:
             blocked.append('market light red')
-        detail = (f"5y straightness R2 {r['r2']:.2f}, vol {100 * r['vol']:.2f}%/d, "
-                  f"P/E {r['pe']:.1f}"
-                  + (f" (own p90 {p90:.1f})" if p90 is not None else ''))
+        detail = (f"5y straightness R2 {r['r2']:.2f}, "
+                  f"vol {100 * r['vol']:.2f}%/d, P/E {r['pe']:.1f}"
+                  + (f" (own p{int(100 * pe_pct)} {cap:.1f})"
+                     if cap is not None else ''))
         out.append({'symbol': r['symbol'], 'source': STEADY_GIANTS,
                     'price': r['price'], 'buyable': not blocked,
                     'reason': '; '.join(blocked), 'detail': detail,
@@ -185,9 +190,9 @@ def warnings_for(symbols: list[str], cfg: dict) -> list[dict]:
     return out
 
 
-def _pe_history() -> dict[str, float]:
-    """Own-history P/E 90th percentile per ticker, from the giants
-    monthly table; empty when that table has not been built yet."""
+def _pe_history(pct: float = 0.70) -> dict[str, float]:
+    """Own-history P/E percentile per ticker, from the giants monthly
+    table; empty when that table has not been built yet."""
     path = DATA / 'giants_monthly.parquet'
     if not path.exists():
         return {}
@@ -195,4 +200,4 @@ def _pe_history() -> dict[str, float]:
     if 'pe' not in tab:
         return {}
     return (tab.dropna(subset=['pe']).groupby('ticker')['pe']
-            .quantile(0.90).to_dict())
+            .quantile(pct).to_dict())

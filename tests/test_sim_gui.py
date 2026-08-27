@@ -12,13 +12,16 @@ def client(monkeypatch):
     conn = connect(':memory:')
     b = create_book(conn, 'main', 20_000.0, created_at='2026-08-26')
     conn.executemany(
-        'INSERT INTO recommendations(week, symbol, source, buyable, reason, '
-        'detail) VALUES(?,?,?,?,?,?)',
-        [('2026-08-26', 'DRH', 'LPPL_DIP2', 1, '', 'votes 3/5'),
-         ('2026-08-26', 'VLO', 'LPPL_DIP2', 0, 'no 4% dip', 'votes 3/5'),
-         ('2026-08-26', 'MCK', 'STEADY_GIANTS', 1, '', '5y R2 0.96'),
-         ('2026-08-26', 'SKT', 'STEADY_GIANTS', 0,
-          'P/E 40.1 above its own history p90', '5y R2 0.91')])
+        'INSERT INTO recommendations(week, symbol, name, source, buyable, '
+        'reason, detail, price, currency) VALUES(?,?,?,?,?,?,?,?,?)',
+        [('2026-08-26', 'DRH', 'DiamondRock Hospitality', 'LPPL_DIP2', 1, '',
+          'votes 3/5', 117.0, 'USD'),
+         ('2026-08-26', 'VLO', 'Valero Energy', 'LPPL_DIP2', 0, 'no 4% dip',
+          'votes 3/5', 344.5, 'USD'),
+         ('2026-08-26', 'MCK', 'McKesson Corporation', 'STEADY_GIANTS', 1, '',
+          '5y R2 0.96', 873.5, 'USD'),
+         ('2026-08-26', 'SKT', 'Tanger Inc.', 'STEADY_GIANTS', 0,
+          'P/E 40.1 above its own history p70', '5y R2 0.91', 39.0, 'USD')])
     conn.commit()
     monkeypatch.setattr(gui, 'db', lambda: conn)
     monkeypatch.setattr(gui, 'eur_prices', lambda c: ({'DRH': 11.0}, 1.17))
@@ -47,7 +50,7 @@ def test_buy_button_only_on_buyable_rows(client):
     assert 'bubble dip-buyer' in html and 'compounders' in html
     # blocked names show the reason and no buy form
     assert 'BLOCKED - no 4% dip' in html
-    assert 'BLOCKED - P/E 40.1 above its own history p90' in html
+    assert 'BLOCKED - P/E 40.1 above its own history p70' in html
     for blocked in ('VLO', 'SKT'):
         row = html.split(f'<b>{blocked}</b>')[1].split('</tr>')[0]
         assert 'not buyable' in row and 'action="/buy"' not in row
@@ -82,3 +85,24 @@ def test_transactions_csv_downloads(client):
     assert r.status_code == 200
     assert 'attachment' in r.headers['Content-Disposition']
     assert r.data.decode().splitlines()[0].startswith('id,book_id,date,type')
+
+
+def test_company_names_and_share_prices_are_shown(client):
+    c, conn, b = client
+    html = c.get(f'/?book={b}').data.decode()
+    assert 'DiamondRock Hospitality' in html
+    assert 'McKesson Corporation' in html
+    assert '117.00 USD' in html and '873.50 USD' in html
+
+
+def test_suggested_quantity_is_ten_percent_of_the_book(client):
+    c, conn, b = client
+    html = c.get(f'/?book={b}').data.decode()
+    # 20,000 EUR book, 10% = 2,000 EUR; DRH at 117 USD / 1.17 = 100 EUR,
+    # so 19 shares (20 would not leave room for the 12.40 EUR fee)
+    row = html.split('<b>DRH</b>')[1].split('</tr>')[0]
+    assert '19 sh = 1,912 EUR' in row
+    assert 'name="qty" min="1" value="19"' in row
+    # a much pricier name gets proportionally fewer shares
+    row = html.split('<b>MCK</b>')[1].split('</tr>')[0]
+    assert 'name="qty" min="1" value="2"' in row   # 873.50 USD = 746.58 EUR

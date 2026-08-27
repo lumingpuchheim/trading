@@ -107,12 +107,31 @@ def run_weekly(conn, today: str | None = None, send: bool = True,
     light = market_light(cfg)
     print(f'market light: {"GREEN" if light["green"] else "RED"}', flush=True)
     recs = scan_lppl(cfg, light) + scan_giants(cfg, light)
+
+    # names and RAW quotes for the shortlist: the email and the GUI show a
+    # real company and a real share price, not just a ticker
+    rec_syms = sorted({r['symbol'] for r in recs})
+    if rec_syms:
+        print(f'fetching names and quotes for {len(rec_syms)} names ...',
+              flush=True)
+        market.update_raw(rec_syms)
+        names = market.company_names(rec_syms)
+        for r in recs:
+            r['name'] = names.get(r['symbol'], r['symbol'])
+            raw = market.last_close(r['symbol'])
+            if raw is not None:
+                r['price'] = raw
+            r['currency'] = currency(r['symbol'], sim_cfg)
+
     conn.execute('DELETE FROM recommendations WHERE week = ?', (today,))
     for r in recs:
-        conn.execute('INSERT INTO recommendations(week, symbol, source, '
-                     'buyable, reason, detail) VALUES(?,?,?,?,?,?)',
-                     (today, r['symbol'], r['source'], int(r['buyable']),
-                      r['reason'], r['detail']))
+        conn.execute('INSERT INTO recommendations(week, symbol, name, source, '
+                     'buyable, reason, detail, price, currency) '
+                     'VALUES(?,?,?,?,?,?,?,?,?)',
+                     (today, r['symbol'], r.get('name', r['symbol']),
+                      r['source'], int(r['buyable']), r['reason'],
+                      r['detail'], float(r.get('price', 0.0)),
+                      r.get('currency', 'USD')))
     conn.commit()
 
     inst = sim_cfg['instruments']

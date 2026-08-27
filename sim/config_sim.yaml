@@ -35,6 +35,12 @@ instruments:
 
 books:
   default_start_capital_eur: 20000.0
+  default_position_pct: 0.10      # a suggested buy = 10% of the book's equity
+
+signals:
+  giants_pe_percentile: 0.70      # block a giant whose P/E is above this
+                                  # percentile of its OWN history (0.90 was
+                                  # the first setting; 0.70 is stricter)
 
 email:
   enabled: true                   # set the password env var below, then this works

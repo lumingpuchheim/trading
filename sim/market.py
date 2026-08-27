@@ -187,3 +187,29 @@ def dividends_on(symbol: str, date: str) -> float:
     df = pd.read_parquet(path)
     hit = df[df.index.normalize() == pd.Timestamp(date)]
     return float(hit['amount'].iloc[0]) if len(hit) else 0.0
+
+
+NAMES = LIVE / 'names.parquet'
+
+
+def company_names(symbols: list[str]) -> dict[str, str]:
+    """Company names, cached; only unknown symbols hit the network."""
+    _ensure_dirs()
+    known = {}
+    if NAMES.exists():
+        df = pd.read_parquet(NAMES)
+        known = dict(zip(df['symbol'], df['name']))
+    missing = [s for s in symbols if s not in known]
+    if missing:
+        import yfinance as yf
+        for s in missing:
+            name = ''
+            try:
+                info = yf.Ticker(s).info or {}
+                name = info.get('longName') or info.get('shortName') or ''
+            except Exception:
+                pass
+            known[s] = name or s          # fall back to the ticker itself
+        pd.DataFrame({'symbol': list(known), 'name': list(known.values())}) \
+            .to_parquet(NAMES)
+    return {s: known.get(s, s) for s in symbols}

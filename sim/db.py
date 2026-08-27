@@ -84,10 +84,13 @@ CREATE TABLE IF NOT EXISTS recommendations (
     id INTEGER PRIMARY KEY,
     week TEXT NOT NULL,                -- ISO date of the email
     symbol TEXT NOT NULL,
+    name TEXT DEFAULT '',              -- company name
     source TEXT NOT NULL,              -- LPPL_DIP2 | STEADY_GIANTS
     buyable INTEGER NOT NULL,
     reason TEXT DEFAULT '',
-    detail TEXT DEFAULT '');
+    detail TEXT DEFAULT '',
+    price REAL DEFAULT 0,              -- RAW last close, own currency
+    currency TEXT DEFAULT 'USD');
 
 CREATE INDEX IF NOT EXISTS ix_tx_book ON transactions(book_id, date);
 CREATE INDEX IF NOT EXISTS ix_lots_book ON lots(book_id, symbol);
@@ -95,10 +98,21 @@ CREATE INDEX IF NOT EXISTS ix_rec_week ON recommendations(week, symbol);
 """
 
 
+MIGRATIONS = {'recommendations': [('name', "TEXT DEFAULT ''"),
+                                  ('price', 'REAL DEFAULT 0'),
+                                  ('currency', "TEXT DEFAULT 'USD'")]}
+
+
 def connect(path: Path | str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path or DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    for table, cols in MIGRATIONS.items():      # add columns a older db lacks
+        have = {r['name'] for r in conn.execute(f'PRAGMA table_info({table})')}
+        for col, decl in cols:
+            if col not in have:
+                conn.execute(f'ALTER TABLE {table} ADD COLUMN {col} {decl}')
+    conn.commit()
     return conn
 
 

@@ -21,15 +21,19 @@ CSS = ('body{font-family:system-ui,Arial,sans-serif;font-size:14px}'
 def _rec_table(rows: list[dict]) -> str:
     if not rows:
         return '<p><i>no candidates this week</i></p>'
-    out = ['<table><tr><th>Symbol</th><th>Source</th><th>Status</th>'
-           '<th>Price</th><th>Detail</th></tr>']
+    out = ['<table><tr><th>Symbol</th><th>Company</th>'
+           '<th>Source</th><th>Status</th>'
+           '<th>Share price</th><th>Detail</th></tr>']
     for r in rows:
         cls = '' if r['buyable'] else ' class="blocked"'
         status = '<span class="ok">BUYABLE</span>' if r['buyable'] \
             else f"BLOCKED — {r['reason']}"
+        ccy = r.get('currency', 'USD')
         out.append(f'<tr{cls}><td><b>{r["symbol"]}</b></td>'
+                   f'<td>{r.get("name", "")}</td>'
                    f'<td class="src">{r["source"]}</td><td>{status}</td>'
-                   f'<td>{r["price"]:.2f}</td><td>{r["detail"]}</td></tr>')
+                   f'<td>{r["price"]:.2f} {ccy}</td>'
+                   f'<td>{r["detail"]}</td></tr>')
     return ''.join(out) + '</table>'
 
 
@@ -92,7 +96,9 @@ def build_email(asof: str, light: dict, recs: list[dict],
     for title, rows in (('LPPL_DIP2 recommendations', dip),
                         ('STEADY_GIANTS recommendations', giants)):
         lines.append(title)
-        lines += [f'  [{r["source"]}] {r["symbol"]} {r["price"]:.2f} '
+        lines += [f'  [{r["source"]}] {r["symbol"]} '
+                  f'({r.get("name", "")}) '
+                  f'{r["price"]:.2f} {r.get("currency", "USD")} '
                   f'{"BUYABLE" if r["buyable"] else "BLOCKED — " + r["reason"]}'
                   f' | {r["detail"]}' for r in rows] or ['  (none)']
         lines.append('')

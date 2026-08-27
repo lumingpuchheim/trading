@@ -18,7 +18,7 @@ from flask import Flask, Response, redirect, render_template_string, request
 
 from sim import market
 from sim.broker import (cash, create_book, equity, place_order, positions)
-from sim.costs import load_sim_config, order_fee
+from sim.costs import affordable_shares, load_sim_config, order_fee
 from sim.db import connect, get_setting, set_setting
 from sim.jobs import prices_eur, run_daily, run_weekly, traded_symbols
 
@@ -112,19 +112,40 @@ def index():
                         'ORDER BY source, buyable DESC, symbol',
                         (week,)).fetchall() if week else []
     px, fx = eur_prices(conn)
-    out = ['<h2>Recommendations - week of %s</h2>' % (week or '(none yet)')]
+    free = cash(conn, b['id'])
+    eq = equity(conn, b['id'], px)
+    pct = SIM['books']['default_position_pct']
+
+    def sized(price_native, ccy):
+        """Whole shares closest to `pct` of this book's equity, fee aware
+        and capped by the cash actually available."""
+        p_eur = price_native if ccy == 'EUR' else (price_native / fx if fx else 0)
+        if not p_eur or p_eur <= 0:
+            return 1, 0.0, 0.0
+        qty = affordable_shares(min(pct * eq, free), p_eur, SIM)
+        qty = max(qty, 0)
+        cost = qty * p_eur + (order_fee(qty * p_eur, SIM) if qty else 0.0)
+        return qty, p_eur, cost
+
+    out = ['<h2>Recommendations - week of %s</h2>' % (week or '(none yet)'),
+           '<p>Suggested size is <b>%.0f%%</b> of this book (%s EUR equity), '
+           'converted at EURUSD %.4f and rounded down to whole shares with '
+           'the fee covered.</p>'
+           % (100 * pct, '{:,.2f}'.format(eq), fx)]
     if not rows:
         out.append('<p>No recommendations stored. Build them on the '
                    '<a href="/settings">Settings</a> page.</p>')
 
-    def buy_form(symbol, source, default_qty=10):
+    def buy_form(symbol, source, qty):
+        if qty < 1:
+            return '<i>not enough cash</i>'
         return ('<form method="post" action="/buy" class="inline">'
                 '<input type="hidden" name="book" value="%d">'
                 '<input type="hidden" name="symbol" value="%s">'
                 '<input type="hidden" name="source" value="%s">'
                 '<input type="number" name="qty" min="1" value="%d">'
                 '<button type="submit">Buy</button></form>'
-                % (b['id'], symbol, source, default_qty))
+                % (b['id'], symbol, source, qty))
 
     for src in ('LPPL_DIP2', 'STEADY_GIANTS'):
         sub = [r for r in rows if r['source'] == src]
@@ -132,34 +153,47 @@ def index():
             continue
         title = 'bubble dip-buyer' if src == 'LPPL_DIP2' else 'compounders'
         out.append('<h3>%s <span class="src">(%s)</span></h3>'
-                   '<table><tr><th>Symbol</th><th>Source</th><th>Status</th>'
+                   '<table><tr><th>Symbol</th><th>Company</th><th>Source</th>'
+                   '<th>Status</th><th>Share price</th><th>Suggested</th>'
                    '<th>Detail</th><th>Buy</th></tr>' % (src, title))
         for r in sub:
+            qty, p_eur, cost = sized(r['price'], r['currency'] or 'USD')
             if r['buyable']:
                 status = '<span class="ok">BUYABLE</span>'
-                action = buy_form(r['symbol'], r['source'])
+                action = buy_form(r['symbol'], r['source'], qty)
+                suggest = ('%d sh = %s EUR' % (qty, '{:,.0f}'.format(cost))
+                           if qty >= 1 else '-')
                 cls = ''
             else:
                 status = 'BLOCKED - %s' % r['reason']
                 action = '<i>not buyable</i>'
+                suggest = '-'
                 cls = ' class="blocked"'
-            out.append('<tr%s><td><b>%s</b></td><td class="src">%s</td>'
-                       '<td>%s</td><td>%s</td><td>%s</td></tr>'
-                       % (cls, r['symbol'], r['source'], status, r['detail'],
-                          action))
+            out.append('<tr%s><td><b>%s</b></td><td>%s</td>'
+                       '<td class="src">%s</td><td>%s</td>'
+                       '<td class="money">%.2f %s</td>'
+                       '<td class="money">%s</td><td>%s</td><td>%s</td></tr>'
+                       % (cls, r['symbol'], r['name'] or '', r['source'],
+                          status, r['price'], r['currency'] or '', suggest,
+                          r['detail'], action))
         out.append('</table>')
 
     inst = SIM['instruments']
     out.append('<h3>Always available</h3><table><tr><th>Symbol</th>'
-               '<th>What</th><th>Price</th><th>Buy</th></tr>')
+               '<th>What</th><th>Share price</th><th>Suggested</th>'
+               '<th>Buy</th></tr>')
     for key, what in (('gold', 'Xetra-Gold (tax-free after 1 year)'),
                       ('sp500', 'S and P 500 UCITS ETF')):
         sym = inst[key]['symbol']
         p = px.get(sym)
+        qty, _, cost = sized(p or 0.0, inst[key]['currency'])
         out.append('<tr><td><b>%s</b></td><td>%s</td>'
-                   '<td class="money">%s</td><td>%s</td></tr>'
+                   '<td class="money">%s</td><td class="money">%s</td>'
+                   '<td>%s</td></tr>'
                    % (sym, what, ('%.2f EUR' % p) if p else '-',
-                      buy_form(sym, 'MANUAL', 1)))
+                      ('%d sh = %s EUR' % (qty, '{:,.0f}'.format(cost))
+                       if qty >= 1 else '-'),
+                      buy_form(sym, 'MANUAL', qty)))
     out.append('</table>')
     return page(conn, ''.join(out))
 
