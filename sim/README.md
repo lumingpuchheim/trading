@@ -30,20 +30,45 @@ buttons on the Settings page.
 
 ## Email
 
-Register the address in Settings. Put SMTP host/port/user in
-`sim/config_sim.yaml`, set `enabled: true`, and export the password in the
-environment variable named by `smtp_password_env` (default
-`SIM_SMTP_PASSWORD`). Every weekly run writes
-`sim/exports/email_<date>.html` whether or not sending is on.
-
-## Windows Task Scheduler
-
-Run from the repo root, adjusting the python path if needed:
+Already configured for Gmail (`smtp.gmail.com:587`, sending enabled) with
+your address registered in the database. **One step is left, and only you
+can do it:** create a Google *app password* (Google account -> Security ->
+2-step verification -> App passwords), then store it once:
 
 ```
-schtasks /Create /TN "SimDaily" /TR "cmd /c cd /d C:\Users\user\workspace\trading && python -m sim.jobs daily" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 22:30
-schtasks /Create /TN "SimWeekly" /TR "cmd /c cd /d C:\Users\user\workspace\trading && python -m sim.jobs weekly" /SC WEEKLY /D SUN /ST 18:00
+setx SIM_SMTP_PASSWORD "your-16-char-app-password"
 ```
+
+Open a NEW terminal afterwards and check it works:
+
+```
+python -m sim.jobs testmail
+```
+
+Until that variable exists the job says so and skips sending; nothing else
+breaks. Every weekly run writes `sim/exports/email_<date>.html` regardless,
+so the report is never lost.
+
+## Windows Task Scheduler - already installed
+
+Two tasks are registered and run the wrapper scripts in this folder:
+
+| Task | When | Runs |
+| --- | --- | --- |
+| `SimDaily` | Mon-Fri 22:30 | `sim\run_daily.cmd` -> fills, dividends, snapshots |
+| `SimWeekly` | Sunday 18:00 | `sim\run_weekly.cmd` -> recommendations, warnings, email |
+
+Both append to `sim/jobs.log`. Useful commands:
+
+```
+schtasks /Query /TN SimDaily /FO LIST     # next run time and status
+schtasks /Run   /TN SimWeekly             # run it now
+schtasks /Change /TN SimWeekly /ST 20:00  # change the time
+schtasks /Delete /TN SimDaily /F          # remove
+```
+
+`sim\run_gui.cmd` opens the browser and starts the GUI - double-click it or
+pin a shortcut to it.
 
 ## What is simulated faithfully, and what is not
 

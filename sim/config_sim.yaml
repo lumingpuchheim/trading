@@ -37,11 +37,11 @@ books:
   default_start_capital_eur: 20000.0
 
 email:
-  enabled: false
-  smtp_host: ""
+  enabled: true                   # set the password env var below, then this works
+  smtp_host: "smtp.gmail.com"     # Gmail: needs an APP PASSWORD, not the account one
   smtp_port: 587
-  smtp_user: ""
-  smtp_password_env: "SIM_SMTP_PASSWORD"
-  from_addr: ""
+  smtp_user: "luming.sjtu@gmail.com"
+  smtp_password_env: "SIM_SMTP_PASSWORD"   # never stored in this file or in git
+  from_addr: "luming.sjtu@gmail.com"
   send_weekday: 6                 # 0=Mon .. 6=Sun
   send_hour: 18

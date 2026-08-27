@@ -109,13 +109,18 @@ def send_email(subject: str, text: str, html: str, to_addr: str,
     e = sim_cfg['email']
     if not (e.get('enabled') and e.get('smtp_host') and to_addr):
         return False
+    password = os.environ.get(e.get('smtp_password_env', ''), '')
+    if e.get('smtp_user') and not password:
+        print(f'email not sent: environment variable '
+              f'{e["smtp_password_env"]} is empty — set it once with '
+              f'  setx {e["smtp_password_env"]} "your-app-password"')
+        return False
     msg = EmailMessage()
     msg['Subject'] = subject
     msg['From'] = e.get('from_addr') or e['smtp_user']
     msg['To'] = to_addr
     msg.set_content(text)
     msg.add_alternative(html, subtype='html')
-    password = os.environ.get(e.get('smtp_password_env', ''), '')
     with smtplib.SMTP(e['smtp_host'], int(e.get('smtp_port', 587))) as s:
         s.starttls()
         if e.get('smtp_user'):

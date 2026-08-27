@@ -6,6 +6,8 @@
                                warnings, send the email
   python -m sim.jobs preview   build this week's email and write it to
                                sim/exports/ without sending
+  python -m sim.jobs testmail  send a one-line test message to the
+                               registered address (checks SMTP setup)
 
 Daily runs after the close; orders placed earlier fill at that day's
 open, so a fill can never use a price that existed when the order was
@@ -142,6 +144,22 @@ def run_weekly(conn, today: str | None = None, send: bool = True,
             'sent': sent, 'preview': str(EXPORTS / f'email_{today}.html')}
 
 
+def send_test(conn) -> dict:
+    """Prove the SMTP setup works before relying on the Sunday job."""
+    sim_cfg = load_sim_config()
+    to = get_setting(conn, 'email', '')
+    if not to:
+        return {'sent': False, 'why': 'no address registered (Settings page)'}
+    body = ('This is a test message from your trading simulator. '
+            'If you can read it, the Sunday report will arrive too.')
+    try:
+        sent = send_email('Trading simulator — test message', body,
+                          f'<p>{body}</p>', to, sim_cfg)
+    except Exception as exc:
+        return {'sent': False, 'to': to, 'error': str(exc)}
+    return {'sent': sent, 'to': to}
+
+
 def main() -> None:
     what = sys.argv[1] if len(sys.argv) > 1 else 'daily'
     conn = connect()
@@ -152,8 +170,10 @@ def main() -> None:
     elif what == 'preview':
         print(run_weekly(conn, send=False,
                          refresh_universe='--refresh' in sys.argv))
+    elif what == 'testmail':
+        print(send_test(conn))
     else:
-        sys.exit('usage: python -m sim.jobs [daily|weekly|preview]')
+        sys.exit('usage: python -m sim.jobs [daily|weekly|preview|testmail]')
     conn.close()
 
 
