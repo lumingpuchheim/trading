@@ -1564,6 +1564,33 @@ repertoire's throughput turned the same wrong-stock-selection problem
 into fully-invested losses. A live paper ledger would have surfaced
 exactly this within months — which is the argument for it.
 
+### Parking + craft ranking + bet-size scan (2026-08-27, POST-HOC, user-ordered)
+
+Built: idle cash rides SPY (`--park`, flow costs unmodelled), craft
+ranking features (`--craft`: 20d good-close ratio and up/down volume
+ratio added to the slot ranking). Run on v5r; contributions bundled,
+not isolated. Then the ordered bet-size scan:
+
+| slot size | dev total (maxDD) | test total (maxDD) |
+|---|---|---|
+| 5% | +146% (-55%) | +219% (-34%) |
+| **10% (standing)** | **+224% (-54%)** | **+189% (-34%)** |
+| 15% | +191% (-55%) | +125% (-34%) |
+| 20% | +178% (-53%) | +122% (-34%) |
+| 25% | +109% (-54%) | +183% (-39%) |
+| 33% | +90% (-55%) | +338% (-34%) |
+
+Findings: (1) **parking is the largest lever yet** — dev +148% -> +224%,
+first configuration to beat SPY in dev (+126%) — but it imports full
+market beta: dev maxDD doubles to -54% because parked cash rides SPY
+through 2008; the red-light protection is gone. (2) **The size scan
+shows variance, not signal**: non-monotonic in both periods, 20% is
+worse than 10% in BOTH (dev -46 pts, test -67 pts), and the 33% row's
+test +338% against its dev +90% is a concentration lottery, not an
+optimum. The user's proposed 20% default is NOT adopted on this
+evidence; 10% stands. A size scan on burned data was always going to be
+read-the-noise; recorded because ordered, weighted accordingly.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the

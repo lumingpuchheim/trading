@@ -203,6 +203,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         weak = np.full((n, k), np.nan)
         rep_label = np.zeros((n, k), dtype=np.int8)
         watch = np.zeros((n, k), bool)
+        gc = np.full((n, k), np.nan)
+        udv = np.full((n, k), np.nan)
         spy_np = spy['close'].to_numpy()
         for j in range(k):
             bars = {'open': op[:, j], 'high': hi[:, j], 'close': cl[:, j],
@@ -225,6 +227,14 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
             volx[:, j] = vol[:, j] / pd.Series(vol[:, j]).rolling(
                 cfg['minervini']['dryup_long']).mean().to_numpy()
             if v5:
+                hl = hi[:, j] - lo[:, j]
+                with np.errstate(invalid='ignore', divide='ignore'):
+                    gcd = (cl[:, j] - lo[:, j]) / np.where(hl > 0, hl, np.nan)
+                gc[:, j] = pd.Series((gcd > 0.5).astype(float)).rolling(20).mean().to_numpy()
+                up = np.concatenate(([False], cl[1:, j] > cl[:-1, j]))
+                uv = pd.Series(np.where(up, vol[:, j], 0.0)).rolling(20).sum()
+                dv = pd.Series(np.where(~up, vol[:, j], 0.0)).rolling(20).sum()
+                udv[:, j] = (uv / dv.replace(0, np.nan)).to_numpy()
                 rep = repertoire({'close': cl[:, j], 'low': lo[:, j],
                                   'open': op[:, j], 'volume': vol[:, j]},
                                  cfg, s['setup'], s['pivot'], s['template'])
@@ -260,7 +270,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                  'trigger_moc': trigger_moc, 'fill_moc': fill_moc,
                  'volx': volx, 'pivot': pivot, 'last_i': last_i,
                  'rs': rs, 'rsl_hi': rsl_hi, 'weak': weak,
-                 'rep_label': rep_label, 'watch': watch}
+                 'rep_label': rep_label, 'watch': watch,
+                 'gc': gc, 'udv': udv}
         np.savez_compressed(cache, **panel)
         panel['tickers'] = tickers
 
@@ -331,6 +342,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         pool_days = pool_by_day(panel['template'] if is_control
                                 else panel['setup'])
 
+    park = tr.get('park_spy', False)
+    spy_f = panel['spy_close'].pct_change().fillna(0.0).to_numpy() + 1.0
     cash, eq_prev = START_EQUITY, START_EQUITY
     positions: dict[int, dict] = {}
     orders: dict[int, int] = {}          # ticker -> the one day it is live
@@ -356,6 +369,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         return pos['shares'] * px * (1 - cost)
 
     for i in range(j0, j1 + 1):
+        if park:
+            cash *= spy_f[i]     # idle balance rides SPY (flow costs unmodelled)
         # 1. exits fill at the open, freeing capital before any entry
         for j in [j for j, p in positions.items() if p['exit_reason']]:
             pos = positions.pop(j)
@@ -520,18 +535,26 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
 
             if not is_control:
                 if tr.get('repertoire'):
+                    craft = tr.get('craft_rank', False)
                     # v5: an order costs nothing until it fills; watch every
                     # armed name, ranked, and let max_positions bind at entry
                     rsl, wk, rsv = panel['rsl_hi'], panel['weak'], panel['rs']
-                    take = [j for j in sorted(
-                        day_pool,
-                        key=lambda j: (-int(rsl[i, j]),
-                                       -(wk[i, j] if np.isfinite(wk[i, j])
-                                         else -np.inf),
-                                       -(rsv[i, j] if np.isfinite(rsv[i, j])
-                                         else -np.inf),
-                                       tickers[j]))
-                        if usable(j)][:100]
+                    gc_, udv_ = panel.get('gc'), panel.get('udv')
+
+                    def key(j):
+                        base = [-int(rsl[i, j]),
+                                -(wk[i, j] if np.isfinite(wk[i, j])
+                                  else -np.inf)]
+                        if craft and gc_ is not None:
+                            base += [-(udv_[i, j] if np.isfinite(udv_[i, j])
+                                       else -np.inf),
+                                     -(gc_[i, j] if np.isfinite(gc_[i, j])
+                                       else -np.inf)]
+                        base += [-(rsv[i, j] if np.isfinite(rsv[i, j])
+                                   else -np.inf), tickers[j]]
+                        return tuple(base)
+                    take = [j for j in sorted(day_pool, key=key)
+                            if usable(j)][:100]
                 elif rank_sel:
                     # v4 (spec 10.2): fill slots by strength, not alphabet —
                     # RS-line at a high first, then holds-up-when-weak,
@@ -597,9 +620,13 @@ def main() -> None:
     elif v3:
         cfg = apply_v3(cfg)
     for flag, key in (('--e1', 'exit_climax'), ('--e2', 'exit_vol_weak'),
-                      ('--e3', 'reentry_fast'), ('--e4', 'aging_stop')):
-        if flag in sys.argv or v7:
+                      ('--e3', 'reentry_fast'), ('--e4', 'aging_stop'),
+                      ('--park', 'park_spy'), ('--craft', 'craft_rank')):
+        if flag in sys.argv or (v7 and flag.startswith('--e')):
             cfg['minervini_trading'][key] = True
+    for a in sys.argv:
+        if a.startswith('--size='):
+            cfg['minervini_trading']['equal_weight_fraction'] = float(a[7:])
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
                         beat=beat, v3=v3 and not v4, v4=v4 and not v5, v5=v5)
     cal = panel['calendar']
@@ -619,7 +646,10 @@ def main() -> None:
         periods[name] = (j0, j1)
 
     moc = '--moc' in sys.argv
-    ab = ''.join(f[2:] for f in ('--e1','--e2','--e3','--e4') if f in sys.argv)
+    ab = ''.join(f[2:] for f in ('--e1','--e2','--e3','--e4','--park','--craft') if f in sys.argv)
+    for a in sys.argv:
+        if a.startswith('--size='):
+            ab += 's' + a[7:].replace('0.','')
     tag = (('v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else ''))
     if moc:
