@@ -1399,6 +1399,40 @@ control medians. Interpretation stops here: the rules were written after
 the data was seen, so the forward paper ledger is the only judge this
 configuration will ever get.
 
+### Terminal note: the remaining gap is THROUGHPUT, not rules (2026-08-27)
+
+The user's closing observation: even frictionless (0.2%/side modelled,
+zero taxes, zero slippage beyond the fill convention, a survivorship-
+flattered universe), no version comes near SPY. Correct — and the
+account-level arithmetic shows why no further rule can fix it:
+
+    account return/yr ~ trades/yr x position fraction x avg trade
+    v4:   ~4 trades/yr x 10% x +1.5%  ~ +0.06%/yr  (SPY: ~+10%)
+    his:  100s/yr x 20-25% x positive edge, pyramided -> +155%/+334%
+
+The v4 rules may finally have a positive per-trade edge; the ENGINE that
+turns an edge into compounding — many at-bats, heavily deployed — is
+missing by a factor of ~50 on frequency and ~5 on exposure. He also pays
+commissions and short-term tax on top and still compounds; ours rounds
+to zero before any friction. What creates his throughput and not ours:
+
+1. **Universe**: young small/mid caps and recent IPOs, where 3-65-week
+   bases are common. Our current-S&P-1500 survivors produce 80 faithful
+   setups in twenty years. Point-in-time constituent + IPO data is a
+   purchase, not a rule.
+2. **Entry repertoire**: pivot breakout is ONE of his entries; low
+   cheat, cheat, pullback-to-10/20-EMA and power plays multiply the
+   at-bats per stock several-fold. Only the pivot is built.
+3. **Exposure and pyramiding** (spec 10.4): 20-25% positions scaled up
+   while working. Locked pending positive forward expectancy — but
+   without 1 and 2 there is nothing to scale.
+
+Consequence, agreed with the user: forward-tracking a 4-trade-per-year
+strategy is pointless (a decade to significance) and the simulator
+integration stays unbuilt. The Minervini line of work closes here
+unless the universe data is bought or the entry repertoire is specified
+— those are the only levers with an order of magnitude in them.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the
