@@ -269,8 +269,19 @@ def signals(bars: dict, cfg: dict, rs_ok: np.ndarray | None = None,
     affordable = fill_px <= prev_pivot * (1.0 + m['max_chase'])
     trigger = prev_setup & touched & affordable & ok
 
+    # Third fill convention, the only one daily bars can express without
+    # inventing something: judge price AND volume together at the close and
+    # buy market-on-close. v1 chased the next open; v2's buy stop fills
+    # before the volume is knowable and has to eject. This one asks both
+    # questions at the same moment, with no future information.
+    above_prev = close > prev_pivot
+    trigger_moc = (prev_setup & ok & above_prev & vol_ok
+                   & (close <= prev_pivot * (1.0 + m['max_chase'])))
+
     return {'template': tmpl, 'setup': setup, 'pivot': pivot,
             'base_age': base_age, 'n_contractions': n_contractions,
             'dryup': dryup, 'trigger': trigger,
             'fill_px': np.where(trigger, fill_px, np.nan),
-            'stop_px': stop_px, 'vol_ok': vol_ok, 'zigzag': zz}
+            'stop_px': stop_px, 'vol_ok': vol_ok, 'zigzag': zz,
+            'trigger_moc': trigger_moc,
+            'fill_moc': np.where(trigger_moc, close, np.nan)}

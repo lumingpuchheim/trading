@@ -1058,6 +1058,43 @@ turnover, and the strategy pays the toll on the 91% it then throws away.
 the same universe; v2's book-faithful base is ~23x more permissive, which
 was the point, and it changed the answer not at all.
 
+### The third fill convention (market-on-close) — the discriminating test
+
+The user pushed back on the v2 verdict: if the spec was faithful, then
+either the source method is nonsense or the implementation is. Neither
+the buy-stop (v2) nor the next-open chase (v1) can express Minervini's
+entry on daily bars, so both were testing an invention. There is a third
+convention that daily data CAN express with no lookahead and no invented
+rule: at the close, price above the pivot AND volume >= 1.5x the 50-day
+mean are both knowable, so buy market-on-close. The `failed_breakout`
+eject then disappears — you never buy an unconfirmed breakout in the
+first place, which is what the source actually prescribes.
+
+Everything else frozen: same template, same base, same pivot, same chase
+guard, same exits, same slots, same controls.
+
+| entry convention | dev total | dev t | test total | test t | trades | vs controls (dev/test) |
+|---|---|---|---|---|---|---|
+| v1 next-open chase | +7.5% | 0.63 | -23.7% | -3.0 | 104 / 76 | 63% / 0% |
+| v2 buy stop + eject | -42.8% | -5.46 | -31.3% | -1.76 | 1122 / 1200 | 0% / 0% |
+| **v2 market-on-close** | **-12.4%** | **-1.58** | **-7.9%** | **-0.56** | 113 / 83 | 3.5% / 16% |
+
+The eject was indeed most of the damage: removing it turns -43%/-31%
+into -12%/-8% and cuts the trade count 10x (1,122 -> 113), with exits now
+94%/84% trend-death instead of 90%+ failed-breakout. **But the sign does
+not change.** Both periods still lose, both t-stats are negative, and the
+strategy still sits in the bottom 3.5% / 16% of its own random-template
+controls (control medians +4.4% / +3.0%). Only 238 volume-confirmed
+pivot breakouts exist in 21 years across 1,496 names.
+
+**So the answer to "which one is it" is: the spec had two invented rules,
+and fixing the worse one does not rescue the result.** The method, as far
+as daily bars can render it, does not beat owning the same Stage-2 stocks
+at random. What remains untested is the part the data cannot hold —
+intraday volume pace, and the discretionary judgement of contraction
+quality that no zigzag reproduces. That is a data limitation, stated as
+such, not a verdict on Minervini.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

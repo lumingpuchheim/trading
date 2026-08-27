@@ -97,7 +97,9 @@ def build_panel(cfg: dict, rebuild: bool = False) -> dict:
         setup = np.zeros((n, k), bool)
         trigger = np.zeros((n, k), bool)
         vol_ok = np.zeros((n, k), bool)
+        trigger_moc = np.zeros((n, k), bool)
         fill_px = np.full((n, k), np.nan)
+        fill_moc = np.full((n, k), np.nan)
         pivot = np.full((n, k), np.nan)
         sma50 = np.full((n, k), np.nan)
         for j in range(k):
@@ -105,6 +107,8 @@ def build_panel(cfg: dict, rebuild: bool = False) -> dict:
                     'volume': vol[:, j]}
             s = signals(bars, cfg, rs_ok=rs_ok[:, j], liquid=liquid[:, j])
             template[:, j] = s['template'] & liquid[:, j]
+            trigger_moc[:, j] = s['trigger_moc']
+            fill_moc[:, j] = s['fill_moc']
             setup[:, j] = s['setup']
             trigger[:, j] = s['trigger']
             vol_ok[:, j] = s['vol_ok']
@@ -116,6 +120,7 @@ def build_panel(cfg: dict, rebuild: bool = False) -> dict:
         panel = {'tickers': np.array(tickers), 'open': op, 'close': cl,
                  'sma50': sma50, 'template': template, 'setup': setup,
                  'trigger': trigger, 'vol_ok': vol_ok, 'fill_px': fill_px,
+                 'trigger_moc': trigger_moc, 'fill_moc': fill_moc,
                  'pivot': pivot, 'last_i': last_i}
         np.savez_compressed(cache, **panel)
         panel['tickers'] = tickers
@@ -135,17 +140,29 @@ def pool_by_day(pool: np.ndarray) -> list:
 def simulate(panel: dict, cfg: dict, period: tuple[int, int],
              rng: np.random.Generator | None = None,
              entry_rate: float = 0.0,
-             pool_days: list | None = None):
-    """One portfolio path. rng=None runs the strategy (buy-stop fills on
-    the trigger day); with an rng the run is a control (random names,
-    next-open fills). Returns (trades, equity, avg invested, slot-days)."""
+             pool_days: list | None = None, moc: bool = False):
+    """One portfolio path. rng=None runs the strategy; with an rng the run
+    is a control (random names, next-open fills).
+
+    moc=False: the spec's resting buy stop, filled intraday, with the
+    volume verdict at the close and a failed-breakout eject.
+    moc=True:  the third fill convention -- judge price and volume
+    together at the close and buy market-on-close. Same base, same
+    template, same exits, same everything else; no eject is needed
+    because the volume is known before the trade is taken.
+
+    Returns (trades, equity, avg invested, slot-days)."""
     tr = cfg['minervini_trading']
     cost = tr['cost_per_side']
     j0, j1 = period
     cal = panel['calendar']
     tickers = panel['tickers']
     op, cl, sma50 = panel['open'], panel['close'], panel['sma50']
-    fill_px, vol_ok, trigger = panel['fill_px'], panel['vol_ok'], panel['trigger']
+    if moc:
+        fill_px, trigger = panel['fill_moc'], panel['trigger_moc']
+    else:
+        fill_px, trigger = panel['fill_px'], panel['trigger']
+    vol_ok = panel['vol_ok']
     last_i, green = panel['last_i'], panel['green']
     is_control = rng is not None
     if pool_days is None:
@@ -180,8 +197,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             cash += close_out(j, i, pos, px, pos['exit_reason'])
 
         # 2. yesterday's resting orders: the strategy's fill happens
-        #    intraday at the buy stop, the control's at the open
-        for j in [j for j, day in orders.items() if day == i]:
+        #    intraday at the buy stop, the control's at the open. Under
+        #    moc the fill waits for step 3b, at the close.
+        for j in ([] if (moc and not is_control)
+                  else [j for j, day in orders.items() if day == i]):
             orders.pop(j)
             px = fill_px[i, j] if not is_control else op[i, j]
             if not is_control and not trigger[i, j]:
@@ -196,19 +215,39 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             positions[j] = {'shares': shares, 'entry_px': px, 'entry_i': i,
                             'entry_date': cal[i], 'exit_reason': None}
             cash -= outflow
-        orders = {j: day for j, day in orders.items() if day > i}
 
         # 3. decisions at the close
         for j, pos in positions.items():
             c = cl[i, j]
             if i >= last_i[j] and last_i[j] < len(cal) - 1:
                 pos['exit_reason'] = 'delisted'
-            elif pos['entry_i'] == i and not is_control and not vol_ok[i, j]:
+            elif (pos['entry_i'] == i and not is_control and not moc
+                    and not vol_ok[i, j]):
                 pos['exit_reason'] = 'failed_breakout'
             elif c <= tr['stop_loss'] * pos['entry_px']:
                 pos['exit_reason'] = 'stop'
             elif np.isfinite(sma50[i, j]) and c < sma50[i, j]:
                 pos['exit_reason'] = 'sma'
+
+        # 3b. market-on-close entries: price above the pivot AND volume
+        #     confirmed, both read at this close, bought at this close
+        if moc and not is_control:
+            for j in [j for j, day in orders.items() if day == i]:
+                orders.pop(j)
+                px = fill_px[i, j]
+                if (not trigger[i, j] or j in positions
+                        or not np.isfinite(px)
+                        or len(positions) >= tr['max_positions']):
+                    continue
+                shares = np.floor(tr['equal_weight_fraction'] * eq_prev / px)
+                outflow = shares * px * (1 + cost)
+                if shares < 1 or outflow > cash:
+                    continue
+                positions[j] = {'shares': shares, 'entry_px': px, 'entry_i': i,
+                                'entry_date': cal[i], 'exit_reason': None}
+                cash -= outflow
+
+        orders = {j: day for j, day in orders.items() if day > i}
 
         # 4. place tomorrow's orders
         exiting = sum(1 for p in positions.values() if p['exit_reason'])
@@ -273,23 +312,29 @@ def main() -> None:
         j1 = int(cal.searchsorted(pd.Timestamp(b), side='right')) - 1
         periods[name] = (j0, j1)
 
+    moc = '--moc' in sys.argv
+    tag = 'v2_moc' if moc else 'v2'
+    if moc:
+        print('ENTRY: market-on-close (third fill convention) — '
+              f'{int(panel["trigger_moc"].sum())} entries available')
     n_ctl = cfg['minervini_trading']['n_controls']
     setup_days = pool_by_day(panel['setup'])
     tmpl_days = pool_by_day(panel['template'])
     summary, curves = {}, {}
     for pname, period in periods.items():
-        trades, equity, avg_inv, slot_days = simulate(panel, cfg, period,
-                                                      pool_days=setup_days)
+        trades, equity, avg_inv, slot_days = simulate(
+            panel, cfg, period, pool_days=setup_days, moc=moc)
         m = metrics(trades, equity, avg_inv)
         rate = len(trades) / slot_days if slot_days else 0.0
-        trades.to_csv(results / f'minervini_v2_{pname}_trades.csv', index=False)
+        trades.to_csv(results / f'minervini_{tag}_{pname}_trades.csv', index=False)
         curves[pname] = equity
 
         ctl_tot, ctl_n = [], []
         for s in range(n_ctl):
             ct, ce, _, _ = simulate(panel, cfg, period,
                                     rng=np.random.default_rng(s),
-                                    entry_rate=rate, pool_days=tmpl_days)
+                                    entry_rate=rate, pool_days=tmpl_days,
+                                    moc=moc)
             ctl_tot.append(ce.iloc[-1] / ce.iloc[0] - 1)
             ctl_n.append(len(ct))
         ctl_tot = np.array(ctl_tot)
@@ -300,7 +345,7 @@ def main() -> None:
         summary[pname] = m
         pd.DataFrame({'seed': np.arange(n_ctl), 'total_return': ctl_tot,
                       'n_trades': ctl_n}).to_csv(
-            results / f'minervini_v2_controls_{pname}.csv', index=False)
+            results / f'minervini_{tag}_controls_{pname}.csv', index=False)
 
         print(f'\n=== {pname} {cal[period[0]].date()} .. '
               f'{cal[period[1]].date()} ===')
@@ -320,7 +365,7 @@ def main() -> None:
         plt.grid(alpha=0.3)
         plt.title(f'Minervini v2 vs random-template controls, {pname}')
         plt.tight_layout()
-        plt.savefig(results / f'minervini_v2_controls_{pname}.png', dpi=120)
+        plt.savefig(results / f'minervini_{tag}_controls_{pname}.png', dpi=120)
         plt.close()
 
         spy = panel['spy_close'].iloc[period[0]:period[1] + 1]
@@ -333,11 +378,11 @@ def main() -> None:
         plt.grid(alpha=0.3)
         plt.title(f'Minervini v2 Stage-2 breakouts, {pname}')
         plt.tight_layout()
-        plt.savefig(results / f'minervini_v2_equity_{pname}.png', dpi=120)
+        plt.savefig(results / f'minervini_{tag}_equity_{pname}.png', dpi=120)
         plt.close()
 
-    pd.DataFrame(summary).T.to_csv(results / 'minervini_v2_summary.csv')
-    print(f'\ntables and charts -> {results}/minervini_v2_*')
+    pd.DataFrame(summary).T.to_csv(results / f'minervini_{tag}_summary.csv')
+    print(f'\ntables and charts -> {results}/minervini_{tag}_*')
 
 
 if __name__ == '__main__':
