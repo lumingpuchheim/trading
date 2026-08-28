@@ -1538,6 +1538,31 @@ compounding of drawdowns). The geometric means (+3.52%/+4.56%) are
 correct as computed but describe compounding ONE bet sequentially, not
 the account.
 
+#### Kelly falsification test (user-designed, 2026-08-27) — the method passes
+
+Claim tested: P(win)=35% with small losses puts naive sequential Kelly at
+f* = mu/var = 77% (dev) / 87% (test) per bet, so 5%/10%/20% are all far
+below Kelly and performance must rise with stake — "if worse, something
+is wrong with the method." Clean scan (v5r, NO parking, identical
+signals):
+
+| size | funded bets dev | invested | dev | test |
+|---|---|---|---|---|
+| 5% | 721 | 38% | +46.6% | +49.8% |
+| 10% | 703 | 73% | +107.1% | +146.7% |
+| 20% | 348 | 71% | +77.9% | +26.3% |
+| 33% | 199 | 64% | +41.6% | -26.9% |
+
+5%->10%: same bets (slot cap binds), doubled stake, doubled return in
+BOTH periods — the below-Kelly prediction holds exactly where its
+premise holds. Above 10% the premise breaks mechanically: 10 slots x 20%
+needs 200% of the account, so cash rations the signals — funded bets
+collapse 703->348->199 while exposure stays ~70% — and returns fall
+because edge-bearing bets are discarded, not because Kelly is exceeded.
+The slot lever saturates at 10 x 10% = 100%; the earlier park-scan's
+non-monotonicity was additionally polluted by the strategy-vs-SPY mix.
+Flat 10% x 10 slots sits at the empirical growth maximum of this system.
+
 **Sell quality: mediocre and consistent.** Median stock we sell is
 +3.9% higher 60 days later, ~60% are higher across ALL exit reasons —
 we systematically sell things that keep going up (in a survivor
