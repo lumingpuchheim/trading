@@ -1832,6 +1832,75 @@ and the fully-invested stretches are where the 1-in-5 jackpots are found.
 The lever that would change this is the market light, and 12.2 records
 what happened when it was made continuous -- worse in both periods.
 
+### The wide US universe (spec 10.3's "fish where he fishes"), run 2026-08-28
+
+User instruction: stop trading only the S&P 1500, add the other main
+American indexes, rerun the standing configuration v5r. Built as
+`--wide`: 1,737 additional US-listed common stocks above $100M and $5
+(Nasdaq screener -- NASDAQ + NYSE + AMEX, i.e. the Russell 2000 / Nasdaq
+Composite / NYSE Composite ground the index list leaves out), their own
+earnings-surprise table so they face the same 21-day blackout, a separate
+panel cache so the narrow results stay reproducible. 1,496 -> 3,233
+names; 906,079 -> 1,185,875 template stock-days (+31%); 4,575 -> 5,862
+setup days after the blackout.
+
+**It is worse, clearly, in both periods.**
+
+| | S&P 1500 (v5r) | + the rest of the US market |
+|---|---|---|
+| dev total | **+148.4%** | **+67.5%** |
+| test total | **+146.8%** | **+37.1%** |
+| dev vs 200 controls | 97th pct | 78th pct |
+| test vs 200 controls | 97th pct | **35th pct** |
+| trades dev / test | 828 / 639 | 879 / 716 |
+| max drawdown dev / test | -24% / -23% | -30% / -31% |
+| avg loser dev / test | -5.4% / -5.8% | -6.0% / -7.4% |
+| mean per position, test | +2.03% | +0.83% |
+| **geometric mean per position, test** | **+1.08%** | **-0.32%** |
+| mean cash | 26.0% | 24.8% |
+
+The test period is the one that matters: the strategy now sits BELOW the
+median of its own controls (35th percentile), meaning picking randomly
+from the wider template pool would more often have beaten it. In the
+narrow universe it was at the 97th in both periods.
+
+**Mechanism, measured.** It is not that the new names lose on average --
+in the test period their mean trade row is actually higher (+5.60% vs
++4.70% for the S&P names). It is the left tail:
+
+| | dev | test |
+|---|---|---|
+| share of trade rows from new names | 27% | 48% |
+| stopped out, new names | 31% of their rows | 37% |
+| stopped out, S&P 1500 names | 17% | 20% |
+
+The new names are stopped out roughly twice as often, and the average
+loser deepens from -5.8% to -7.4% because small caps gap through an 8%
+stop. With flat 10% slots the arithmetic mean survives that and the
+GEOMETRIC mean does not: per position it goes +1.08% -> -0.32% in test.
+A negative geometric mean is a book that cannot compound, which is
+exactly what the equity curve shows.
+
+Two secondary readings:
+
+- **A bigger universe did not make it bet more often.** Mean cash barely
+  moves (26.0% -> 24.8%), days flat 12.7% -> 12.0%. The binding
+  constraint on exposure is the market light and the 10 slots, not the
+  supply of setups. What the extra names change is WHICH ten it holds,
+  and the strength ranking prefers the volatile new ones -- the entry
+  rate rises (0.70 -> 0.81 in test) while the quality falls.
+- **The control medians fell too** (dev 0.54 -> 0.41, test 0.58 -> 0.52),
+  so part of this is the wider pool simply being a worse pool over these
+  two decades. But the strategy fell much further than its controls, so
+  most of it is selection, not the pool.
+
+**This contradicts spec 10.3**, which named the universe as a headline
+limitation and predicted his hunting ground would help. On this data it
+hurts, and the honest caveat cuts the same way: the wide set is TODAY'S
+listings, so the small caps that failed outright are missing. The real
+version of this universe is MORE hostile than the one measured here, not
+less. Recorded; v5r on the S&P 1500 remains the standing configuration.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
