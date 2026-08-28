@@ -520,7 +520,7 @@ full 10% rows inflates the mean. Dollar-weighted and de-duplicated:
 
 | | dev | test |
 |---|---|---|
-| distinct positions | 706 (59/yr) | 528 (69/yr) |
+| distinct positions | 703 (59/yr) | 531 (69/yr) |
 | dollar-weighted mean per row | **+1.26%** | **+2.03%** |
 | full-size (10%) rows | 582, mean **-3.43%** | 424, mean **-4.06%** |
 | half-size (5%) rows, winners by construction | 242, mean +23.79% | 214, mean +26.17% |
