@@ -771,6 +771,106 @@ data and not a licence to loosen the constants back toward what the
 history prefers. If it is better, it is still post-hoc and still waits
 for the forward ledger.
 
+## 15. Code 33 — the missing two legs (pre-registered 2026-08-28)
+
+Sections 8 and 8b record that sales and margins are "not obtainable --
+the provider returns 5 quarters for AAPL and 6 for POWL". **That claim
+was about yfinance, not about the data, and it is now withdrawn.**
+Re-measured 2026-08-28: yfinance still returns 5 and 6, but SEC EDGAR's
+XBRL company facts return **51 quarters of revenue and 64 of gross
+profit and net income for POWL, back to 2010**. The whole of Code 33 is
+therefore buildable, and the reason it was not built for a day and a
+half is that I repeated a limitation of one provider as a fact about the
+world.
+
+`fetch_fundamentals.py` -> `data/fundamentals_quarterly.parquet`:
+**71,327 quarters, 1,441 of 1,496 tickers, median 56 quarters each.**
+
+**Point-in-time by construction.** Every XBRL fact carries `filed`, the
+date it became public (median 36 days after the period end, 90th
+percentile 70). The gate reads only facts with `filed <= the decision
+day`, so it cannot use a number nobody had, and a restatement arrives as
+a later fact instead of silently overwriting the original. This is
+strictly better than the cached EPS table, whose restatement risk section
+8's audit listed as uncontrolled (deviation 7).
+
+### Coverage, and what it costs — declared before the run
+
+XBRL was phased in 2009-2011, so the history is not symmetric:
+
+| year | tickers reporting quarterly revenue |
+|---|---|
+| 2007 | 2 |
+| 2010 | 892 |
+| 2012 | 975 |
+| 2015 | 1,063 |
+| 2019 | 1,309 |
+| 2024 | 1,411 |
+
+**The dev period is unusable before 2010 and covers 60-70% of the
+universe from 2010 to 2018; the test period covers 87-94%.** A gate that
+fails names without data therefore removes almost every dev entry before
+2010 for a data reason rather than a fundamental one. This asymmetry is
+declared here, in advance, because it will make the dev column of the
+gate run close to meaningless and that must not be read as a finding.
+
+Gross profit is tagged by only 50% of filers; net income by 91%. **The
+margin leg is therefore NET margin** (net income / revenue), which is
+also the ordinary reading of "profit margin". Gross margin is left
+unbuilt and the coverage number is the reason.
+
+### The gate, evaluated on the setup day
+
+Let `q[-k]` be the k-th most recent quarter with `filed <= today`. Growth
+uses the section 8b measure, absolute value in the denominator so a
+loss-to-profit inflection is measured rather than dropped:
+
+    x_k = (v[-k] - v[-k-4]) / |v[-k-4]|
+
+- **C0 depth.** At least **8** quarterly revenue reports and 8 EPS
+  reports (x4 needs v[-8]).
+- **C1 sales growth.** `s1 >= 0.15` -- the source's stated ">15% sales
+  growth", frozen at its floor.
+- **C2 sales acceleration.** `s1 > s2 > s3 > s4`: three consecutive
+  quarters in which the sales growth rate rose. Same shape as 8b's EPS
+  leg, strictly increasing, for the same reason.
+- **C3 margin expansion.** With `m_k = net_income[-k] / revenue[-k]`,
+  require `m1 > m2 > m3 > m4` -- margins expanding three quarters.
+- **C4 EPS.** The section 8b gate unchanged (F0-F3).
+- **C5 freshness.** The latest revenue report within **120 calendar
+  days**, as 8b's F3.
+
+A name with no fundamentals row **fails**, exactly as section 8c's F4
+treats a missing surprise figure -- absence is not a pass.
+
+### Two runs, declared together so neither is a scan
+
+Section 8's audit recorded, as deviation 6, that the source uses
+fundamentals "to build a watchlist and to size conviction, not as an
+on/off switch evaluated at the instant of the breakout". Both readings
+are therefore run once each, and both are reported whatever they say:
+
+1. **`--code33`, hard gate.** C0-C5 must all hold or there is no setup.
+   Expected in advance to leave very few trades -- the EPS leg alone
+   leaves 9 per period -- so the comparison will be low-powered and trade
+   counts are reported beside every number.
+2. **`--code33rank`, conviction.** Every current setup stays eligible;
+   the slot ranking gains a leading key equal to the number of Code 33
+   legs passed (0-3, missing data = 0), ahead of the existing
+   RS-line/weak-day/RS keys. Trade count is unchanged by construction, so
+   this is the higher-powered of the two.
+
+Baseline for both: v5r, dev +148.4% / test +146.8%, 97th control
+percentile in both. 200 entry-rate-matched controls as always, drawn from
+the same pool the run itself uses.
+
+**Post-hoc caveat, unchanged and compounding:** both periods have been
+seen many times. No constant above is chosen from this history -- 15% and
+the three-quarter acceleration are the source's, 120 days and the growth
+measure are section 8b's, 8 quarters follows from needing x4 -- but that
+is a weaker guarantee than it sounds, and the forward ledger remains the
+only honest judge.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)
@@ -843,6 +943,18 @@ Recorded, not fixed — fixing them is a new pre-registration.
    built on a mismeasurement. Section 6 is left as written because it is
    the pre-registered record; this is the correction.
 
+
+### Section 15 (Code 33 completed) — BUILT 2026-08-28, neither run adopted
+
+`fetch_fundamentals.py` (SEC EDGAR XBRL, 71,327 quarters, 1,441 tickers,
+point-in-time via `filed`) + `minervini.code33_legs` + `--code33` /
+`--code33rank`; six unit tests including one that the legs cannot score
+before the filing date lands. Gate: 14 and 45 trades, 2-5% invested, at
+the control median -- uninformative, as section 15 predicted. Ranking:
+dev -21 points, test +27 -- the E2 pattern, rejected on the both-periods
+bar. A gate leak found during the run (the repertoire reads the ungated
+template) was fixed before the reported numbers; no earlier result was
+affected. Detail in FINDINGS.
 
 ### Section 14 (pullback qualifiers) — BUILT 2026-08-28, and it is worse
 

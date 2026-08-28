@@ -155,6 +155,63 @@ def eps_gate(report_dates: np.ndarray, eps: np.ndarray,
     return passes[known] & fresh
 
 
+def code33_legs(filed: np.ndarray, revenue: np.ndarray,
+                net_income: np.ndarray, calendar: pd.DatetimeIndex,
+                cfg: dict) -> np.ndarray:
+    """The sales and margin legs of Code 33 (MINERVINI_SPEC.md 15).
+
+    Returns, per calendar day, how many of the two legs hold (0, 1 or 2)
+    using only facts FILED on or before that day -- `filed`, not the
+    period end, is what makes this causal.
+
+      C1  s1 >= sales_growth_min          (the source's >15%)
+      C2  s1 > s2 > s3 > s4               sales growth accelerating
+      C3  m1 > m2 > m3 > m4               net margin expanding
+      C5  the latest filing within max_report_age_days
+
+    C1+C2 together are the sales leg; C3 is the margin leg. Both require
+    C0 (>= min_quarters) and C5; a name that fails those scores 0, which
+    is the same treatment section 8c gives a missing surprise figure.
+    """
+    f = cfg['minervini_fundamentals']
+    n_days = len(calendar)
+    out = np.zeros(n_days, dtype=np.int8)
+    rev = np.asarray(revenue, dtype=float)
+    ni = np.asarray(net_income, dtype=float)
+    n = len(rev)
+    if n < f['min_quarters']:
+        return out
+
+    with np.errstate(invalid='ignore', divide='ignore'):
+        margin = np.where(rev != 0, ni / rev, np.nan)
+
+    def legs(k: int) -> int:
+        """Using the first k filings as everything known."""
+        if k < f['min_quarters']:
+            return 0
+        r, m = rev[:k], margin[:k]
+        score = 0
+        g = [yoy_growth(r, j + 1) for j in range(f['accel_quarters'] + 1)]
+        if (np.isfinite(g).all() and g[0] >= f['sales_growth_min']
+                and all(a > b for a, b in zip(g, g[1:]))):
+            score += 1                                    # C1 + C2
+        mm = [m[-j - 1] for j in range(f['accel_quarters'] + 1)]
+        if (np.isfinite(mm).all()
+                and all(a > b for a, b in zip(mm, mm[1:]))):
+            score += 1                                    # C3
+        return score
+
+    scored = np.array([legs(k) for k in range(n + 1)], dtype=np.int8)
+    known = np.searchsorted(filed, calendar.to_numpy(), side='right')
+    fresh = np.zeros(n_days, dtype=bool)
+    has = known > 0
+    if has.any():
+        age = (calendar.to_numpy()[has]
+               - filed[known[has] - 1]).astype('timedelta64[D]')
+        fresh[has] = age.astype(int) <= f['max_report_age_days']
+    return np.where(fresh, scored[known], 0).astype(np.int8)
+
+
 def beat_gate(report_dates: np.ndarray, surprise_pct: np.ndarray,
               calendar: pd.DatetimeIndex, cfg: dict) -> np.ndarray:
     """SEPA catalyst leg (MINERVINI_SPEC.md 8c): did the most recent

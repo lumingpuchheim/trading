@@ -609,3 +609,71 @@ def test_app_the_case_that_forced_section_14():
         r = mv.repertoire(bars, cfg, s['setup'], s['pivot'], s['template'])
         fired.append(bool(r['trigger'][i] and r['label'][i] == 2))
     assert fired == [True, False]
+
+
+# ------------------------ §15: the sales and margin legs of Code 33
+#
+# Sections 8/8b built the EPS leg only, on the recorded grounds that
+# sales and margins were "not obtainable". They are obtainable from SEC
+# XBRL, and these tests pin the two legs the EPS gate was missing --
+# including that `filed`, not the period end, is the causal date.
+
+def quarters(rev: list, ni: list, first: str = '2020-03-31') -> tuple:
+    """Quarterly revenue and net income with filings 40 days after each
+    period end, which is roughly the real median lag."""
+    ends = pd.date_range(first, periods=len(rev), freq='QE')
+    filed = (ends + pd.Timedelta(days=40)).to_numpy()
+    return filed, np.array(rev, float), np.array(ni, float)
+
+
+def legs_on(day: str, rev: list, ni: list) -> int:
+    filed, r, n = quarters(rev, ni)
+    cal = pd.bdate_range('2020-01-01', '2026-12-31')
+    out = mv.code33_legs(filed, r, n, cal, CFG)
+    return int(out[cal.searchsorted(pd.Timestamp(day))])
+
+
+ACCEL = [100, 100, 100, 100, 118, 122, 128, 137]     # sales YoY 18/22/28/37%
+FLAT = [100, 100, 100, 100, 130, 130, 130, 130]      # 30% every quarter
+
+
+def test_accelerating_sales_and_expanding_margin_score_both_legs():
+    ni = [8, 8, 8, 8, 10.6, 11.6, 13.1, 15.5]        # margin 9.0 -> 11.3%
+    assert legs_on('2022-03-01', ACCEL, ni) == 2
+
+
+def test_flat_sales_growth_is_not_acceleration():
+    ni = [8, 8, 8, 8, 10.6, 11.6, 13.1, 15.5]
+    assert legs_on('2022-03-01', FLAT, ni) == 1, \
+        'only the margin leg may score: 30% four times running is not rising'
+
+
+def test_a_shrinking_margin_loses_the_margin_leg():
+    ni = [8, 8, 8, 8, 11.8, 11.9, 12.0, 12.1]        # margin 10.0 -> 8.8%
+    assert legs_on('2022-03-01', ACCEL, ni) == 1
+
+
+def test_sales_growth_under_fifteen_percent_fails_the_sales_leg():
+    slow = [100, 100, 100, 100, 105, 108, 111, 114]  # accelerating but < 15%
+    ni = [8, 8, 8, 8, 10.6, 11.6, 13.1, 15.5]
+    assert legs_on('2022-03-01', slow, ni) == 1
+
+
+def test_nothing_is_known_before_the_filing_date():
+    """The eighth quarter ends 2021-12-31 and is filed 40 days later. The
+    legs cannot score before that filing lands, whatever the period end
+    says."""
+    ni = [8, 8, 8, 8, 10.6, 11.6, 13.1, 15.5]
+    filed, r, n = quarters(ACCEL, ni)
+    cal = pd.bdate_range('2020-01-01', '2023-12-31')
+    out = mv.code33_legs(filed, r, n, cal, CFG)
+    last_filed = pd.Timestamp(filed[-1])
+    before = cal[cal < last_filed]
+    assert out[cal.searchsorted(before[-1])] < 2, 'no lookahead past `filed`'
+    assert out[cal.searchsorted(last_filed)] == 2, 'and it scores once filed'
+
+
+def test_a_stale_filing_scores_nothing():
+    ni = [8, 8, 8, 8, 10.6, 11.6, 13.1, 15.5]
+    # ~170 days after the last filing, past max_report_age_days (120)
+    assert legs_on('2022-08-01', ACCEL, ni) == 0

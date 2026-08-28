@@ -2025,6 +2025,78 @@ explicit and uncomfortable footnote that its pullback entry is not the
 source's pullback entry, and that making it faithful costs 77 and 113
 points on this history.
 
+### Code 33 completed — sales and margins ARE obtainable (spec 15, run 2026-08-28)
+
+Sections 8 and 8b recorded that sales and margins were "not obtainable --
+the provider returns 5 quarters for AAPL and 6 for POWL". **That was a
+statement about yfinance mistaken for a fact about the data, and it is
+withdrawn.** SEC EDGAR XBRL returns 51 quarters of revenue and 64 of
+gross profit and net income for POWL alone. `fetch_fundamentals.py` ->
+**71,327 quarters, 1,441 of 1,496 tickers, median 56 each**, every fact
+carrying its `filed` date, so the gate reads only what was public on the
+decision day. That is strictly better than the EPS table, whose
+restatement lookahead section 8's audit listed as uncontrolled.
+
+Two runs were declared together in spec 15 so neither is a scan.
+
+**Run 1 -- hard gate (`--code33`): uninformative by construction.**
+
+| | dev | test |
+|---|---|---|
+| total | +1.4% | +6.5% |
+| trades | **14** | **45** |
+| avg invested | **1.7%** | **4.9%** |
+| avg trade | +4.2% (t 1.17) | +5.6% (t 2.68) |
+| vs 200 controls | 57th pct | 62nd pct |
+
+Only **7,796 of 906,079 template stock-days (0.86%)** pass all three
+legs. Requiring EPS, sales AND margin acceleration on the same day as a
+technical setup leaves a book that is 95-98% in cash. The surviving
+trades are not better than v5r's (+4.2/+5.6 against +5.0/+6.1 per trade),
+there are simply almost none of them. This is not evidence against Code
+33; it is a demonstration that a three-leg fundamental filter cannot be
+an on/off switch at the instant of entry -- which is what section 8's own
+audit called deviation 6.
+
+**Run 2 -- conviction ranking (`--code33rank`): fails the both-periods
+bar.** Slots fill by leg count (0-3) before the strength keys; trade
+count is unchanged, so this is the high-powered test.
+
+| | v5r | + Code 33 ranking |
+|---|---|---|
+| dev | +148.4% | **+127.6%** (-21 pts) |
+| test | +146.8% | **+173.5%** (+27 pts) |
+| vs controls | 97th / 97th | 93rd / 99th |
+| trades | 828 / 639 | 830 / 622 |
+
+Dev down 21, test up 27 -- the same shape as E2, which section 12.5
+rejected in the opposite direction ("dev +71, test -28: a regime bet, not
+an improvement"). Rejected on the same standard.
+
+There is also a coverage reason not to read the split as a regime story:
+XBRL was phased in 2009-2011, so dev has fundamentals for 60-70% of names
+from 2010 and essentially none before, while test has 87-94%. Ranking by
+leg count in dev is substantially ranking by who filed XBRL, which is a
+size proxy. The two columns are not measuring the same thing, and that
+was declared in spec 15 before the run.
+
+**Verdict: neither run supports adopting Code 33.** v5r stands.
+
+### The gate leak (found and fixed 2026-08-28)
+
+The first `--code33` run reported 828 trades from 10 setup days, which is
+impossible and is what exposed the bug. The repertoire (spec 11) reads
+the RAW trend template, not the `liquid`-gated one, so narrowing `liquid`
+reached `setup` and left all 66,009 pullback/cheat/power-play triggers
+standing: the strategy traded an ungated repertoire against controls
+drawn from a gated pool. Fixed by applying the gate to `setup`, `watch`
+and both trigger arrays, the same shape the earnings blackout uses. The
+void run was discarded and rerun; the numbers above are the fixed ones.
+
+**No previously recorded result is affected.** `--fund` and `--beat` were
+only ever run on v2 panels, which have no repertoire; every v5-panel
+result (v5, v5r, v9, v10, wide) uses no fundamentals gate.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

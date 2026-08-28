@@ -117,6 +117,9 @@ minervini_fundamentals:           # SEPA pillar 2 — FROZEN by MINERVINI_SPEC.m
   max_report_age_days: 120        # F3: latest report no older than this
   require_beat: false             # F4 (§8c): latest report beat consensus;
                                   # enabled by --beat, never both-ways scanned
+  sales_growth_min: 0.15          # §15 C1: latest quarter's sales YoY >= 15%
+                                  # (C2 sales and C3 net-margin acceleration
+                                  #  reuse accel_quarters and min_quarters)
 
 minervini_v3:                     # §9 overlay, applied by --v3 — FROZEN
   require_higher_lows: true       # every trough strictly above the previous
