@@ -541,17 +541,6 @@ the index rises (-23.9% vs +12.8% YTD).
 exits, strength ranking, flat 10% slots, binary light, 5-day re-entry
 after non-stop exits).
 
-**The bets we take (v5r, geometric, documented as the reference):**
-dev 828 bets (~69/yr): arithmetic +4.99%, **geometric +3.92%** per bet,
-P(win) 45%, median -0.70%. Test 639 (~84/yr): arithmetic +6.07%,
-**geometric +4.55%**, P(win) 46%, median -0.52%. The median bet loses;
-the top 5% of bets carry >half the profit; at 10% slots the volatility
-drag at account level is negligible. Every qualifying bet must be taken
-— jackpots are not identifiable in advance. Known failure mode (2026):
-when index leadership narrows to mega-caps that never base, the
-repertoire deploys fully into rotation names and loses while the index
-rises (-23.9% vs +12.8% YTD).
-
 ### 12.3 Craft layer (specified, NOT built)
 
 Good-close count (close in the upper half of the day's range) and
