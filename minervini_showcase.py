@@ -14,6 +14,7 @@ Run: python minervini_showcase.py              # default three winners
      python minervini_showcase.py --worst      # the three worst trades
      python minervini_showcase.py DOCN CMI     # pick your own tickers
      python minervini_showcase.py --period dev
+     python minervini_showcase.py --tag=v5_e3_moc LITE TSLA   # any run
 """
 
 import sys
@@ -49,7 +50,23 @@ def base_and_contractions(close: np.ndarray, zz: dict, upto: int, cfg: dict):
     return b_i, out
 
 
-def draw(ticker: str, trade, cfg: dict, results) -> None:
+ENTRY_NAMES = {0: 'pivot breakout', 1: 'cheat', 2: 'pullback to the SMA20',
+               3: 'power play'}
+
+
+def entry_type(ticker: str, trade, cfg: dict) -> str:
+    """Which of the four v5 entries actually fired. Under the standing
+    configuration nearly every trade is a pullback, which needs no base,
+    no pivot and no dry-up -- so the base annotations below are only
+    meaningful for a `pivot breakout`."""
+    from minervini_backtest import apply_v5, build_panel
+    panel = build_panel(apply_v5(cfg), v5=True)
+    j = list(panel['tickers']).index(ticker)
+    i = int(panel['calendar'].searchsorted(trade.entry_date))
+    return ENTRY_NAMES[int(panel['rep_label'][i, j])]
+
+
+def draw(ticker: str, trade, cfg: dict, results, kind: str = '') -> None:
     m = cfg['minervini']
     raw = pd.read_parquet(ROOT / cfg['data']['cache_dir'] / 'ohlcv'
                           / f'{ticker}.parquet')
@@ -70,25 +87,28 @@ def draw(ticker: str, trade, cfg: dict, results) -> None:
     idx = np.arange(a, b + 1)
     dates = raw.index[idx]
     c = pd.Series(close)
-    sma = {n: c.rolling(n).mean().to_numpy() for n in (50, 150, 200)}
+    sma = {n: c.rolling(n).mean().to_numpy() for n in (20, 50, 150, 200)}
     v50 = pd.Series(volume).rolling(m['dryup_long']).mean().to_numpy()
 
     fig, (ax, axv) = plt.subplots(
         2, 1, figsize=(15, 9), sharex=True,
         gridspec_kw={'height_ratios': [3, 1], 'hspace': 0.08})
 
-    ax.axvspan(raw.index[base_start], raw.index[setup_i], color='0.92',
-               zorder=0, label='the base')
+    if kind in ('', 'pivot breakout'):
+        ax.axvspan(raw.index[base_start], raw.index[setup_i], color='0.92',
+                   zorder=0, label='the base')
     ax.plot(dates, close[idx], color='black', lw=1.2, label='close')
-    for n, col in zip((50, 150, 200), ('tab:blue', 'tab:orange', 'tab:red')):
+    for n, col in zip((20, 50, 150, 200),
+                     ('tab:green', 'tab:blue', 'tab:orange', 'tab:red')):
         ax.plot(dates, sma[n][idx], lw=1.0, color=col, alpha=0.85,
                 label=f'SMA{n}')
-    ax.axhline(pivot, color='darkorange', ls='--', lw=1.2,
-               label=f'pivot {pivot:.2f}')
+    if kind in ('', 'pivot breakout') and np.isfinite(pivot):
+        ax.axhline(pivot, color='darkorange', ls='--', lw=1.2,
+                   label=f'pivot {pivot:.2f}')
     ax.axhline(trade.entry_px * cfg['minervini_trading']['stop_loss'],
                color='crimson', ls=':', lw=1.0, label='8% stop')
 
-    for k, ct in enumerate(chain):
+    for k, ct in enumerate(chain if kind in ('', 'pivot breakout') else []):
         ax.annotate('', xy=(raw.index[ct['lo_i']], ct['lo']),
                     xytext=(raw.index[ct['hi_i']], ct['hi']),
                     arrowprops=dict(arrowstyle='->', color='purple', lw=1.4))
@@ -107,10 +127,13 @@ def draw(ticker: str, trade, cfg: dict, results) -> None:
     rising = sma[200][setup_i] > sma[200][setup_i - m['sma_slow_rising_lookback']]
     ax.set_title(
         f'{ticker}  buy {raw.index[buy_i].date()} at {trade.entry_px:.2f}  '
-        f'-> {trade.ret_net:+.1%} in {trade.days_held} days\n'
+        f'-> {trade.ret_net:+.1%} in {trade.days_held} days'
+        + (f'   [entry: {kind}]' if kind else '') + '\n'
         f'trend template on the setup day: close > SMA50 > SMA150 > SMA200 '
-        f'= {ok}, SMA200 rising = {rising}, '
-        f'base {setup_i - base_start} days, {len(chain)} contractions')
+        f'= {ok}, SMA200 rising = {rising}'
+        + (f', base {setup_i - base_start} days, {len(chain)} contractions'
+           if kind in ('', 'pivot breakout')
+           else '  --  base/pivot not used by this entry'))
     ax.legend(fontsize=8, loc='upper left', ncol=2)
     ax.grid(alpha=0.3)
     ax.set_ylabel('price')
@@ -138,10 +161,10 @@ def draw(ticker: str, trade, cfg: dict, results) -> None:
     out = results / f'minervini_{tag}_{ticker}.png'
     fig.savefig(out, dpi=120, bbox_inches='tight')
     plt.close(fig)
-    print(f'  {ticker}: base {setup_i - base_start}d, {len(chain)} contractions '
-          f'({", ".join(f"-{x['d']:.1%}" for x in reversed(chain))}), '
-          f'pivot {pivot:.2f}, dry-up days {len(quiet)}, '
-          f'breakout volume {volume[buy_i] / v50[buy_i]:.2f}x -> {out.name}')
+    print(f'  {ticker} [{kind or "unlabelled"}]: {trade.ret_net:+.1%} in '
+          f'{trade.days_held}d, exit {trade.exit_reason}, '
+          f'entry-day volume {volume[buy_i] / v50[buy_i]:.2f}x the 50d mean '
+          f'-> {out.name}')
 
 
 def main() -> None:
@@ -149,8 +172,9 @@ def main() -> None:
     results = ROOT / cfg['backtest']['results_dir']
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     period = 'dev' if '--period' in sys.argv and 'dev' in sys.argv else 'test'
-    ver = 'v3' if '--v3' in sys.argv else 'v2'
-    trades = pd.read_csv(results / f'minervini_{ver}_moc_{period}_trades.csv',
+    tag = next((a.split('=')[1] for a in sys.argv if a.startswith('--tag=')),
+               'v3_moc' if '--v3' in sys.argv else 'v2_moc')
+    trades = pd.read_csv(results / f'minervini_{tag}_{period}_trades.csv',
                          parse_dates=['entry_date', 'exit_date'])
     worst = '--worst' in sys.argv
     want = args or (list(trades.nsmallest(3, 'ret_net')['ticker']) if worst
@@ -163,7 +187,7 @@ def main() -> None:
             continue
         pick = (row.nsmallest(1, 'ret_net') if worst
                 else row.nlargest(1, 'ret_net')).iloc[0]
-        draw(t, pick, cfg, results)
+        draw(t, pick, cfg, results, entry_type(t, pick, cfg))
 
 
 if __name__ == '__main__':

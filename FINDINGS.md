@@ -1901,6 +1901,57 @@ listings, so the small caps that failed outright are missing. The real
 version of this universe is MORE hostile than the one measured here, not
 less. Recorded; v5r on the S&P 1500 remains the standing configuration.
 
+### What v5r actually trades: 99% pullbacks, not pivot breakouts (2026-08-28)
+
+Found while labelling individual trades by which of the four section-11
+entries fired (`rep_label` in the panel). The standing configuration is
+not, in practice, a Stage-2 pivot-breakout system:
+
+| entry | dev positions | test positions |
+|---|---|---|
+| **pullback to the SMA20** | **689** | **524** |
+| pivot breakout | 4 | 2 |
+| cheat | 2 | 2 |
+| power play | 3 | 4 |
+
+Sections 1-3 of the spec -- the base anchor, the contraction chain, the
+pivot, the volume dry-up, the chase guard, the whole apparatus the
+acceptance gate was written for -- decide six trades out of 1,230. The
+system that produced +148%/+147% is "buy a leader when it touches its
+20-day line and holds it", with the trend template as a membership
+filter and the tennis-ball exits on top.
+
+This is consistent with the funnel numbers already recorded (4,575 setup
+days but only 127 volume-confirmed buy-stop fills over 21 years) and it
+explains why the base machinery could fail its acceptance gate without
+the portfolio numbers collapsing: the portfolio was never using it.
+
+**Sample trades, test period, per position** (the strength rule sells
+half at +20%, so most winners show two legs):
+
+| | entry | position | legs |
+|---|---|---|---|
+| LITE | 2025-12-16 @ 316.15 | **+91.1%** in 113d | half at 388.00 (+22%), rest at 825.25 (+160%, sma) |
+| TSLA | 2020-05-27 @ 54.68 | **+85.4%** in 109d | half at 66.87 (+22%), rest at 136.65 (+149%, sma) |
+| KTOS | 2025-05-15 @ 34.39 | **+74.0%** in 121d | half at 42.19 (+22%), rest at 77.95 (+126%, sma) |
+| ANF | 2023-10-05 @ 54.54 | **+69.6%** in 127d | half at 65.16 (+19%), rest at 120.54 (+120%, sma) |
+| APP | 2025-02-24 @ 410.45 | **-20.3%** in 2d | stop at 328.47 |
+| PVH | 2024-03-08 @ 133.80 | **-19.9%** in 17d | stop at 107.59 |
+| TTMI | 2026-03-03 @ 104.05 | **-17.3%** in 4d | stop at 86.42 |
+| CLSK | 2024-01-04 @ 10.76 | **-16.6%** in 6d | stop at 9.01 |
+
+Two things the losers show. First, **the "8% stop" is not an 8% loss**:
+the rule triggers on a close below 0.92 x entry and sells at the next
+open, so a gap turns it into -17% to -20%. APP lost 20% in two days.
+Second, the shape of the whole distribution is here in miniature -- the
+losers are fast and capped, the winners are held for months, and the
+system depends on the four-month holds outnumbering nothing except in
+size.
+
+`minervini_showcase.py --tag=<run>` now draws any run's trades and labels
+the entry type, and it no longer annotates a base and a pivot on trades
+that used neither.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
