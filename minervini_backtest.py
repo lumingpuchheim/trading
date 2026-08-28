@@ -909,6 +909,11 @@ def main() -> None:
             panel, cfg, period, pool_days=setup_days, moc=moc, record=rec)
         cash[pname] = 1.0 - rec['invested']
         m = metrics(trades, equity, avg_inv)
+        # win rate removed 2026-08-28: being right 90% of the time at
+        # break-even while the rest takes real money still loses, so it
+        # cannot say whether a system works. The per-bet euro multiple is
+        # the honest unit -- minervini_stats.py.
+        m.pop('win_rate', None)
         rate = len(trades) / slot_days if slot_days else 0.0
         trades.to_csv(results / f'minervini_{tag}_{pname}_trades.csv', index=False)
         curves[pname] = equity

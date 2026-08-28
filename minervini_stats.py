@@ -1,32 +1,52 @@
-"""THE definitive per-bet statistics for v5r. One program, no editing.
+"""THE per-bet statistics: how much is left of one euro, per position.
 
-Input: results/minervini_v5_moc_{dev,test}_trades.csv
+Input: results/minervini_{TAG}_{dev,test}_trades.csv
 Columns: ticker, entry_date, exit_date, entry_px, exit_px, days_held,
          ret_net, exit_reason
 
-FACTS about how the simulator writes that file (minervini_backtest.py):
- - Every position is entered at 10% of equity. There is ONE entry rule
-   and ONE exit rule set for all positions. No position is entered at
-   half size, ever.
- - If a position's close reaches +20%, HALF the shares are sold there
-   ('strength' row) and the remaining half exits later by the normal
-   rules (its own row). Such a position therefore produces TWO rows,
-   each representing ~5% of equity.
- - A position that never reaches +20% produces ONE row at ~10%.
+THE QUESTION THIS ANSWERS (user's framing, 2026-08-28): commit one euro
+to a position at entry; when everything about that position has closed,
+how much is left? Nothing else -- not win rate, not row averages.
 
-Therefore:
- - counting ROWS overweights winners (each split winner counted twice,
-   and 'ret_net' of its banked half is >= +20% by construction);
- - a POSITION's return = 0.5 x (half-1 return) + 0.5 x (half-2 return)
-   when split, else its single row's return. (The two halves are equal
-   up to one share; treated as exactly equal here.)
+WHY THE OBVIOUS CALCULATION IS WRONG. The simulator writes one ROW per
+sale, and a position can sell in two pieces:
 
-Under --v9 (spec section 13) a position can also be split by a
-`climax_partial` row instead of a `strength` one. The arithmetic is
-identical -- both sell half the shares -- so the same weighting holds.
+ - every position is entered at one slot (10% of equity);
+ - if it later reaches +20% the strength rule sells HALF, so that
+   position emits TWO rows -- the banked half and the rider's eventual
+   exit (v9 adds a `climax_partial` that splits the same way);
+ - if it never reaches +20% it exits whole as ONE row.
 
-Run: python minervini_stats.py            # v5_moc, as before
-     python minervini_stats.py v9_moc     # any other run tag
+So averaging `ret_net` over rows counts a +150% rider as a full bet when
+only half the money was riding, and double-counts every winner because
+losers never split. The euro left per euro committed is
+
+    multiple = SUM over legs of  weight_leg x (1 + ret_net_leg)
+
+with weight 0.5 for each leg of a split position and 1.0 for an unsplit
+one. That is the number this file reports.
+
+(Approximation, stated: the simulator sells floor(shares/2), so an odd
+share count leaves the rider marginally more than half. The error is
+under 1% of one position's weight and is not corrected here.)
+
+ONE AVERAGE, THE GEOMETRIC ONE. It is what a euro becomes per bet when
+the same euro is cycled through the bets in sequence, and it is what
+decides whether a sequence of bets compounds up or grinds down.
+
+The arithmetic mean is deliberately absent (removed 2026-08-28). It
+answers a question nobody is asking: it is the average of outcomes that
+were never averaged, because money is not spread across bets in parallel
+-- it passes through them. A single +900% bet lifts the arithmetic mean
+of a losing system above 1.0 while the euro that actually travelled the
+sequence is gone.
+
+Win rate is absent for the same reason (removed 2026-08-28): being right
+90% of the time at break-even while the other 10% takes real money still
+loses, so the statistic cannot say whether a system works.
+
+Run: python minervini_stats.py                 # v5_moc
+     python minervini_stats.py v5_e3_moc       # any other run tag
 """
 
 import sys
@@ -42,33 +62,41 @@ for period, years in (('dev', 12.0), ('test', 7.65)):
     t['is_split'] = t['pos_id'].duplicated(keep=False)
     t['weight'] = np.where(t['is_split'], 0.5, 1.0)
 
-    rows = t['ret_net']
-    pos = t.groupby('pos_id').apply(
-        lambda d: float((d['ret_net'] * d['weight']).sum()),
+    # one euro in, this many euros out, per position
+    mult = t.groupby('pos_id').apply(
+        lambda d: float((d['weight'] * (1.0 + d['ret_net'])).sum()),
         include_groups=False)
+    split = t.groupby('pos_id')['is_split'].first()
 
-    print(f'============ {TAG}  {period}  ({years} years) ============')
+    geo = float(np.exp(np.mean(np.log(mult))))
+    print(f'================ {TAG}  {period}  ({years} years) ================')
     print(f'rows in file          : {len(t)}')
-    print(f'  of which half-rows  : {int(t["is_split"].sum())} '
-          f'(from {int(t["is_split"].sum() // 2)} split positions)')
-    print(f'positions             : {len(pos)}')
+    print(f'positions (bets)      : {len(mult)}   '
+          f'of which split in two: {int(split.sum())}')
     print()
-    print('A) counting ROWS (wrong unit — winners double-counted):')
-    print(f'   mean {rows.mean():+.4%}   median {rows.median():+.4%}   '
-          f'P(win) {(rows > 0).mean():.1%}')
+    print('ONE EURO COMMITTED PER POSITION, EUROS RETURNED:')
+    print(f'   GEOMETRIC mean  : {geo:.4f}   ({geo - 1:+.2%} per bet)')
+    print(f'   median          : {mult.median():.4f}   '
+          f'({mult.median() - 1:+.2%})')
+    print(f'   worst / best    : {mult.min():.4f} / {mult.max():.4f}')
     print()
-    print('B) counting POSITIONS (the honest unit, each one 10% of equity):')
-    print(f'   mean            {pos.mean():+.4%}')
-    print(f'   geometric mean  {np.expm1(np.mean(np.log1p(pos))):+.4%}'
-          '   [ = (prod(1+x))^(1/n) - 1 ]')
-    print(f'   median          {pos.median():+.4%}')
-    print(f'   P(win)          {(pos > 0).mean():.1%}'
-          f'   ({int((pos > 0).sum())} of {len(pos)})')
+    # NOT the portfolio's return: the book runs 10 slots at 10%, so a euro
+    # of capital rides a tenth of each bet, not all of one after another.
+    # This is the geometric mean's own meaning, stated in euros.
+    print('   one euro through every bet END TO END (not the portfolio):')
+    print(f'      x{geo ** len(mult):,.4g} over {len(mult)} bets '
+          f'({(geo ** (len(mult) / years) - 1):+.1%} a year at this bet rate)')
     print()
-    win_rows = (rows > 0).mean()
-    win_pos = (pos > 0).mean()
-    print(f'why A says P(win)={win_rows:.0%} but B says {win_pos:.0%}: '
-          f'every split position is a winner counted TWICE in A,')
-    print('and its banked half (>= +20% by construction) also lifts the '
-          'row mean.')
+    print('   split vs unsplit (the split ones are winners by construction '
+          '-- reaching +20% is what splits them):')
+    for label, sel in (('split  ', split.to_numpy()),
+                       ('unsplit', ~split.to_numpy())):
+        m = mult[sel]
+        if len(m):
+            print(f'      {label}: n={len(m):4d}  '
+                  f'geo {np.exp(np.mean(np.log(m))):.4f}')
+    print()
+    q = mult.quantile([0.05, 0.25, 0.5, 0.75, 0.95])
+    print('   euro returned by percentile: '
+          + '  '.join(f'p{int(p * 100)} {v:.3f}' for p, v in q.items()))
     print()
