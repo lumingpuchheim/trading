@@ -1799,6 +1799,39 @@ in seen data; a backtest of it is decoration." The backtest duly says
 nothing. v5r remains the standing configuration; `--v9` is runnable and
 its result recorded, nothing is adopted.
 
+### How often does it actually bet? The cash side of v5r (2026-08-28)
+
+Every backtest run now writes the daily cash fraction
+(`results/minervini_{tag}_cash.csv`, a by-year table and a chart). For
+the standing configuration v5r, market-on-close, over the whole span:
+
+**mean cash 26.0%, completely flat on 12.7% of days, more than 95%
+invested on 18.7% of days.**
+
+| | mean cash | days flat | days >95% in |
+|---|---|---|---|
+| 2008 | 87.9% | 67.6% | 0.0% |
+| 2009 | 52.1% | 42.5% | 10.7% |
+| 2011 | 33.9% | 23.0% | 23.0% |
+| 2020 | 32.4% | 19.4% | 19.8% |
+| 2022 | 66.8% | 49.8% | 4.8% |
+| 2012-2014, 2021, 2024 | 7-13% | 0% | 12-29% |
+
+The cash is not a judgement about individual names -- it is the binary
+market light plus the arrival rate of setups. In the four bear stretches
+(2008, 2009, 2011, 2022) the light is off and the book sits in cash for
+a fifth to two thirds of the year; in calm trends it runs 87-93%
+invested with no flat days at all. That is the shape Minervini describes
+(he is in cash roughly half of an average year), though the system gets
+there mechanically and is far more invested than he would be: 26% average
+cash against his ~50%.
+
+Reading it against the returns: the flat stretches are exactly where the
+drawdowns stop (max drawdown -24%/-23% while SPY did far worse in 2008),
+and the fully-invested stretches are where the 1-in-5 jackpots are found.
+The lever that would change this is the market light, and 12.2 records
+what happened when it was made continuous -- worse in both periods.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

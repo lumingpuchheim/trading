@@ -125,20 +125,36 @@ def apply_v4(cfg: dict) -> dict:
     return cfg
 
 
+def load_surprise(data_dir) -> pd.DataFrame:
+    """Every cached earnings-surprise table, concatenated. The universe was
+    fetched in pieces (`fetch_surprise.py`), and the wide universe adds
+    its own file; all of them are named earnings_surprise*.parquet."""
+    return pd.concat([pd.read_parquet(q) for q in
+                      sorted(data_dir.glob('earnings_surprise*.parquet'))]
+                     ).sort_values('date')
+
+
 def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                 beat: bool = False, v3: bool = False,
-                v4: bool = False, v5: bool = False) -> dict:
+                v4: bool = False, v5: bool = False,
+                wide: bool = False) -> dict:
     """Per-day signal matrices (days x tickers) on the SPY calendar.
 
     fund=True additionally requires the SEPA pillar-2 EPS gate (spec
     section 8) on every setup day, and narrows the control pool the same
-    way, so the comparison isolates the fundamentals filter alone."""
+    way, so the comparison isolates the fundamentals filter alone.
+
+    wide=True adds data/ohlcv_wide (every other US-listed common stock
+    over $100M, from `download_data.py --wide`) to the S&P 1500, and
+    caches it separately so the narrow-universe results are untouched."""
     d = cfg['data']
     data_dir = ROOT / d['cache_dir']
     cache = data_dir / ('minervini_panel_v5.npz' if v5 else
                         PANEL_CACHE_V4 if v4 else PANEL_CACHE_V3 if v3 else
                         ((PANEL_CACHE_BOTH if fund else PANEL_CACHE_BEAT) if beat
                          else (PANEL_CACHE_FUND if fund else PANEL_CACHE)))
+    if wide:
+        cache = cache.with_name(cache.stem + '_wide.npz')
     spy = pd.read_parquet(data_dir / 'ohlcv' / f"{d['benchmark']}.parquet")
     cal = spy.index
 
@@ -149,6 +165,9 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
     else:
         paths = [p for p in sorted((data_dir / 'ohlcv').glob('*.parquet'))
                  if p.stem != d['benchmark']]
+        if wide:
+            paths += sorted((data_dir / 'ohlcv_wide').glob('*.parquet'))
+            paths.sort(key=lambda p: p.stem)
         tickers = [p.stem for p in paths]
         n, k = len(cal), len(tickers)
         op = np.full((n, k), np.nan)
@@ -193,10 +212,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                   f'stock-days')
 
         if beat:
-            sp = pd.concat([pd.read_parquet(q) for q in
-                            (data_dir / 'earnings_surprise.parquet',
-                             data_dir / 'earnings_surprise_rest.parquet')
-                            if q.exists()]).sort_values('date')
+            sp = load_surprise(data_dir)
             by_beat = {t: g for t, g in sp.groupby('ticker')}
             for j, t in enumerate(tickers):
                 g = by_beat.get(t)
@@ -264,10 +280,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
 
         blackout_days = cfg['minervini'].get('earnings_blackout_days', 0)
         if blackout_days:
-            sp = pd.concat([pd.read_parquet(q) for q in
-                            (data_dir / 'earnings_surprise.parquet',
-                             data_dir / 'earnings_surprise_rest.parquet')
-                            if q.exists()]).sort_values('date')
+            sp = load_surprise(data_dir)
             by_rep = {t: g['date'].to_numpy() for t, g in sp.groupby('ticker')}
             for j, t in enumerate(tickers):
                 rd = by_rep.get(t)
@@ -309,7 +322,8 @@ def pool_by_day(pool: np.ndarray) -> list:
 def simulate(panel: dict, cfg: dict, period: tuple[int, int],
              rng: np.random.Generator | None = None,
              entry_rate: float = 0.0,
-             pool_days: list | None = None, moc: bool = False):
+             pool_days: list | None = None, moc: bool = False,
+             record: dict | None = None):
     """One portfolio path. rng=None runs the strategy; with an rng the run
     is a control (random names, next-open fills).
 
@@ -319,6 +333,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     together at the close and buy market-on-close. Same base, same
     template, same exits, same everything else; no eject is needed
     because the volume is known before the trade is taken.
+
+    Pass `record` (a dict) to get the day-by-day detail back: it is
+    filled with 'invested', the fraction of equity held in stock on each
+    day of the period -- 1 minus the cash fraction.
 
     Returns (trades, equity, avg invested, slot-days)."""
     tr = cfg['minervini_trading']
@@ -693,6 +711,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         positions.pop(j)
         cash += close_out(j, j1, pos, cl[j1, j], 'period_end')
     equity.iloc[-1] = cash
+    if record is not None:
+        record['invested'] = pd.Series(invested, index=days)
     return pd.DataFrame(trades), equity, float(np.mean(invested)), slot_days
 
 
@@ -703,6 +723,7 @@ def main() -> None:
     results.mkdir(exist_ok=True)
     fund = '--fund' in sys.argv
     beat = '--beat' in sys.argv
+    wide = '--wide' in sys.argv      # S&P 1500 + the rest of the US market
     v7 = '--v7' in sys.argv
     v6 = '--v6' in sys.argv
     v9 = '--v9' in sys.argv          # §13 momentum-conditioned selling
@@ -732,7 +753,8 @@ def main() -> None:
         for k, v in cfg['minervini_v8'].items():
             cfg['minervini_trading'][k] = v
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
-                        beat=beat, v3=v3 and not v4, v4=v4 and not v5, v5=v5)
+                        beat=beat, v3=v3 and not v4, v4=v4 and not v5, v5=v5,
+                        wide=wide)
     cal = panel['calendar']
 
     print(f'panel: {len(panel["tickers"])} tickers, '
@@ -755,7 +777,8 @@ def main() -> None:
         if a.startswith('--size='):
             ab += 's' + a[7:].replace('0.','')
     tag = (('v9' if v9 else 'v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
-           + ('_fund' if fund else '') + ('_beat' if beat else ''))
+           + ('_fund' if fund else '') + ('_beat' if beat else '')
+           + ('_wide' if wide else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '
               f'{int(panel["trigger_moc"].sum())} entries available')
@@ -763,10 +786,12 @@ def main() -> None:
     strat_pool = panel['watch'] if v5 and 'watch' in panel else panel['setup']
     setup_days = pool_by_day(strat_pool)
     tmpl_days = pool_by_day(panel['template'])
-    summary, curves = {}, {}
+    summary, curves, cash = {}, {}, {}
     for pname, period in periods.items():
+        rec = {}
         trades, equity, avg_inv, slot_days = simulate(
-            panel, cfg, period, pool_days=setup_days, moc=moc)
+            panel, cfg, period, pool_days=setup_days, moc=moc, record=rec)
+        cash[pname] = 1.0 - rec['invested']
         m = metrics(trades, equity, avg_inv)
         rate = len(trades) / slot_days if slot_days else 0.0
         trades.to_csv(results / f'minervini_{tag}_{pname}_trades.csv', index=False)
@@ -825,6 +850,45 @@ def main() -> None:
         plt.close()
 
     pd.DataFrame(summary).T.to_csv(results / f'minervini_{tag}_summary.csv')
+
+    # --- how often does it actually bet? The cash side of the book, daily.
+    cash_s = pd.concat([cash['dev'], cash['test']]).sort_index()
+    cash_s.name = 'cash_fraction'
+    cash_s.to_csv(results / f'minervini_{tag}_cash.csv')
+    yr = cash_s.groupby(cash_s.index.year)
+    tbl = pd.DataFrame({'mean_cash': yr.mean(),
+                        'days_flat': yr.apply(lambda x: (x > 0.99).mean()),
+                        'days_fully_in': yr.apply(lambda x: (x < 0.05).mean())})
+    tbl.to_csv(results / f'minervini_{tag}_cash_by_year.csv')
+    print('\ncash by year, % of equity / % of days '
+          '(mean cash, days flat, days >95% invested):')
+    print((tbl * 100).round(1).to_string())
+    print(f'\nwhole span: mean cash {cash_s.mean():.1%}, '
+          f'flat on {(cash_s > 0.99).mean():.1%} of days, '
+          f'>95% invested on {(cash_s < 0.05).mean():.1%} of days')
+
+    fig, ax = plt.subplots(2, 1, figsize=(13, 8), sharex=True,
+                           gridspec_kw={'height_ratios': [2, 1]})
+    ax[0].fill_between(cash_s.index, cash_s * 100, color='steelblue',
+                       alpha=0.35, label='cash')
+    ax[0].plot(cash_s.index, cash_s.rolling(63).mean() * 100, color='crimson',
+               lw=1.2, label='cash, 63-day mean')
+    ax[0].axvline(cash['test'].index[0], color='k', ls=':', lw=1)
+    ax[0].set_ylabel('cash, % of equity')
+    ax[0].set_ylim(0, 100)
+    ax[0].legend(loc='upper right')
+    ax[0].grid(alpha=0.3)
+    ax[0].set_title(f'{tag}: cash held day by day (dev | test), '
+                    f'mean {cash_s.mean():.0%}')
+    ax[1].plot(cash_s.index, (cash_s < 0.05).rolling(252).mean() * 100,
+               color='darkgreen', lw=1.2)
+    ax[1].set_ylabel('% of last 252 days\nfully invested')
+    ax[1].set_ylim(0, 100)
+    ax[1].grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(results / f'minervini_{tag}_cash.png', dpi=120)
+    plt.close()
+
     print(f'\ntables and charts -> {results}/minervini_{tag}_*')
 
 

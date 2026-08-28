@@ -14,6 +14,32 @@ an upper bound. The model-vs-template-vs-random comparison is more meaningful
 than any absolute number, since all three strategies share the same biased
 universe — but the bias need not cancel exactly.
 
+### The wide universe (`--wide`, added 2026-08-28)
+
+`download_data.py --wide` adds every other US-listed common stock above
+$100M and $5 (Nasdaq screener: NASDAQ + NYSE + AMEX) to the S&P 1500 --
+the Russell 2000 / Nasdaq Composite / NYSE Composite ground the index
+list leaves out. Three things about it that any result must be read
+through:
+
+1. **Survivorship is WORSE, not better.** It is a snapshot of what is
+   listed today. Small caps that failed are absent, and small caps fail
+   far more often than index members, so the added names are a more
+   heavily filtered set of survivors than the ones already there.
+2. **It is not a point-in-time index.** A name that IPO'd in 2021 simply
+   has no data before 2021 (correct), but a name that was listed in 2009
+   and delisted in 2014 is missing entirely (not correct).
+3. **It adds fewer opportunities than names.** Measured on the first 637
+   downloaded: median 348 days passing the $5M dollar-volume gate,
+   against 3,963 for a 400-name S&P 1500 sample, and 14% never liquid at
+   all. The liquidity filter, not the name count, sets how much the
+   universe actually grows.
+
+The wide names carry their own `earnings_surprise_wide.parquet`, because
+the v3 earnings blackout treats a name with no known report date as
+clear -- without it the new names would escape a filter the S&P 1500
+names face, and "more names" would be confounded with "weaker filter".
+
 ## Other known issues
 
 - **Adjusted prices.** yfinance `auto_adjust=True` back-adjusts for splits and

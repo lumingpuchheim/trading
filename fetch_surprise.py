@@ -11,6 +11,14 @@ points; the two halves were fetched separately and are concatenated by
 `minervini_backtest.build_panel`.
 
 Run: python fetch_surprise.py
+     python fetch_surprise.py data/earnings_surprise_wide.parquet ohlcv_wide
+
+The optional arguments are the output parquet and the ohlcv directory to
+take the ticker list from; `build_panel` concatenates every
+`earnings_surprise*.parquet` it finds, so a new file is picked up with no
+further change. The wide universe needs its own file: without it those
+names carry no report dates and therefore silently escape the earnings
+blackout that the S&P 1500 names face.
 """
 import pathlib
 import sys
@@ -18,13 +26,13 @@ import sys
 import pandas as pd
 import yfinance as yf
 
-out = 'data/earnings_surprise.parquet'
+out = sys.argv[1] if len(sys.argv) > 1 else 'data/earnings_surprise.parquet'
+src = pathlib.Path('data') / (sys.argv[2] if len(sys.argv) > 2 else 'ohlcv')
 subset = pathlib.Path('data/_beat_tickers.csv')
-if subset.exists():
+if subset.exists() and len(sys.argv) == 1:
     tickers = pd.read_csv(subset)['ticker'].tolist()
 else:
-    tickers = sorted(p.stem for p in pathlib.Path('data/ohlcv').glob('*.parquet')
-                     if p.stem != 'SPY')
+    tickers = sorted(p.stem for p in src.glob('*.parquet') if p.stem != 'SPY')
 rows, failed = [], []
 for k, t in enumerate(tickers):
     try:
