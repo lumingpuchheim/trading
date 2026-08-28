@@ -1497,8 +1497,9 @@ size. The system has none; imitating the behaviour without its cause
 degraded both periods and halved size at bottoms. Flat 10% slots and
 the binary light stand — the only size rule that claims nothing.
 
-**Expected value of a bet (v5):** dev +4.57% per trade (824), test
-+6.08% (638). But the MEDIAN trade loses (-0.84% / -0.55%): P(win) is
+**Expected value of a bet (v5) — SUPERSEDED, see the correction below:**
+dev +4.57% per trade (824 rows), test +6.08% (638). These average rows of
+UNEQUAL size; the dollar-weighted figures are +1.26% and +2.03%. But the MEDIAN trade loses (-0.84% / -0.55%): P(win) is
 44/46%, sd 17-21%, skew +4.5/+3.5. The 75th percentile is +14-16%, the
 99th +53%/+100%. **The top 5% of trades supply 54-57% of all profit.**
 This is a lottery-with-an-edge profile — his stated profile — and it is
@@ -1507,8 +1508,9 @@ forfeits unidentifiable jackpots.
 
 #### Geometric correction (user request)
 
-Per-bet geometric mean: dev **+3.52%** (arithmetic +4.57%, volatility
-drag 1.05%), test **+4.56%** (+6.08%, drag 1.52%). At the account level
+Per-bet geometric mean: dev **+3.52%**, test **+4.56%** (against the
+size-polluted arithmetic +4.57% / +6.08%; the dollar-weighted arithmetic
+is +1.26% / +2.03%). At the account level
 each trade is a 10% slot, so the geometric per-trade account impact is
 +0.44% / +0.59% — the drag at slot size is negligible, which is itself
 an argument for the flat small slots the user reinstated: at 10% the

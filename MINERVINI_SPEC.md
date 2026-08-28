@@ -512,6 +512,35 @@ his entry precision or judgement.
 exits, strength ranking, flat 10% slots, binary light, 5-day re-entry
 after non-stop exits).
 
+**The bets we take (v5r — CORRECTED 2026-08-27, see below):** the
+earlier figures here averaged trade ROWS of unequal size and were wrong.
+The strength rule sells HALF a position at +20%, so every such row is a
+5% bet that exists only because the trade won; averaging it beside
+full 10% rows inflates the mean. Dollar-weighted and de-duplicated:
+
+| | dev | test |
+|---|---|---|
+| distinct positions | 706 (59/yr) | 528 (69/yr) |
+| dollar-weighted mean per row | **+1.26%** | **+2.03%** |
+| full-size (10%) rows | 582, mean **-3.43%** | 424, mean **-4.06%** |
+| half-size (5%) rows, winners by construction | 242, mean +23.79% | 214, mean +26.17% |
+| geometric mean per bet (one euro cycled through) | +3.52% | +4.56% |
+| P(win) / median row | 45% / -0.70% | 46% / -0.52% |
+
+Read it as: **a full-size bet loses ~3-4% on average**; the system earns
+only through the halves banked at +20% and the riders left after them.
+Account arithmetic closes with these inputs: sum(weight x return) =
++7.4%/yr dev and +14.1%/yr test against realized CAGR 6.3% and 12.5%,
+the residual being compounding and sequencing. Every qualifying bet must
+still be taken — the winners are not identifiable in advance. Known
+failure mode (2026): when leadership narrows to mega-caps that never
+base, the repertoire deploys fully into rotation names and loses while
+the index rises (-23.9% vs +12.8% YTD).
+
+**Standing configuration `v5r` = --v5 --e3** (repertoire, tennis-ball
+exits, strength ranking, flat 10% slots, binary light, 5-day re-entry
+after non-stop exits).
+
 **The bets we take (v5r, geometric, documented as the reference):**
 dev 828 bets (~69/yr): arithmetic +4.99%, **geometric +3.92%** per bet,
 P(win) 45%, median -0.70%. Test 639 (~84/yr): arithmetic +6.07%,
