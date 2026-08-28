@@ -90,6 +90,18 @@ def apply_v3(cfg: dict) -> dict:
     return cfg
 
 
+def apply_v11(cfg: dict) -> dict:
+    """v11 = the standing config v5r + section 17's 5/3/2 pyramid: a
+    half-size pilot, then two shrinking adds, each requiring a fresh
+    trigger, open profit, a non-extended price, and enough open profit to
+    pay for the new shares' risk."""
+    cfg = apply_v5(cfg)
+    cfg['minervini_trading']['reentry_fast'] = True      # v5r keeps E3
+    for key, val in cfg['minervini_v11'].items():
+        cfg['minervini_trading'][key] = val
+    return cfg
+
+
 def apply_v10(cfg: dict) -> dict:
     """v10 = v5r + section 14's four pullback qualifiers (dry-up, depth
     cap, hold-and-bounce, no gapped high).
@@ -462,6 +474,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     v7c = cfg.get('minervini_v7', {})
     sell_at = tr.get('strength_sell_at', 0.0)
     sell_frac = tr.get('strength_sell_frac', 0.0)
+    ladder = tr.get('pyramid_ladder')             # §17 pyramid 5/3/2
+    ext_max = tr.get('pyramid_max_extended', 0.0)
     mom = tr.get('momentum_sell', False)          # §13 momentum-conditioned
     v9c = cfg.get('minervini_v9', {})
     vel_gain = v9c.get('velocity_gain', 0.0)
@@ -720,6 +734,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                     if adaptive_frac is None:
                         continue          # cap reached: skip, never liquidate
                     frac = adaptive_frac
+                elif ladder:
+                    frac = ladder[0]      # §17: the pilot, not a full bet
                 else:
                     frac = tr['equal_weight_fraction']
                 if risk_frac:
@@ -734,7 +750,48 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                     continue
                 positions[j] = {'shares': shares, 'entry_px': px, 'entry_i': i,
                                 'entry_date': cal[i], 'exit_reason': None,
-                                'shares0': shares}
+                                'shares0': shares, 'leg': 1}
+                cash -= outflow
+
+        # 3c. §17 pyramid: a name we already hold fires a fresh trigger.
+        #     Every condition is knowable at this close, so the add fills
+        #     here like any other market-on-close buy.
+        if ladder and moc and not is_control:
+            for j, pos in positions.items():
+                leg = pos.get('leg', 1)
+                if pos['exit_reason'] or leg >= len(ladder):
+                    continue
+                # A5: the ladder BUILDS the position and the +20% rule
+                # HARVESTS it; a position that has already sold part of
+                # itself is never added to. Without this the cost basis
+                # and the share total are rewritten after a sale has been
+                # booked against the old ones, and the position's rows
+                # stop summing to one whole bet.
+                if pos.get('half_sold') or pos.get('sell_half'):
+                    continue
+                if not trigger[i, j]:         # under moc this IS trigger_moc
+                    continue                      # A1: no fresh buy point
+                c = cl[i, j]
+                if not (np.isfinite(c) and c > pos['entry_px']):
+                    continue                      # A2: never add to a loser
+                s50 = sma50[i, j]
+                if not (np.isfinite(s50) and s50 < c <= ext_max * s50):
+                    continue                      # A3: above the line, not extended
+                add = np.floor(ladder[leg] * eq_prev / c)
+                outflow = add * c * (1 + cost)
+                if add < 1 or outflow > cash:
+                    continue
+                tot = pos['shares'] + add
+                blended = (pos['entry_px'] * pos['shares'] + c * add) / tot
+                # A4: the new shares' risk to the stop that will apply
+                # after the add, paid for out of the profit already there
+                if add * (c - tr['stop_loss'] * blended) \
+                        > pos['shares'] * (c - pos['entry_px']):
+                    continue
+                pos['entry_px'] = blended     # stop, 2R and +20% all move up
+                pos['shares'] = tot
+                pos['shares0'] = tot
+                pos['leg'] = leg + 1
                 cash -= outflow
 
         orders = {j: day for j, day in orders.items() if day > i}
@@ -843,10 +900,13 @@ def main() -> None:
     v6 = '--v6' in sys.argv
     v9 = '--v9' in sys.argv          # §13 momentum-conditioned selling
     v10 = '--v10' in sys.argv        # §14 pullback qualifiers
-    v5 = '--v5' in sys.argv or v6 or v7 or v9 or v10
+    v11 = '--v11' in sys.argv        # §17 pyramid 5/3/2
+    v5 = '--v5' in sys.argv or v6 or v7 or v9 or v10 or v11
     v4 = '--v4' in sys.argv or v5
     v3 = '--v3' in sys.argv or v4
-    if v10:
+    if v11:
+        cfg = apply_v11(cfg)
+    elif v10:
         cfg = apply_v10(cfg)
     elif v9:
         cfg = apply_v9(cfg)
@@ -898,7 +958,7 @@ def main() -> None:
     for a in sys.argv:
         if a.startswith('--size='):
             ab += 's' + a[7:].replace('0.','')
-    tag = (('v10' if v10 else 'v9' if v9 else 'v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
+    tag = (('v11' if v11 else 'v10' if v10 else 'v9' if v9 else 'v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else '')
            + ('_wide' if wide else '') + (f'_c33{code33}' if code33 else '')
            + (f'_grp{group}' if group else ''))

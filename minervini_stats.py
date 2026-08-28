@@ -60,7 +60,8 @@ for period, years in (('dev', 12.0), ('test', 7.65)):
     t = pd.read_csv(f'results/minervini_{TAG}_{period}_trades.csv')
     t['pos_id'] = t['ticker'] + '|' + t['entry_date'].astype(str)
     t['is_split'] = t['pos_id'].duplicated(keep=False)
-    t['weight'] = np.where(t['is_split'], 0.5, 1.0)
+    if 'weight' not in t.columns:      # runs written before 2026-08-28
+        t['weight'] = np.where(t['is_split'], 0.5, 1.0)
 
     # one euro in, this many euros out, per position
     mult = t.groupby('pos_id').apply(

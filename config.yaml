@@ -190,6 +190,13 @@ minervini_v10:                    # §14 pullback qualifiers, --v10 — FROZEN
   pb_gap_max: 0.05                # P4: the 60d high must not sit within ...
   pb_gap_window: 5                #     ... 5 sessions after a >5% gap open
 
+minervini_v11:                    # §17 pyramid ladder, --v11 — FROZEN
+  pyramid_ladder: [0.05, 0.03, 0.02]  # pilot 5%, add 3%, add 2% of equity;
+                                  # shrinking, as the source asks, and summing
+                                  # to today's flat 10% rather than above it
+  pyramid_max_extended: 1.25      # A3: no add when close > 1.25 x SMA50,
+                                  # and none below the SMA50 at all
+
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2
   stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
   sma_exit: 50                    # close < SMA50 (trend death) -> sell next open

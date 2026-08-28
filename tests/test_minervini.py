@@ -727,3 +727,112 @@ def test_group_strength_follows_the_members_over_time():
     pct = mv.group_strength(rs, groups, CFG)
     assert pct[0, 0] < pct[0, 5], 'weak early'
     assert pct[-1, 0] > pct[-1, 5], 'strong late'
+
+
+# ------------------------------- §17: the 5/3/2 pyramid ladder
+
+def pyramid_cfg() -> dict:
+    """v5r plus the section-17 ladder, without touching the real config."""
+    cfg = {**CFG}
+    cfg['minervini_trading'] = {**CFG['minervini_trading'],
+                                **CFG['minervini_v4'], **CFG['minervini_v11'],
+                                'repertoire': True, 'reentry_fast': True}
+    return cfg
+
+
+def ladder_panel(close, sma50, trig_days) -> tuple:
+    """A one-ticker panel that triggers on ENTRY_I and again on the days
+    in `trig_days`, with the SMA50 supplied directly so A3 is testable."""
+    close = np.asarray(close, float)
+    n = len(close)
+    cal = pd.bdate_range('2020-01-02', periods=n)
+    col = close.reshape(n, 1)
+    panel = {
+        'calendar': cal, 'tickers': ['TEST'],
+        'open': col.copy(), 'close': col.copy(),
+        'sma50': np.asarray(sma50, float).reshape(n, 1),
+        'volx': np.ones((n, 1)),
+        'fill_moc': col.copy(), 'fill_px': col.copy(),
+        'trigger_moc': np.zeros((n, 1), bool), 'trigger': np.zeros((n, 1), bool),
+        'vol_ok': np.ones((n, 1), bool),
+        'last_i': np.array([n - 1]), 'green': np.ones(n, bool),
+        'spy_close': pd.Series(np.full(n, 100.0), index=cal),
+        'rsl_hi': np.ones((n, 1), bool), 'weak': np.zeros((n, 1)),
+        'rs': np.zeros((n, 1)),
+    }
+    for d in [ENTRY_I] + list(trig_days):
+        panel['trigger_moc'][d, 0] = True
+    empty = np.array([], dtype=int)
+    pool = [np.array([0]) if i == ENTRY_I - 1 else empty for i in range(n)]
+    return panel, pool
+
+
+def legs_taken(close, sma50, trig_days) -> pd.DataFrame:
+    panel, pool = ladder_panel(close, sma50, trig_days)
+    trades, _, _, _ = simulate(panel, pyramid_cfg(), (0, len(close) - 1),
+                               pool_days=pool, moc=True)
+    return trades
+
+
+def rising(n: int, start: float, step: float) -> np.ndarray:
+    return start + step * np.arange(n)
+
+
+def test_the_ladder_adds_on_a_fresh_trigger_while_in_profit():
+    # entry at 100, then 110 and 120 with fresh triggers; SMA50 well below
+    close = np.concatenate([np.full(ENTRY_I, 100.0), [100.0], np.full(4, 105.0),
+                            [110.0], np.full(4, 115.0), [120.0],
+                            np.full(30, 122.0)])
+    sma50 = np.full(len(close), 96.0)
+    t = legs_taken(close, sma50, [ENTRY_I + 5, ENTRY_I + 10])
+    # one position, and its entry price must be the blend of 100/110/120
+    assert len(t['entry_date'].unique()) == 1
+    assert t['entry_px'].iloc[-1] > 100.0, 'the entry price blends upward'
+    assert t['entry_px'].iloc[-1] < 120.0
+
+
+def test_no_add_when_the_position_is_under_water():
+    close = np.concatenate([np.full(ENTRY_I, 100.0), [100.0], np.full(4, 98.0),
+                            [97.0], np.full(30, 97.0)])
+    sma50 = np.full(len(close), 90.0)
+    t = legs_taken(close, sma50, [ENTRY_I + 5])
+    assert t['entry_px'].iloc[0] == pytest.approx(100.0), \
+        'A2: a position in the red is never added to'
+
+
+def test_no_add_when_the_price_is_extended_above_the_sma50():
+    # close 130 against an SMA50 of 100 is +30%, past the 25% limit
+    close = np.concatenate([np.full(ENTRY_I, 100.0), [100.0], np.full(4, 120.0),
+                            [130.0], np.full(30, 130.0)])
+    sma50 = np.full(len(close), 100.0)
+    t = legs_taken(close, sma50, [ENTRY_I + 5])
+    assert t['entry_px'].iloc[0] == pytest.approx(100.0), \
+        'A3: no adding into an extended move'
+
+
+def test_the_ladder_stops_after_two_adds():
+    close = np.concatenate([np.full(ENTRY_I, 100.0), [100.0], np.full(2, 104.0),
+                            [106.0], np.full(2, 108.0), [110.0],
+                            np.full(2, 112.0), [114.0], np.full(30, 116.0)])
+    sma50 = np.full(len(close), 99.0)
+    t = legs_taken(close, sma50, [ENTRY_I + 3, ENTRY_I + 6, ENTRY_I + 9])
+    panel, pool = ladder_panel(close, sma50, [ENTRY_I + 3, ENTRY_I + 6,
+                                              ENTRY_I + 9])
+    # the fourth trigger must not buy: three legs is the whole ladder
+    blend_two_adds = t['entry_px'].iloc[0]
+    assert blend_two_adds < 110.0, 'the third add never happens'
+
+
+def test_no_add_after_the_position_has_sold_part_of_itself():
+    """A5: the ladder builds, the +20% rule harvests. An add after a
+    partial sale rewrites the cost basis and the share total that sale
+    was already booked against, so the position's rows stop summing to
+    one whole bet (found 2026-08-28: CSX 2016-10-19 summed to 1.5)."""
+    # +20% by day 3, so the half-sale arms at day 15 and fills at 16;
+    # fresh triggers land at 20 and 25, after the sale
+    close = np.concatenate([np.full(ENTRY_I, 100.0), [100.0], np.full(30, 125.0)])
+    sma50 = np.full(len(close), 104.0)
+    t = legs_taken(close, sma50, [ENTRY_I + 20, ENTRY_I + 25])
+    assert (t['exit_reason'] == 'strength').any(), 'the half-sale must fire'
+    assert t['weight'].sum() == pytest.approx(1.0, abs=0.01), \
+        'every row of one position must sum to exactly one bet'

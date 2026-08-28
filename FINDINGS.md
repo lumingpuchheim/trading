@@ -2200,6 +2200,72 @@ the incumbent, it tops the per-bet metric in both periods, and the only
 directional signal in the data (more selling is worse) argues against
 moving up while the both-periods bar argues against moving to 0%.
 
+### v11 — the 5/3/2 pyramid (spec 17, run 2026-08-28): REJECTED, and the arithmetic says why
+
+User instruction: replace the flat 10% bet with a 5% pilot, a 3% add and
+a 2% add. Every add requires a fresh trigger on a name we hold (A1), open
+profit (A2), a price above the SMA50 and no more than 25% over it (A3),
+and enough open profit to pay for the new shares' risk at the post-add
+stop (A4). The entry price blends, so the stop, the 2R breakeven and the
++20% half-sale all move up with it.
+
+**A defect found and fixed mid-run, reported because the first numbers
+were published to the user before it was caught.** The first version let
+an add fire AFTER the +20% half-sale had executed. That rewrote the cost
+basis and the share total a booked sale had already been measured
+against, so the position's rows summed to 1.5 bets instead of 1 (CSX
+2016-10-19: rows of weight 0.499 and 1.000). It inflated the per-bet
+figure to a spurious +1.95%/+3.10%. Rule A5 now forbids adding to a
+position that has sold any part of itself -- the ladder builds, the +20%
+rule harvests, and mixing them is incoherent as well as unmeasurable. A
+unit test pins the weights to sum to one.
+
+| | v5r | v11 (5/3/2) |
+|---|---|---|
+| dev total | **+148.4%** | +65.5% |
+| test total | **+146.8%** | +50.8% |
+| **euro per bet, dev** | **1.0082** | **0.9978** |
+| **euro per bet, test** | **1.0108** | **0.9997** |
+| avg invested | 72.4% / 76.4% | **44.2% / 43.8%** |
+| max drawdown | -24.1% / -23.1% | **-15.1% / -17.1%** |
+| vs 200 controls | 97th / 97th | 53rd / 46th |
+
+**The paired measurement, which is the whole story.** Positions present
+in both runs, split by whether an add actually fired:
+
+| | dev | test |
+|---|---|---|
+| single-leg (83% / 84%) | 0.9865 -> **0.9866** | 0.9956 -> **0.9956** |
+| pyramided (17% / 16%) | 1.1105 -> **1.0641** | 1.1066 -> **1.0598** |
+
+Single-leg positions are IDENTICAL to four decimals, which is the
+correctness check: a bet that never got an add must behave exactly as it
+did before, and it does. Every difference in the portfolio comes from the
+pyramided sixth of positions, and they lose **4.6 points in dev and 4.7
+in test** -- consistent in both periods and in the same direction.
+
+**Why, and it is arithmetic rather than a market fact.** An add buys more
+of a stock at a HIGHER price than the original entry, so the blended cost
+basis rises and the same eventual exit returns less per euro. Pyramiding
+can never improve return-per-euro; it can only increase total PROFIT by
+putting more money to work in winners. In his structure it does exactly
+that, because the adds take a position from a quarter size up to a full
+20-25% of equity -- the added money is extra. **Our ladder sums to 10%,
+which is the flat bet it replaces**, so there is no extra money: losers
+get identical treatment, winners get a worse average price, and 56% of
+the book sits in cash. The result was structurally determined before the
+data was consulted. Spec 17 declared this as inconsistency 1 in advance.
+
+The only thing that improved is drawdown, -24/-23 -> -15/-17, and that is
+bought with exposure (44% invested against 72%), not with skill.
+
+**REJECTED.** `--v11` stays runnable to reproduce this.
+
+**The test this implies, not run:** a ladder that sums ABOVE the flat bet
+-- 10/6/4 to a 20% full position -- is his actual structure, where the
+winners receive capital the flat rule never gives them. That is a
+different experiment and it was not authorised here.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

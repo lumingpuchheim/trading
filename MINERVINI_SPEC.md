@@ -946,6 +946,106 @@ it. No point-in-time classification is available on this data.
 
 **Post-hoc caveat unchanged:** both periods have been seen many times.
 
+## 17. Pyramid entry 5/3/2 (pre-registered 2026-08-28)
+
+User instruction: instead of one flat 10% bet, buy 5% first, add 3% if
+the trend confirms, then a final 2%. The ladder is the user's; everything
+else below is filled in from the sourced description of how he adds, and
+every place the source and this system disagree is named rather than
+smoothed over.
+
+### What the sources say about adding (secondary, verification stated)
+
+**Verified on a fetched page:** *"You dip your toe in. You initiate a 1/4
+size pilot position. If it works and moves into open profit, you scale
+in. If it fails, you retreat to cash."*
+
+**From search summaries, NOT confirmed on a fetched page** — the three
+Cloudflare-protected sources refused fetching, so these are reported
+second-hand and must be read that way: add only at a new low-risk buy
+point rather than at an arbitrary gain; never when extended (>25% above
+the 50-day average); price above the 50-day; each add smaller than the
+last; the stop rises with each add; and *"the risk associated with any
+new addition must be covered entirely by the unrealized profit generated
+by the existing position."*
+
+### The mechanism, constants frozen
+
+**Ladder (user-set): 5% -> 3% -> 2% of equity**, at most two adds, each
+sized off equity at the moment of that buy. Monotonically shrinking, as
+the source asks.
+
+**Every add requires ALL of:**
+
+- **A1 a fresh buy point.** The name fires a new market-on-close trigger
+  (`trigger_moc`) while we hold it -- the same signal that opened the
+  position, firing again. This is the proxy for his continuation buy
+  point and it is a weak one; see the inconsistencies below.
+- **A2 open profit.** Today's close is above the position's blended
+  entry price. Never add to a position that is down.
+- **A3 not extended.** Close <= **1.25 x SMA50** (`pyramid_max_extended`),
+  the 25% figure the sources report, and close > SMA50.
+- **A4 the profit pays for the risk.** The NEW shares' risk to the stop
+  that will apply after the add must not exceed the open profit already
+  standing on the existing shares. This is the one quoted principle
+  rendered arithmetically; it is what stops a pyramid from enlarging
+  the loss.
+
+**Fill** at that day's close, the same convention as every entry.
+
+**Blending.** The position's entry price becomes the share-weighted
+average of all legs, so the 8% stop, the 2R breakeven and the +20%
+half-sale all move up with it. That satisfies "the stop rises with each
+add" using machinery already in the code.
+
+**The split is unchanged**, as instructed: half the position sold at
++20%, now measured from the blended entry.
+
+**Slot accounting.** A position holds ONE of the ten slots from the pilot
+onward, whatever its size. Undeployed cash stays cash.
+
+### Inconsistencies, declared before the run
+
+1. **This is not his pyramid.** His adds take a position from a quarter
+   size UP TO a full 20-25% of equity -- pyramiding is how he
+   concentrates. Ours ladders 5+3+2 to reach **10%, which is exactly
+   today's flat bet.** A position that completes the ladder is the same
+   size as today's; one that never adds is half. So this tests "start
+   smaller and add on confirmation", which is a DE-RISKING, not his
+   concentration. Both are worth testing; they are not the same thing.
+2. **Average exposure will fall, and that alone changes the result.**
+   Pilots are half-size and only some complete the ladder, so the book
+   will hold more cash than v5r at the same slot count. Any difference in
+   returns is therefore a mixture of the pyramid rule and simply being
+   less invested. `avg_invested` is reported beside every number so the
+   two can be told apart.
+3. **A1 is a proxy, not his rule.** He adds at a continuation base or
+   pocket pivot. We have no working base detector -- the pivot path fires
+   6 times in 21 years -- so "a fresh trigger on a name we already hold"
+   stands in for it, and 99% of those triggers are SMA20 pullbacks. This
+   is the same substitution that made section 14 a test of my guesses
+   rather than of his method.
+4. **Mixed reference points.** The tennis-ball window and the day-15 egg
+   test keep counting from the ORIGINAL entry day while the stop and the
+   +20% level move to the blended price. Declared, not fixed: restarting
+   the clock on every add would let a pyramided position dodge the egg
+   test indefinitely.
+5. **The standing rule.** DECISIONS.md says not to re-propose pyramiding
+   "without new judgement-bearing inputs, not new curves". The new input
+   is the trigger: v6 added at +2R, a pure percentage, with no extension
+   check and no profit-covers-risk test. That is a different mechanism,
+   not a re-tuned one. The user has instructed the build; this records
+   why it is not a violation.
+
+### Protocol
+
+One run, `--v11` = v5r with the 5/3/2 ladder, both periods,
+market-on-close, 200 entry-rate-matched controls, against the v5r
+baseline (dev +148.4%, test +146.8%, 97th percentile in both). Reported
+per bet as the geometric euro returned per euro committed, plus
+`avg_invested` so inconsistency 2 stays visible. Post-hoc caveat
+unchanged and compounding.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)
