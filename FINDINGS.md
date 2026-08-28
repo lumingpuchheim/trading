@@ -1707,6 +1707,33 @@ on a proportional-fee broker — and still earns roughly half of
 after-tax SPY buy-and-hold, with a -30% drawdown. The final ranking is
 unchanged: deferral + zero turnover beats the edge.
 
+### v8 — adaptive sizing (user method, 2026-08-27, POST-HOC): rejected
+
+Rule as specified by the user: when few opportunities arrive, bet more
+aggressively (a lone signal may take up to 20%); when many arrive at
+once, shrink the per-bet size so TOTAL exposure never exceeds 80%; never
+liquidate existing positions to fund new ones (the system never did).
+Implemented as `--adaptive` (minervini_v8 block: cap 0.80, max single
+0.20): each day's free budget under the cap is split equally across that
+day's fillable signals, capped at 20% each.
+
+| | bets | invested | total | v5r baseline |
+|---|---|---|---|---|
+| dev | 721 | 64.1% | **+62.1%** | +107.1% |
+| test | 562 | 66.4% | **+56.4%** | +146.7% |
+| 2026 | 82 | 74.8% | -17.5% | -23.9% |
+
+Worse in both periods (2026 slightly less bad). Mechanism: the method
+sizes by TODAY'S signal count, but signal arrivals cluster in strong
+tapes — so it bets big on the isolated signals of thin, choppy stretches
+and small on each signal of rich streaks, which is backwards relative to
+where the winners live (the 1-in-5 jackpots come disproportionately from
+strong-tape clusters). Average exposure also falls (64-66% vs 73-76%)
+because the 80% cap plus per-day splitting leaves budget unspent when
+signals arrive one at a time. Equal fixed slots remain better than
+signal-count-conditioned sizing for the same reason v6 failed: arrival
+intensity is not a conviction signal the system actually possesses.
+
 Cumulative verdict across v1, v2, v3, fundamentals, catalyst: no
 configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the

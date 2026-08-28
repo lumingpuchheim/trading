@@ -496,14 +496,37 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         # 3b. market-on-close entries: price above the pivot AND volume
         #     confirmed, both read at this close, bought at this close
         if moc and not is_control:
-            for j in [j for j, day in orders.items() if day == i]:
+            due = [j for j, day in orders.items() if day == i]
+            adaptive_frac = None
+            if tr.get('adaptive'):
+                # v8 (user method): split the free budget under the 80%
+                # exposure cap across TODAY'S fillable signals — few
+                # signals bet big (cap 20% each), many signals shrink.
+                # Existing positions are never touched to fund new ones.
+                fillable = [j for j in due
+                            if trigger[i, j] and j not in positions
+                            and np.isfinite(fill_px[i, j])]
+                k_eff = min(len(fillable),
+                            max(0, tr['max_positions'] - len(positions)))
+                held_now = sum(p['shares'] * cl[i, jj]
+                               for jj, p in positions.items())
+                budget = tr['adaptive_cap'] * eq_prev - held_now
+                if k_eff > 0 and budget > 0:
+                    adaptive_frac = min(tr['adaptive_max_single'],
+                                        budget / k_eff / eq_prev)
+            for j in due:
                 orders.pop(j)
                 px = fill_px[i, j]
                 if (not trigger[i, j] or j in positions
                         or not np.isfinite(px)
                         or len(positions) >= tr['max_positions']):
                     continue
-                frac = tr['equal_weight_fraction']
+                if tr.get('adaptive'):
+                    if adaptive_frac is None:
+                        continue          # cap reached: skip, never liquidate
+                    frac = adaptive_frac
+                else:
+                    frac = tr['equal_weight_fraction']
                 if risk_frac:
                     frac = min(risk_frac / (1.0 - tr['stop_loss']), pos_cap)
                     if streak_n and len(recent_rets) >= streak_n                             and sum(recent_rets[-streak_n:]) < 0:
@@ -621,12 +644,16 @@ def main() -> None:
         cfg = apply_v3(cfg)
     for flag, key in (('--e1', 'exit_climax'), ('--e2', 'exit_vol_weak'),
                       ('--e3', 'reentry_fast'), ('--e4', 'aging_stop'),
-                      ('--park', 'park_spy'), ('--craft', 'craft_rank')):
+                      ('--park', 'park_spy'), ('--craft', 'craft_rank'),
+                      ('--adaptive', 'adaptive')):
         if flag in sys.argv or (v7 and flag.startswith('--e')):
             cfg['minervini_trading'][key] = True
     for a in sys.argv:
         if a.startswith('--size='):
             cfg['minervini_trading']['equal_weight_fraction'] = float(a[7:])
+    if cfg['minervini_trading'].get('adaptive'):
+        for k, v in cfg['minervini_v8'].items():
+            cfg['minervini_trading'][k] = v
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
                         beat=beat, v3=v3 and not v4, v4=v4 and not v5, v5=v5)
     cal = panel['calendar']
