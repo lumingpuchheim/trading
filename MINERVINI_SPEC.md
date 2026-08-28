@@ -1,5 +1,24 @@
 # Minervini Stage-2 Breakout — specification v2 (pre-registered)
 
+> **READ THIS BEFORE THE SPEC (added 2026-08-28).** Sections 1-3 below
+> specify a VCP base, a pivot and a breakout, and the acceptance gate in
+> section 6 tests exactly that. **The standing configuration does not
+> trade it.** Of 1,230 positions, 1,213 are section-11.3 `pullback`
+> entries and **6 are pivot breakouts**. What actually decides a trade is
+> the trend template plus a 60-day-high close in the last 10 days plus
+> the low touching the SMA20 -- no base, no contractions, no pivot, no
+> dry-up, a trigger that fires on one template day in fourteen.
+>
+> The acceptance gate of section 6 FAILED (SPHR and SMCI: zero triggers)
+> and the v5 repertoire routed around the failed layer rather than
+> repairing it. Section 14 then showed that making the pullback faithful
+> to the source costs 77 points in dev and 113 in test.
+>
+> So this file documents a specification; it does not document the
+> system. Read LIMITATIONS.md, "The rule we actually trade is not his
+> rule", before attributing any number here to Minervini's method.
+
+
 Declared 2026-08-27, before any v2 implementation. Supersedes v1 (same
 day, rejected — see FINDINGS "Minervini Stage-2 breakout"). v1's trend
 template was faithful to the source; its base/breakout mechanics were

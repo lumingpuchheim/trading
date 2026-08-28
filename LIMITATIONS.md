@@ -2,6 +2,88 @@
 
 Read this before trusting any number in `results/`.
 
+## The rule we actually trade is not his rule (added 2026-08-28)
+
+This belongs above survivorship, because survivorship distorts a
+measurement of the method while this one means we are not measuring the
+method.
+
+**Minervini's entry is a two-stage pipeline.** The trend template is a
+*screen*: nine arithmetic conditions that say a stock is in a Stage 2
+advance, true for weeks at a time, saying nothing about when to buy. The
+VCP is the *setup* inside that state: successive shallower contractions
+with volume drying into the last one, producing a pivot -- a specific
+price on a specific day. Stage 2 is a precondition; the VCP is what
+turns a watchlist name into a trade.
+
+**We run the first stage and skip the second.** Measured over the
+standing configuration's 1,230 positions:
+
+| entry | dev | test |
+|---|---|---|
+| **pullback to the SMA20** | **689** | **524** |
+| pivot breakout (the VCP path) | 4 | 2 |
+| cheat | 2 | 2 |
+| power play | 3 | 4 |
+
+The rule that takes 99% of the trades is:
+
+```
+trend template (all nine)
+  + a 60-day-high close within the last 10 days
+  + today's low touches the SMA20 (low <= 1.005 x SMA20)
+  + the close holds it (close >= SMA20)
+```
+
+No base is required, no contraction chain, no pivot, no volume dry-up,
+and until section 14 no volume condition of any kind. It fires on
+**65,898 of 906,079 template stock-days -- one day in fourteen.**
+
+### Why this is a replacement and not a simplification
+
+1. **The selectivity is gone.** A completed VCP setup occurs on 0.5% of
+   template days. Our trigger occurs on 7.3% of them -- fifteen times as
+   often. A pattern that fires one day in fourteen is not filtering the
+   screen, it is timing it.
+2. **The discriminating information is gone.** What a VCP asserts is that
+   supply has been absorbed -- shrinking pullbacks, drying volume. Our
+   trigger asserts that price recently made a high and has come back to a
+   moving average. Those are different claims about the world.
+3. **The controls say so.** The benchmark is random buys of
+   template-passing stocks, and it returns a median +54% (dev) and +58%
+   (test). Our strategy is "template-passing stocks that touch their
+   20-day line". Beating that benchmark at the 97th percentile is real,
+   but the distance between strategy and control is timing, exits and
+   ranking -- not pattern selection.
+4. **We know it is a replacement because making it faithful broke it.**
+   Section 14 added the four conditions the source states for a pullback
+   (volume drying, depth cap, hold-and-bounce, no gapped high). Returns
+   fell from +148%/+147% to +71%/+33% and the test period dropped to the
+   23rd control percentile. The configuration that works is the one that
+   is not his.
+
+### How it happened
+
+The v2 acceptance gate -- two hand-picked stocks that formed textbook
+bases, SPHR in October 2025 and SMCI in January 2024 -- produced **zero**
+triggers under the frozen constants. The gate existed precisely to catch
+a broken VCP implementation. It fired. The backtest was run anyway on
+explicit instruction, and from v5 onward the repertoire routed around the
+failed layer instead of repairing it. Four defects in the base machinery
+are recorded in the spec and none has been fixed; the `--chain`
+diagnostic already shows SPHR passing its case with 2 triggers at $84.67
+under a corrected anchor.
+
+### What this system should honestly be called
+
+**A trend-template momentum system with an SMA20 pullback trigger,
+tennis-ball exits and a strength ranking.** It makes money in both
+periods and beats its controls, and none of that is in doubt. What is in
+doubt is the attribution: the two things carrying Minervini's name --
+the VCP and the pivot breakout -- contribute six trades out of 1,230.
+Every result in this repo should be read as a result about that system,
+not about SEPA.
+
 ## Survivorship bias (the big one)
 
 The universe is the **current** S&P 1500 constituents (Wikipedia; the Russell

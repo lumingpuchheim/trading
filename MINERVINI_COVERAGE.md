@@ -1,5 +1,36 @@
 # Minervini coverage — the complete list
 
+> ## THE HEADLINE, ADDED 2026-08-28: THE VCP IS NOT USED
+>
+> Everything below inventories what is implemented. It is accurate and
+> it buries the single most important fact, which is what actually
+> **runs**:
+>
+> **Of the 1,230 positions the standing configuration takes, 1,213 are
+> `pullback` entries and 6 are pivot breakouts.** The base anchor, the
+> contraction chain, the pivot and the volume dry-up -- the VCP, the
+> thing this method is known for and the thing most of this repo's code
+> and all of its acceptance gate address -- decide **six trades in
+> twenty-one years**.
+>
+> What the standing configuration actually requires to buy:
+>
+> ```
+> trend template (all nine)
+>   + a 60-day-high close within the last 10 days
+>   + today's low touches the SMA20 and the close holds it
+> ```
+>
+> No base. No contractions. No pivot. No dry-up. That trigger fires on
+> **65,898 of 906,079 template stock-days -- one day in fourteen** -- so
+> it is not a selective pattern layered on the screen; it is the screen
+> plus a timing nudge.
+>
+> **This is a different rule from his, not a simplification of it.** See
+> "The rule we actually trade" in LIMITATIONS.md for the full statement
+> and the evidence.
+
+
 One authoritative inventory of what this repo implements of Minervini's
 method and what it does not. Written 2026-08-27 after the user pointed
 out, correctly, that the limitations had been dribbled out piecemeal
