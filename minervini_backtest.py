@@ -500,6 +500,9 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             'exit_date': cal[i], 'entry_px': pos['entry_px'], 'exit_px': px,
             'days_held': i - pos['entry_i'],
             'ret_net': px * (1 - cost) / (pos['entry_px'] * (1 + cost)) - 1,
+            # share of the ORIGINAL position this row disposes of, so the
+            # euro-per-bet statistics need no assumption about halves
+            'weight': pos['shares'] / pos.get('shares0', pos['shares']),
             'exit_reason': reason})
         cd = tr['reentry_cooldown']
         if e3 and reason != 'stop':
@@ -537,18 +540,21 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         for j in [j for j, p in positions.items() if p.get('sell_half')]:
             pos = positions[j]
             pos['sell_half'] = False
-            half = np.floor(pos['shares'] / 2)
+            # `strength_sell_frac` was read and never used before
+            # 2026-08-28: the sale was hardcoded to half regardless.
+            part = np.floor(pos['shares'] * sell_frac)
             px = op[i, j] if np.isfinite(op[i, j]) else cl[i, j]
-            if half >= 1:
-                cash += half * px * (1 - cost)
+            if part >= 1:
+                cash += part * px * (1 - cost)
                 trades.append({
                     'ticker': tickers[j], 'entry_date': pos['entry_date'],
                     'exit_date': cal[i], 'entry_px': pos['entry_px'],
                     'exit_px': px, 'days_held': i - pos['entry_i'],
                     'ret_net': px * (1 - cost)
                                / (pos['entry_px'] * (1 + cost)) - 1,
+                    'weight': part / pos['shares0'],
                     'exit_reason': 'strength'})
-                pos['shares'] -= half
+                pos['shares'] -= part
                 pos['half_sold'] = True
 
         # 2. yesterday's resting orders: the strategy's fill happens
@@ -654,6 +660,7 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                             'exit_px': c, 'days_held': i - pos['entry_i'],
                             'ret_net': c * (1 - cost)
                                        / (pos['entry_px'] * (1 + cost)) - 1,
+                            'weight': part / pos['shares0'],
                             'exit_reason': 'climax_partial'})
                         pos['shares'] -= part
                         pos['half_sold'] = True

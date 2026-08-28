@@ -2147,6 +2147,59 @@ to 2007 days), so the true result is likely worse than measured.
 `--group` and `--grouprank` remain runnable to reproduce these numbers.
 v5r stands.
 
+### How much to realise at +20%: the split-ratio scan (2026-08-28, POST-HOC)
+
+`strength_sell_frac` scanned 0-100% on v5r with everything else fixed --
+same signals, same 10% slots, same exits, same market light. Bet size was
+NOT touched. Reported per bet as the geometric mean euro returned per
+euro committed, which is exact here because the simulator now records the
+share weight of every row (the constant was dead code until today: the
+sale was hardcoded to half regardless of the setting).
+
+| sold at +20% | dev euro/bet | dev total | test euro/bet | test total |
+|---|---|---|---|---|
+| 0% (never) | 1.0076 | +139.6% | 1.0104 | **+159.6%** |
+| 10% | 1.0076 | +137.3% | 1.0068 | +113.4% |
+| 20% | 1.0070 | +130.8% | 1.0099 | +156.6% |
+| 25% | **1.0056** | +109.8% | 1.0103 | +147.7% |
+| 33% | 1.0072 | +138.9% | 1.0091 | +136.3% |
+| 40% | 1.0072 | +138.6% | 1.0070 | +106.6% |
+| **50% (standing)** | **1.0082** | **+148.4%** | **1.0108** | +146.8% |
+| 60% | 1.0080 | +142.2% | 1.0099 | +136.4% |
+| 67% | 1.0079 | +140.1% | 1.0098 | +132.2% |
+| 75% | 1.0079 | +137.8% | 1.0092 | +123.9% |
+| 90% | 1.0077 | +132.9% | 1.0084 | +114.3% |
+| 100% (sell all) | 1.0075 | +129.6% | 1.0075 | +104.1% |
+
+**The incumbent 50% is the maximum on the per-bet metric in BOTH periods.
+Do not read that as vindication.** The whole curve spans 0.27 percentage
+points per bet in dev and 0.40 in test, against a per-trade sigma of
+16-22%. Nothing in this table is distinguishable from noise, and the
+curve is visibly jagged: dev dips to its minimum at 25% with 20% and 33%
+both around 1.007, and test dips at 10% and 40% while 20% and 25% sit
+near the top. A smooth optimum would not do that.
+
+**The one structure that IS consistent across both periods:** above 50%,
+raising the fraction lowers the total monotonically -- dev +148% -> +130%,
+test +147% -> +104%. Selling more into the first +20% costs money, and
+the endpoint (100% = a profit cap at +20%) is the worst or near-worst
+cell in both columns. That is E1's rejection reappearing from a different
+direction, and E1's rejection is recorded as permanent.
+
+**Where per-bet and portfolio disagree, and why.** In test, 0% has the
+best TOTAL (+159.6%) but a lower euro-per-bet than 50% (1.0104 vs
+1.0108). Never taking a partial makes each bet slightly worse and the
+book slightly richer, because capital sits in fewer, longer positions --
+490 bets against 532. The total is a statement about sequencing and slot
+availability, not about bet quality. It also fails the both-periods bar:
+0% is worse than 50% in dev on both measures.
+
+**Verdict: 50% stands, unchanged.** Not because the scan found it optimal
+-- the scan cannot resolve differences this small -- but because it is
+the incumbent, it tops the per-bet metric in both periods, and the only
+directional signal in the data (more selling is worse) argues against
+moving up while the both-periods bar argues against moving to 0%.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs
