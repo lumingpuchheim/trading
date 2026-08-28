@@ -166,6 +166,16 @@ minervini_v8:                     # adaptive sizing (user method, 2026-08-27)
   adaptive_cap: 0.80              # total exposure never exceeds 80% of equity
   adaptive_max_single: 0.20       # a lone signal may take at most 20%
 
+minervini_v9:                     # §13 momentum-conditioned selling, --v9 — FROZEN
+  velocity_gain: 1.20             # close >= 1.20 x entry ...
+  velocity_days: 15               # ... within 15 trading days of entry ->
+  velocity_hold_days: 40          # hold WHOLE 40 days: no partial, no trend exit
+                                  # (stop, breakeven and the climax partial stay on)
+  climax_min_gain: 1.30           # while >= +30% above entry ...
+  climax_day_ret: 0.05            # ... a day gaining >= 5% that is also the
+                                  # largest single-day gain since entry ...
+  climax_sell_frac: 0.5           # ... sells half AT THAT CLOSE (still-whole only)
+
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2
   stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
   sma_exit: 50                    # close < SMA50 (trend death) -> sell next open

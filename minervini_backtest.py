@@ -23,8 +23,16 @@ The v2 acceptance gate FAILS (see minervini_gate.py and FINDINGS). This
 audit was run anyway, at the user's explicit instruction, in preference
 to hand-amending the rules. Read every number below through that.
 
-Run: python minervini_backtest.py            # audit + controls
-     python minervini_backtest.py --rebuild  # ignore the panel cache
+Run: python minervini_backtest.py             # audit + controls
+     python minervini_backtest.py --rebuild   # ignore the panel cache
+     python minervini_backtest.py --v5 --e3 --moc   # standing config v5r
+     python minervini_backtest.py --v9 --moc        # v5r + section 13
+
+--v9 is section 13's momentum-conditioned selling on top of v5r: the
++20% half-sale fires only for SLOW winners, a stock that ran +20% inside
+15 trading days is held whole for 40 days (stop, breakeven and the
+climax partial stay on), and a still-whole position more than 30% up
+sells half into the largest up-day of its run.
 """
 
 import sys
@@ -79,6 +87,16 @@ def apply_v3(cfg: dict) -> dict:
     cfg['minervini']['earnings_blackout_days'] = v3['earnings_blackout_days']
     for key in ('decisive_break_frac', 'decisive_volume', 'breakeven_r'):
         cfg['minervini_trading'][key] = v3[key]
+    return cfg
+
+
+def apply_v9(cfg: dict) -> dict:
+    """v9 = the standing config v5r (--v5 --e3) + section 13's
+    momentum-conditioned selling: the +20% partial becomes conditional on
+    HOW the stock got there, and a climax partial is added."""
+    cfg = apply_v5(cfg)
+    cfg['minervini_trading']['reentry_fast'] = True      # v5r keeps E3
+    cfg['minervini_trading']['momentum_sell'] = True
     return cfg
 
 
@@ -330,6 +348,14 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     v7c = cfg.get('minervini_v7', {})
     sell_at = tr.get('strength_sell_at', 0.0)
     sell_frac = tr.get('strength_sell_frac', 0.0)
+    mom = tr.get('momentum_sell', False)          # §13 momentum-conditioned
+    v9c = cfg.get('minervini_v9', {})
+    vel_gain = v9c.get('velocity_gain', 0.0)
+    vel_days = v9c.get('velocity_days', 0)
+    vel_hold = v9c.get('velocity_hold_days', 0)
+    cx_gain = v9c.get('climax_min_gain', 0.0)
+    cx_day = v9c.get('climax_day_ret', 0.0)
+    cx_frac = v9c.get('climax_sell_frac', 0.5)
     rank_sel = tr.get('rank_selection', False)
     if moc:
         fill_px, trigger = panel['fill_moc'], panel['trigger_moc']
@@ -442,6 +468,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         # 3. decisions at the close
         for j, pos in positions.items():
             c = cl[i, j]
+            # §13: a position that ran +20% inside 15 days is held WHOLE
+            # for 40 days -- stop, breakeven and the climax partial only
+            vel = bool(mom and pos.get('velocity')
+                       and i - pos['entry_i'] < vel_hold)
             if i >= last_i[j] and last_i[j] < len(cal) - 1:
                 pos['exit_reason'] = 'delisted'
             elif (pos['entry_i'] == i and not is_control and not moc
@@ -455,13 +485,15 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['exit_reason'] = 'climax'
             elif protect and i - pos['entry_i'] < protect:
                 pass          # v4 tennis-ball window: only the stop may sell
-            elif protect and i - pos['entry_i'] == protect \
+            elif protect and i - pos['entry_i'] == protect and not vel \
                     and c < pos['entry_px'] and not pos.get('recovered'):
                 # never bounced back over its post-entry high: an egg
                 pos['exit_reason'] = 'egg'
             elif pos.get('be') and c <= pos['entry_px']:
                 # v3: a position that reached 2R may not become a loss
                 pos['exit_reason'] = 'breakeven'
+            elif vel:
+                pass          # §13: the 40-day hold suspends the trend exit
             elif np.isfinite(sma50[i, j]) and c < sma50[i, j] and (
                     (volx is not None and np.isfinite(volx[i, j])
                      and volx[i, j] > 1.0) if e2 else (
@@ -475,6 +507,46 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['be'] = True
                 if pyr_frac and not pos.get('added') and not pos['exit_reason']:
                     pos['add_due'] = True
+
+            # §13 momentum-conditioned selling. Two rules, both read at
+            # this close and both causal there: the velocity flag needs
+            # only today's close, the climax partial needs today's gain
+            # and the gains already seen, so it can sell AT the close.
+            if mom and i > pos['entry_i']:
+                if not pos.get('velocity') \
+                        and i - pos['entry_i'] <= vel_days \
+                        and c >= vel_gain * pos['entry_px']:
+                    pos['velocity'] = True        # a jackpot-cohort runner
+                prev = cl[i - 1, j]
+                day_ret = (c / prev - 1) if (np.isfinite(prev) and prev > 0) \
+                    else -np.inf
+                largest = day_ret > pos.get('max_day', -np.inf)
+                if largest and np.isfinite(day_ret):
+                    pos['max_day'] = day_ret
+                if (largest and day_ret >= cx_day
+                        and c >= cx_gain * pos['entry_px']
+                        and not pos.get('half_sold')
+                        and not pos.get('sell_half')
+                        and not pos['exit_reason']):
+                    # sell into the climax: the run's largest up-day while
+                    # well extended. Only positions still held whole.
+                    part = np.floor(pos['shares'] * cx_frac)
+                    if part >= 1:
+                        cash += part * c * (1 - cost)
+                        trades.append({
+                            'ticker': tickers[j],
+                            'entry_date': pos['entry_date'],
+                            'exit_date': cal[i], 'entry_px': pos['entry_px'],
+                            'exit_px': c, 'days_held': i - pos['entry_i'],
+                            'ret_net': c * (1 - cost)
+                                       / (pos['entry_px'] * (1 + cost)) - 1,
+                            'exit_reason': 'climax_partial'})
+                        pos['shares'] -= part
+                        pos['half_sold'] = True
+            # today's flag counts for today's partial: a name that first
+            # reaches +20% ON day 15 is fast, not a slow winner
+            vel = bool(mom and pos.get('velocity')
+                       and i - pos['entry_i'] < vel_hold)
             # v4 bookkeeping: tennis-ball recovery + the strength sale.
             # A pullback = any close under the running post-entry peak;
             # recovery = a later close above that peak.
@@ -490,7 +562,9 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                         and not pos.get('sell_half') \
                         and i - pos['entry_i'] >= protect \
                         and c >= sell_at * pos['entry_px'] \
-                        and not pos['exit_reason']:
+                        and not pos['exit_reason'] and not vel:
+                    # §13: `not vel` -- a stock that got here FAST keeps
+                    # the whole position; only slow winners sell half
                     pos['sell_half'] = True
 
         # 3b. market-on-close entries: price above the pivot AND volume
@@ -631,10 +705,13 @@ def main() -> None:
     beat = '--beat' in sys.argv
     v7 = '--v7' in sys.argv
     v6 = '--v6' in sys.argv
-    v5 = '--v5' in sys.argv or v6 or v7
+    v9 = '--v9' in sys.argv          # §13 momentum-conditioned selling
+    v5 = '--v5' in sys.argv or v6 or v7 or v9
     v4 = '--v4' in sys.argv or v5
     v3 = '--v3' in sys.argv or v4
-    if v6:
+    if v9:
+        cfg = apply_v9(cfg)
+    elif v6:
         cfg = apply_v6(cfg)
     elif v5:
         cfg = apply_v5(cfg)
@@ -677,7 +754,7 @@ def main() -> None:
     for a in sys.argv:
         if a.startswith('--size='):
             ab += 's' + a[7:].replace('0.','')
-    tag = (('v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
+    tag = (('v9' if v9 else 'v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '

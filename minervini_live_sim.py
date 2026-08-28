@@ -22,6 +22,7 @@ modelled, so these numbers remain a best case.
 
 Run: python minervini_live_sim.py                # 20k and 100k books
      python minervini_live_sim.py --park         # idle cash rides SPY
+     python minervini_live_sim.py --v9           # section 13 selling
 """
 
 import sys
@@ -33,7 +34,7 @@ import numpy as np
 import pandas as pd
 
 from lppl_backtest import ROOT, load_config
-from minervini_backtest import apply_v5, build_panel, pool_by_day
+from minervini_backtest import apply_v5, apply_v9, build_panel, pool_by_day
 from sim.costs import load_sim_config, order_fee
 from sim.tax import STOCK, TaxState, tax_on_sale
 
@@ -59,6 +60,14 @@ def run(panel: dict, cfg: dict, scfg: dict, start_equity: float,
     be_level = 1.0 + tr.get('breakeven_r', 0) * (1.0 - tr['stop_loss'])
     protect = tr.get('protect_days', 0)
     frac = tr['equal_weight_fraction']
+    mom = tr.get('momentum_sell', False)          # §13, enabled by --v9
+    v9c = cfg.get('minervini_v9', {})
+    vel_gain = v9c.get('velocity_gain', 0.0)
+    vel_days = v9c.get('velocity_days', 0)
+    vel_hold = v9c.get('velocity_hold_days', 0)
+    cx_gain = v9c.get('climax_min_gain', 0.0)
+    cx_day = v9c.get('climax_day_ret', 0.0)
+    cx_frac = v9c.get('climax_sell_frac', 0.5)
 
     cash = eq_prev = start_equity
     positions: dict[int, dict] = {}
@@ -112,17 +121,21 @@ def run(panel: dict, cfg: dict, scfg: dict, start_equity: float,
 
         for j, pos in positions.items():
             c = cl[i, j]
+            vel = bool(mom and pos.get('velocity')
+                       and i - pos['entry_i'] < vel_hold)
             if i >= last_i[j] and last_i[j] < len(cal) - 1:
                 pos['exit_reason'] = 'delisted'
             elif c <= tr['stop_loss'] * pos['entry_px']:
                 pos['exit_reason'] = 'stop'
             elif protect and i - pos['entry_i'] < protect:
                 pass
-            elif protect and i - pos['entry_i'] == protect \
+            elif protect and i - pos['entry_i'] == protect and not vel \
                     and c < pos['entry_px'] and not pos.get('recovered'):
                 pos['exit_reason'] = 'egg'
             elif pos.get('be') and c <= pos['entry_px']:
                 pos['exit_reason'] = 'breakeven'
+            elif vel:
+                pass          # §13: the 40-day hold suspends the trend exit
             elif np.isfinite(sma50[i, j]) and c < sma50[i, j] and (
                     c < (1.0 - dec_frac) * sma50[i, j]
                     or (dec_vol and np.isfinite(volx[i, j])
@@ -130,6 +143,29 @@ def run(panel: dict, cfg: dict, scfg: dict, start_equity: float,
                 pos['exit_reason'] = 'sma'
             if not pos.get('be') and c >= be_level * pos['entry_px']:
                 pos['be'] = True
+            if mom and i > pos['entry_i']:
+                if not pos.get('velocity') \
+                        and i - pos['entry_i'] <= vel_days \
+                        and c >= vel_gain * pos['entry_px']:
+                    pos['velocity'] = True
+                prev = cl[i - 1, j]
+                day_ret = (c / prev - 1) if (np.isfinite(prev) and prev > 0) \
+                    else -np.inf
+                largest = day_ret > pos.get('max_day', -np.inf)
+                if largest and np.isfinite(day_ret):
+                    pos['max_day'] = day_ret
+                if (largest and day_ret >= cx_day
+                        and c >= cx_gain * pos['entry_px']
+                        and not pos.get('half_sold')
+                        and not pos.get('sell_half')
+                        and not pos['exit_reason']):
+                    part = np.floor(pos['shares'] * cx_frac)
+                    if part >= 1:
+                        cash += sell(j, i, pos, c, part, 'climax_partial')
+                        pos['shares'] -= part
+                        pos['half_sold'] = True
+                vel = bool(pos.get('velocity')
+                           and i - pos['entry_i'] < vel_hold)
             peak = pos.get('peak2', c)
             if c > peak:
                 if pos.get('dipped'):
@@ -140,7 +176,7 @@ def run(panel: dict, cfg: dict, scfg: dict, start_equity: float,
             if not pos.get('half_sold') and not pos.get('sell_half') \
                     and i - pos['entry_i'] >= protect \
                     and c >= tr['strength_sell_at'] * pos['entry_px'] \
-                    and not pos['exit_reason']:
+                    and not pos['exit_reason'] and not vel:
                 pos['sell_half'] = True
 
         for j in [j for j, day in orders.items() if day == i]:
@@ -193,7 +229,8 @@ def run(panel: dict, cfg: dict, scfg: dict, start_equity: float,
 
 
 def main() -> None:
-    cfg = apply_v5(load_config())
+    v9 = '--v9' in sys.argv
+    cfg = (apply_v9 if v9 else apply_v5)(load_config())
     scfg = load_sim_config()
     park = '--park' in sys.argv
     panel = build_panel(cfg, v5=True)
@@ -201,6 +238,7 @@ def main() -> None:
     spy = panel['spy_close']
     results = ROOT / cfg['backtest']['results_dir']
 
+    tag = '_v9' if v9 else ''
     curves, rows = {}, []
     for cap in BOOKS:
         eq, trades, meta = run(panel, cfg, scfg, cap, park=park)
@@ -216,8 +254,8 @@ def main() -> None:
             'fees_eur': meta['fees'], 'taxes_eur': meta['taxes'],
             'fee_pct_of_gross': meta['fees'] / gross if gross else np.nan,
             'final_eur': eq.iloc[-1]})
-        trades.to_csv(results / f'minervini_livesim_{int(cap)}_trades.csv',
-                      index=False)
+        trades.to_csv(results / f'minervini_livesim{tag}_'
+                      f'{int(cap)}_trades.csv', index=False)
 
     summary = pd.DataFrame(rows)
     print(summary.to_string(index=False, float_format=lambda v: f'{v:,.2f}'))
@@ -233,23 +271,25 @@ def main() -> None:
     ann['SPY'] = spy.groupby(spy.index.year).last().pct_change()
     print('\nannual returns:')
     print((ann * 100).round(1).to_string())
-    ann.to_csv(results / 'minervini_livesim_annual.csv')
+    ann.to_csv(results / f'minervini_livesim{tag}_annual.csv')
 
     plt.figure(figsize=(13, 7))
     for cap, e in curves.items():
         plt.plot(e.index, e / e.iloc[0],
-                 label=f'v5r, {int(cap):,} EUR book, real fees+tax '
+                 label=f'{"v9" if v9 else "v5r"}, {int(cap):,} EUR book, '
+                       f'real fees+tax '
                        f'({e.iloc[-1] / e.iloc[0] - 1:+.0%})')
     plt.plot(spy.index, spy / spy.iloc[0], '--', color='gray',
              label=f'SPY ({spy_tot:+.0%})')
     plt.yscale('log')
-    plt.title('Minervini v5r 2007-2026, one continuous run, '
+    plt.title(f'Minervini {"v9" if v9 else "v5r"} 2007-2026, '
+              'one continuous run, '
               'Comdirect fees + German tax'
               + (' + SPY parking' if park else ''))
     plt.legend()
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    out = results / f'minervini_livesim{"_park" if park else ""}.png'
+    out = results / f'minervini_livesim{tag}{"_park" if park else ""}.png'
     plt.savefig(out, dpi=120)
     plt.close()
     print(f'\nchart -> {out}')

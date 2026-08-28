@@ -600,7 +600,7 @@ His discretionary veto — story, group, tape feel — is approximated by
 the ranking and cannot be built. Whatever gap remains after 12.1-12.3
 is attributed there, and no further mechanical layer should claim it.
 
-## 13. Momentum-conditioned selling (specified 2026-08-27, NOT built)
+## 13. Momentum-conditioned selling (specified 2026-08-27; BUILT as `--v9` 2026-08-28, see BUILD STATUS)
 
 The user's observation, confirmed against sources: our +20% half-sale is
 UNCONDITIONAL, but the source method conditions profit-taking on how the
@@ -716,6 +716,34 @@ Recorded, not fixed — fixing them is a new pre-registration.
    built on a mismeasurement. Section 6 is left as written because it is
    the pre-registered record; this is the correction.
 
+
+### Section 13 (momentum-conditioned selling) — BUILT 2026-08-28
+
+`--v9` = the standing config v5r + section 13, exactly as frozen there:
+velocity exemption (fast +20% -> hold whole 40 days, stop / breakeven /
+climax still live), climax partial (still-whole and >+30% -> sell half
+at the close of the run's largest up-day, if that day gained >= 5%), slow
+winners unchanged. Constants in the `minervini_v9:` block of config.yaml;
+six unit tests drive the portfolio simulator over hand-built price paths
+(`tests/test_minervini.py`, section "v9"). Re-running `--v5 --e3 --moc`
+reproduces the recorded v5r numbers to the digit, so the new code is
+inert when the rule is off.
+
+Two implementation notes, neither of them a constant change:
+
+1. **The climax partial sells AT the close**, not at the next open like
+   every other exit. That is what section 13 says, and it is causal: both
+   its conditions (today's gain, and whether it is the largest since
+   entry) are known at that close, the same argument the market-on-close
+   entry convention rests on.
+2. **"Then normal rules" is read as resumption, not waiver** — after day
+   40 a still-whole position above +20% takes the ordinary half-sale.
+   Section 13 does not say which reading it wants; this is the one built,
+   and it matches the O'Neil 8-week rule the section cites.
+
+Result: worse in both periods, better in 2026, and only 18/24 positions
+per period are treated differently at all — no power. Full numbers and
+the paired cohort measurement in FINDINGS. v5r remains standing.
 
 ### Faithfulness audit of the fundamentals gate (section 8)
 

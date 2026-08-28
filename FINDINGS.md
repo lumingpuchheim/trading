@@ -1739,6 +1739,66 @@ configuration of this method on this data has beaten owning random
 Stage-2 stocks. The rules are now as faithful as daily bars allow; the
 gap to the source is no longer in the rules.
 
+### v9 — momentum-conditioned selling (spec section 13, run 2026-08-28, POST-HOC)
+
+Built on user instruction: `--v9` = the standing config v5r plus the two
+rules frozen in spec section 13. The unconditional +20% half-sale becomes
+conditional on HOW the stock got there.
+
+- **Velocity exemption.** A close >= 1.20 x entry within 15 trading days
+  of entry marks the position a runner: no partial, and no trend exit
+  (SMA50 / egg) for 40 trading days from entry. The 8% stop, the
+  2R-breakeven rule and the climax partial stay live throughout; after
+  day 40 the normal rules resume, including the +20% half-sale.
+- **Climax partial.** A position still held WHOLE and more than 30% above
+  entry sells half at the close of any day whose gain is both >= +5% and
+  the largest single-day gain since entry.
+- Slow winners (+20% after day 15) are untouched.
+
+| | v5r baseline | v9 | delta |
+|---|---|---|---|
+| dev total | +148.4% | **+137.2%** | -11.2 pts |
+| test total | +146.8% | **+139.5%** | -7.3 pts |
+| dev / test vs 200 controls | 97% / 97% | 94.5% / 94.5% | worse in both |
+| mean per position, dev | +1.54% | +1.48% | -0.06 pts |
+| mean per position, test | +2.03% | +1.92% | -0.11 pts |
+| 2026 YTD | -23.8% | **-15.7%** | +8.1 pts |
+| climax partials fired | — | 10 dev / 21 test | — |
+
+Worse in both registered periods, better in 2026. Before reading any of
+that as a verdict, the paired measurement on positions COMMON to both
+runs, which is the only place the rules themselves are visible:
+
+| | dev | test |
+|---|---|---|
+| shared positions | 658 | 437 |
+| treated differently | **18** | **24** |
+| climax-partial positions | 10: +44.3% -> +47.5% | 15: +33.2% -> +37.6% |
+| velocity-exemption positions | 8: +21.3% -> +14.9% | 9: +26.0% -> +21.0% |
+
+**Read it as: no power whatsoever.** Seventeen positions in 21 years took
+the velocity exemption and twenty-five took a climax partial. The
+portfolio-level -11/-7 points are mostly sequencing, not the rules: the
+two runs do not even hold the same names (40 positions unique to v5r and
+39 to v9 in dev, 95 / 105 in test), because holding a runner whole
+changes when capital frees up and therefore which later signals get
+slots. A treated cohort of 18 against a per-trade sigma of 16-22% cannot
+distinguish anything.
+
+What the treated cohorts do say, consistently in both periods and in the
+same direction each time: the climax partial helped the positions it
+touched (+3.1 pts dev, +4.4 pts test) and the velocity exemption hurt
+them (-6.5 pts dev, -5.0 pts test). That is the opposite of the section
+13 rationale, which expected the exemption to be the valuable half — the
+fast-to-+20% names in this universe gave back more than the banked half
+was worth. Sign-consistent across periods but n=8 and n=9, so it is a
+hint, not a finding.
+
+The section 13 caveat stands as written: "this targets the tail visible
+in seen data; a backtest of it is decoration." The backtest duly says
+nothing. v5r remains the standing configuration; `--v9` is runnable and
+its result recorded, nothing is adopted.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

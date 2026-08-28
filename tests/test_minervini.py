@@ -374,3 +374,137 @@ def test_weak_day_score_measures_only_spy_down_days():
     sc = mv.weak_day_score(close, spy, age)
     assert sc[-1] == pytest.approx(0.01, abs=2e-3), \
         'the score is the mean stock return on SPY down-days in the base'
+
+
+# ------------------------------------------- v9 (spec section 13): selling
+#
+# Section 13 conditions the profit-taking on HOW the stock got there:
+# a fast +20% is held whole for 40 days, a slow one still sells half at
+# +20%, and a still-whole position more than 30% up sells half into the
+# largest up-day of its run. These tests drive the portfolio simulator
+# over a hand-built one-name panel, so every rule is isolated from the
+# signal layer.
+
+from minervini_backtest import apply_v5, apply_v9, simulate   # noqa: E402
+
+ENTRY_I = 60          # every path below enters here, at a close of 100
+
+
+def sim_panel(close) -> tuple[dict, list]:
+    """A one-ticker panel plus the pool that arms exactly one entry on
+    ENTRY_I. Volume is neutral (volx 1.0) so only the depth leg of the
+    decisive-break rule can fire, and the market light is always green."""
+    close = np.asarray(close, dtype=float)
+    n = len(close)
+    cal = pd.bdate_range('2020-01-02', periods=n)
+    col = close.reshape(n, 1)
+    panel = {
+        'calendar': cal, 'tickers': ['TEST'],
+        'open': col.copy(), 'close': col.copy(),
+        'sma50': pd.Series(close).rolling(50).mean().to_numpy().reshape(n, 1),
+        'volx': np.ones((n, 1)),
+        'fill_moc': col.copy(), 'fill_px': col.copy(),
+        'trigger_moc': np.zeros((n, 1), bool), 'trigger': np.zeros((n, 1), bool),
+        'vol_ok': np.ones((n, 1), bool),
+        'last_i': np.array([n - 1]), 'green': np.ones(n, bool),
+        'spy_close': pd.Series(np.full(n, 100.0), index=cal),
+        'rsl_hi': np.ones((n, 1), bool), 'weak': np.zeros((n, 1)),
+        'rs': np.zeros((n, 1)),
+    }
+    panel['trigger_moc'][ENTRY_I, 0] = True
+    panel['trigger'][ENTRY_I, 0] = True
+    empty = np.array([], dtype=int)
+    pool = [np.array([0]) if i == ENTRY_I - 1 else empty for i in range(n)]
+    return panel, pool
+
+
+def run_both(close) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The same price path under the standing config v5r and under v9."""
+    panel, pool = sim_panel(close)
+    out = []
+    for apply in (apply_v5, apply_v9):
+        cfg = apply(yaml.safe_load(
+            open(Path(__file__).parent.parent / 'config.yaml')))
+        cfg['minervini_trading']['reentry_fast'] = True        # v5r keeps E3
+        trades, _, _, _ = simulate(panel, cfg, (0, len(close) - 1),
+                                   pool_days=pool, moc=True)
+        out.append(trades)
+    return out[0], out[1]
+
+
+def path(after) -> np.ndarray:
+    """60 flat days at 100 (so the SMA50 exists), then `after` from the
+    entry close onwards."""
+    return np.concatenate([np.full(ENTRY_I, 100.0), np.asarray(after, float)])
+
+
+def day_of(trades: pd.DataFrame, reason: str) -> int:
+    """Index of the entry-relative day a given exit printed on."""
+    row = trades[trades['exit_reason'] == reason].iloc[0]
+    return pd.bdate_range(row['entry_date'], row['exit_date']).size - 1
+
+
+def test_a_fast_20_percent_is_held_whole_instead_of_halved():
+    # +4%/day for five days: +21.7% on day 5, inside the 15-day window
+    run = 100.0 * 1.04 ** np.arange(6)
+    close = path(np.concatenate([run, np.full(74, run[-1])]))
+    v5r, v9 = run_both(close)
+    assert day_of(v5r, 'strength') == 16, \
+        'v5r sells half the day after the +20% close clears the 15-day window'
+    assert day_of(v9, 'strength') == 41, \
+        'v9 holds the fast winner whole for 40 days, then normal rules resume'
+    assert (v9['exit_reason'] == 'strength').sum() == 1
+
+
+def test_a_slow_20_percent_still_sells_half_on_the_old_schedule():
+    # +1%/day: +20% only on day 19, so the velocity exemption never arms
+    close = path(100.0 * 1.01 ** np.arange(80))
+    v5r, v9 = run_both(close)
+    assert day_of(v5r, 'strength') == day_of(v9, 'strength') == 20, \
+        'slow winners are untouched by section 13'
+
+
+def test_the_velocity_exemption_suspends_the_trend_exit_then_restores_it():
+    # entered BELOW a falling SMA50, so a close above entry can still be a
+    # decisive break of the line
+    pre = np.linspace(150.0, 100.0, ENTRY_I)
+    run = 100.0 * 1.04 ** np.arange(6)
+    close = np.concatenate([pre, run, np.full(45, 108.0), np.full(40, 100.5)])
+    v5r, v9 = run_both(close)
+    assert day_of(v5r, 'sma') < 20, 'v5r sells the dip below the SMA50'
+    assert day_of(v9, 'sma') > 40, \
+        'v9 tolerates it for 40 days, then the trend exit is live again'
+
+
+def test_the_stop_still_sells_inside_the_velocity_hold():
+    run = 100.0 * 1.04 ** np.arange(6)          # velocity by day 5
+    close = path(np.concatenate([run, [91.0], np.full(70, 91.0)]))
+    _, v9 = run_both(close)
+    assert list(v9['exit_reason']) == ['stop'], \
+        'the 8% stop is never suspended -- it caps every loss'
+
+
+def test_a_climax_day_sells_half_at_that_close():
+    run = 100.0 * 1.04 ** np.arange(6)          # velocity, largest day +4%
+    flat = np.full(5, run[-1])
+    climax = run[-1] * 1.08                     # +8%, and above +30%
+    close = path(np.concatenate([run, flat, [climax], np.full(60, climax)]))
+    v5r, v9 = run_both(close)
+    cx = v9[v9['exit_reason'] == 'climax_partial']
+    assert len(cx) == 1 and cx.iloc[0]['exit_px'] == pytest.approx(climax), \
+        'the climax partial sells at the close of the largest up-day'
+    assert day_of(v9, 'climax_partial') == 11
+    assert 'climax_partial' not in set(v5r['exit_reason']), \
+        'v5r has no climax rule; it takes the unconditional +20% half'
+
+
+def test_a_five_percent_day_that_is_not_the_run_s_largest_does_not_sell():
+    # +10% on the first day after entry sets the bar; the later +6% day
+    # clears +30% and the 5% threshold but is not the run's largest, so
+    # nothing is sold into it
+    run = np.concatenate([[100.0, 110.0], 110.0 * 1.04 ** np.arange(1, 6)])
+    close = path(np.concatenate([run, [run[-1] * 1.06],
+                                 np.full(30, run[-1] * 1.06)]))
+    _, v9 = run_both(close)
+    assert 'climax_partial' not in set(v9['exit_reason']), \
+        'only the largest single-day gain since entry is a climax'

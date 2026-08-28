@@ -9,6 +9,7 @@ the US Investing Championship at +334.8%.
 Run: python minervini_year.py            # v3 rules, 2021
      python minervini_year.py 2023       # another year
      python minervini_year.py --v2       # the pre-fix rules
+     python minervini_year.py 2026 --v9  # section 13 selling
 """
 
 import sys
@@ -20,18 +21,20 @@ import numpy as np
 import pandas as pd
 
 from lppl_backtest import ROOT, load_config
-from minervini_backtest import apply_v5, build_panel, pool_by_day, simulate
+from minervini_backtest import (apply_v5, apply_v9, build_panel, pool_by_day,
+                                simulate)
 
 
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     year = int(args[0]) if args else 2021
     use_v2 = '--v2' in sys.argv
-    ver = 'v2' if use_v2 else 'v5'
+    v9 = '--v9' in sys.argv
+    ver = 'v2' if use_v2 else 'v9' if v9 else 'v5'
 
     cfg = load_config()
     if not use_v2:
-        cfg = apply_v5(cfg)
+        cfg = (apply_v9 if v9 else apply_v5)(cfg)
     panel = build_panel(cfg, v5=not use_v2)
     cal = panel['calendar']
     j0 = int(cal.searchsorted(pd.Timestamp(f'{year}-01-01')))
