@@ -512,6 +512,51 @@ his entry precision or judgement.
 exits, strength ranking, flat 10% slots, binary light, 5-day re-entry
 after non-stop exits).
 
+**The bets we take (v5r — corrected twice, this is the final form).**
+Two earlier versions of this table were wrong. The first averaged trade
+ROWS of unequal size. The second split them into "full-size" and
+"half-size" buckets and described the full-size bucket as losing — which
+reversed the causality, because **the buckets are defined by the outcome,
+not by the size**:
+
+- every bet is entered at 10%;
+- if it later reaches +20%, the strength rule sells half, so that
+  position emits TWO 5% rows (the banked half, and the rider's eventual
+  exit);
+- if it never reaches +20%, it exits whole as ONE 10% row.
+
+So "full-size rows" is simply the set of trades that never got to +20%,
+which excludes every large winner by construction, and "half-size rows"
+is the set that did. Both obey the SAME exits (stop, egg, decisive SMA,
+breakeven); the only extra rule on the split ones is the +20% half-sale
+that created them. Highest full-size row: +15.5% — as expected, since
+crossing +20% is precisely what moves a position out of that bucket.
+
+The honest unit is one POSITION (all its rows, share-weighted):
+
+| per 10% position | dev | test |
+|---|---|---|
+| positions | 703 (59/yr) | 531 (69/yr) |
+| **mean** | **+1.26%** | **+2.03%** |
+| **geometric mean** | **+0.57%** | **+1.08%** |
+| median | -1.77% | -2.18% |
+| P(win) | 35% | 36% |
+| reached +20% (split) | 121 (17%), mean +23.79% | 107 (20%), mean +26.17% |
+| never did | 582, mean -3.43% | 424, mean -4.06% |
+
+Read it as: **two bets in three lose, the median bet loses ~2%, and the
+whole system rests on the 17-20% of positions that reach +20%.** Account
+arithmetic closes with these inputs: sum(weight x return) = +7.4%/yr dev
+and +14.1%/yr test against realized CAGR 6.3% and 12.5%. Every
+qualifying bet must still be taken — which bet becomes the 1-in-5 is not
+identifiable in advance. Known failure mode (2026): when leadership
+narrows to mega-caps that never base, the repertoire deploys fully into
+rotation names and loses while the index rises (-23.9% vs +12.8% YTD).
+
+**Standing configuration `v5r` = --v5 --e3** (repertoire, tennis-ball
+exits, strength ranking, flat 10% slots, binary light, 5-day re-entry
+after non-stop exits).
+
 **The bets we take (v5r — CORRECTED 2026-08-27, see below):** the
 earlier figures here averaged trade ROWS of unequal size and were wrong.
 The strength rule sells HALF a position at +20%, so every such row is a

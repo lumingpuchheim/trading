@@ -1525,7 +1525,12 @@ equal-sized. It is not: 242 of 824 dev rows (214/638 test) are 5%
 HALF-positions created by the strength rule — and they exist ONLY for
 winners (a half-sale happens after +20%), so they average +23.8% while
 full-size rows average -3.4%. Correct, dollar-weighted per-row mean:
-**dev +1.26%, test +2.03%**. Real full positions: 59/yr dev, 69/yr test
+**dev +1.26%, test +2.03%** — and note the buckets are defined by the
+OUTCOME, not the size: a position emits half-rows only because it
+reached +20%, so "full-size rows" is just "trades that never got there".
+Exits are identical in both. Per POSITION: dev mean +1.26%, geometric
++0.57%, median -1.77%, P(win) 35%; test +2.03%, geometric +1.08%,
+median -2.18%, P(win) 36%. Real full positions: 59/yr dev, 69/yr test
 (not 69/83 — split positions were double-counted). With these inputs the
 account arithmetic closes: dev Σ(weight x ret) = +7.4%/yr vs realized
 6.3% CAGR; test +14.1%/yr vs realized 12.5% (residual = sequencing and
