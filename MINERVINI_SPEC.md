@@ -600,6 +600,50 @@ His discretionary veto — story, group, tape feel — is approximated by
 the ranking and cannot be built. Whatever gap remains after 12.1-12.3
 is attributed there, and no further mechanical layer should claim it.
 
+## 13. Momentum-conditioned selling (specified 2026-08-27, NOT built)
+
+The user's observation, confirmed against sources: our +20% half-sale is
+UNCONDITIONAL, but the source method conditions profit-taking on how the
+stock got there. Three sourced facts:
+
+1. He takes partials into strength around 2-3R and trails the rest via a
+   moving average or swing-low structure — roughly our rule.
+2. **During a "power move" he does NOT take profits** — the O'Neil-school
+   rule he trades alongside: a stock up 20%+ within ~3 weeks of breakout
+   is held ~8 weeks, because only overwhelming institutional demand
+   moves a stock that fast, and those are the 100%+ candidates.
+3. The exception inside the exception: **climax topping signs** end the
+   hold-through — the largest up-day of the whole run, an exhaustion
+   gap, the largest up-day followed at once by the largest down-day,
+   after an extended advance (his MSTR example: +100% in two weeks off
+   a 4th-stage base).
+
+**The difference, specified against our current rule:**
+
+| situation | v5r today | source method |
+|---|---|---|
+| reaches +20% SLOWLY (> 15 trading days) | sell half | sell half — same |
+| reaches +20% FAST (<= 15 trading days) | sell half | **HOLD WHOLE ~8 weeks** — this is the jackpot cohort; selling half here amputates exactly the 1-in-5 tail the system lives on |
+| parabolic while extended | nothing — rides until the trend break | **sell INTO the climax**: partial on the largest up-day of the run once well extended |
+
+Proposed frozen mechanisation (awaiting approval):
+- **Velocity exemption**: close >= 1.20 x entry within 15 trading days of
+  entry -> NO partial; hold the full position for 40 trading days from
+  entry (stop / breakeven / climax still active), then normal rules.
+- **Climax partial**: while >= +30% above entry, on a day whose gain is
+  both >= +5% and the largest single-day gain since entry -> sell HALF
+  at that close. (Distinct from rejected E1, which sold EVERYTHING at a
+  mere +25% on any +5% day and amputated the tails; this one requires
+  the extension, requires the day to be the run's largest, sells only
+  half, and only applies to positions still held whole.)
+- Slow winners keep the existing +20% half-sale unchanged.
+
+Rationale from our own measurements: the top 5% of positions carry >half
+of all profit, and the fast-to-+20% cohort is where they concentrate;
+the current unconditional partial halves precisely those positions.
+Post-hoc caveat at maximum strength: this targets the tail visible in
+seen data; a backtest of it is decoration. Not built until approved.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)
