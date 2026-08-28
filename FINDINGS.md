@@ -1952,7 +1952,7 @@ size.
 the entry type, and it no longer annotates a base and a pivot on trades
 that used neither.
 
-### v10 — the four pullback qualifiers (spec section 14), run 2026-08-28: WORSE, and instructive
+### v10 — the four pullback qualifiers (spec 14), run 2026-08-28: WORSE — REVERTED
 
 The APP audit showed section 11.3 kept the geometry of Minervini's
 pullback entry and dropped every qualifier. Section 14 added them back:
@@ -2013,9 +2013,14 @@ controls in the test period**, meaning three quarters of random
 portfolios drawn from the same template pool beat it. That is bad in
 absolute terms, not merely relative to a fitted alternative.
 
-**Section 14 pre-registered that a worse result is not a licence to
-loosen the constants back toward what the history prefers. It is not
-loosened.** v5r remains the standing configuration, now with the
+**REVERTED 2026-08-28 on user instruction.** P1-P4 are not part of any
+standing configuration; `--v10` stays runnable only to reproduce this
+result, as `--v6` does. Section 14 pre-registered that a worse result is
+not a licence to loosen the constants back toward what the history
+prefers -- they are not loosened, they are switched off whole. Note that
+two of the four (the retest-of-a-breakout reading and the bounce
+definition) were my invention rather than the source's, so this is partly
+a test of my guesses. v5r remains the standing configuration, now with the
 explicit and uncomfortable footnote that its pullback entry is not the
 source's pullback entry, and that making it faithful costs 77 and 113
 points on this history.

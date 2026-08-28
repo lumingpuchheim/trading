@@ -644,6 +644,36 @@ the current unconditional partial halves precisely those positions.
 Post-hoc caveat at maximum strength: this targets the tail visible in
 seen data; a backtest of it is decoration. Not built until approved.
 
+## 14. Pullback entry — the four omissions — REVERTED (decision 2026-08-28)
+
+**Decision, on user instruction, recorded permanently:** P1-P4 are
+REVERTED and are not part of any standing configuration. They cost 77
+points in dev and 113 in test and dropped the system to the 23rd control
+percentile in the test period; of v5r's 30 best positions the filtered
+version takes 4 and 5. The loss side improved exactly as designed and the
+winner side fell further, which is fatal in a system whose edge is a
+17-20% right tail.
+
+`--v10` remains runnable solely to reproduce the recorded negative
+result, exactly as `--v6` does. The constants are NOT loosened toward
+what the history prefers -- this section pre-registered that a worse
+result is not a licence to re-tune, and it is not being re-tuned; it is
+being switched off whole.
+
+**What survives the revert, and it is the uncomfortable part:** the audit
+that produced this section still stands. v5r's pullback entry is not
+Minervini's pullback entry -- 58.8% of its positions break at least one
+condition the source states, and the APP trade was the rule working as
+written, not an exception. Reverting P1-P4 restores the returns; it does
+not make the entry faithful. Both facts are now recorded and neither
+cancels the other. Questions 3 and 6 of the open-source list (is the
+entry a retest of a prior BREAKOUT? what confirms the bounce?) were my
+invention, not the source's, and they did most of the filtering here --
+so this negative result is partly a test of my guesses rather than of
+his method.
+
+(Original pre-registration below, kept for provenance.)
+
 ## 14. Pullback entry — the four omissions, closed (pre-registered 2026-08-28)
 
 Written after auditing one trade (APP, 2025-02-24, the worst position of

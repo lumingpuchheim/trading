@@ -91,8 +91,12 @@ def apply_v3(cfg: dict) -> dict:
 
 
 def apply_v10(cfg: dict) -> dict:
-    """v10 = the standing config v5r + section 14's four pullback
-    qualifiers (dry-up, depth cap, hold-and-bounce, no gapped high)."""
+    """v10 = v5r + section 14's four pullback qualifiers (dry-up, depth
+    cap, hold-and-bounce, no gapped high).
+
+    REVERTED 2026-08-28: worse in both periods (+148/+147 -> +71/+33) and
+    the 23rd control percentile in test. Kept runnable only to reproduce
+    that recorded result, exactly as --v6 is. Not a standing config."""
     cfg = apply_v5(cfg)
     cfg['minervini_trading']['reentry_fast'] = True      # v5r keeps E3
     cfg['minervini_trading']['strict_pullback'] = True
