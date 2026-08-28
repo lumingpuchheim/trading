@@ -437,6 +437,9 @@ def repertoire(bars: dict, cfg: dict, setup: np.ndarray, pivot: np.ndarray,
     close = np.asarray(bars['close'], dtype=float)
     low = np.asarray(bars['low'], dtype=float) if 'low' in bars \
         else np.asarray(bars['open'], dtype=float)   # caller supplies low
+    open_ = np.asarray(bars['open'], dtype=float)
+    high = np.asarray(bars['high'], dtype=float) if 'high' in bars \
+        else np.maximum(close, open_)                # §14 needs the range
     volume = np.asarray(bars['volume'], dtype=float)
     n = len(close)
     c = pd.Series(close)
@@ -464,6 +467,49 @@ def repertoire(bars: dict, cfg: dict, setup: np.ndarray, pivot: np.ndarray,
         .fillna(0).to_numpy().astype(bool)
     pull = (tmpl & recent & np.isfinite(sma20)
             & (low <= m5['pb_touch'] * sma20) & (close >= sma20) & clear)
+
+    m10 = cfg.get('minervini_v10') if cfg.get('minervini_trading', {}).get(
+        'strict_pullback') else None
+    if m10 is not None:
+        # §14: the four qualifiers 11.3 left out, each evaluated against
+        # the last new 60-day-high close on or before the day -- the high
+        # the pullback is a pullback FROM.
+        hi_i = pd.Series(np.where(new60, np.arange(n), np.nan)).ffill()
+        has_hi = np.isfinite(hi_i.to_numpy())
+        hj = hi_i.fillna(0).to_numpy().astype(int)
+
+        # P1 dry-up: the pullback's own volume, and today's, at or under
+        # the 50-day mean
+        with np.errstate(invalid='ignore', divide='ignore'):
+            volr = volume / v_long
+        cum = np.concatenate(([0.0], np.nancumsum(volr)))
+        idx = np.arange(n)
+        span = idx - hj
+        with np.errstate(invalid='ignore'):
+            pull_vol = np.where(span > 0,
+                                (cum[idx + 1] - cum[hj + 1])
+                                / np.maximum(span, 1), np.inf)
+        p1 = (pull_vol <= m10['pb_vol_max']) & (volr <= m10['pb_vol_max'])
+
+        # P2 depth: no more than 8% below the high it is resting from
+        p2 = close >= (1.0 - m10['pb_max_depth']) * close[hj]
+
+        # P3 hold AND bounce: an up close, in the upper half of the range
+        prev_c = np.concatenate(([np.nan], close[:-1]))
+        rng = high - low
+        mid = np.where(rng > 0, (high + low) / 2.0, close)
+        p3 = ((close > prev_c) & (close >= mid) if m10['pb_bounce']
+              else np.ones(n, bool))
+
+        # P4 the high must not sit just after a gap open
+        gap = np.zeros(n, bool)
+        with np.errstate(invalid='ignore'):
+            gap[1:] = open_[1:] > (1.0 + m10['pb_gap_max']) * close[:-1]
+        near = pd.Series(gap).rolling(m10['pb_gap_window'] + 1,
+                                      min_periods=1).max().to_numpy()
+        p4 = ~near[hj].astype(bool)
+
+        pull &= has_hi & p1 & p2 & p3 & p4
 
     # power play: doubled 10-40d ago, tight flag, breaks the flag high
     dbl = np.zeros(n, bool)

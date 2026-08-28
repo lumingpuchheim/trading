@@ -508,3 +508,104 @@ def test_a_five_percent_day_that_is_not_the_run_s_largest_does_not_sell():
     _, v9 = run_both(close)
     assert 'climax_partial' not in set(v9['exit_reason']), \
         'only the largest single-day gain since entry is a climax'
+
+
+# ---------------------------- v10 (spec section 14): pullback qualifiers
+#
+# Section 11.3 accepted any trend-template stock whose low tagged the
+# SMA20 within ten days of a 60-day high, at any depth, on any volume,
+# with no bounce and no check on how the high was made. Section 14 adds
+# the four conditions the source states. Each test perturbs ONE of them
+# on a base case that both configurations accept, so every qualifier is
+# shown to be the thing doing the rejecting.
+
+def strict_cfg() -> dict:
+    return {**CFG, 'minervini_trading': {**CFG['minervini_trading'],
+                                         'strict_pullback': True}}
+
+
+def pullback_case(vol_mult: float = 0.6, spike: float = 100.0,
+                  tail: tuple = (99.5, 99.9), gap: bool = False,
+                  weak_close: bool = False) -> dict:
+    """300 rising days, ten flat at 100 (the 60-day high), then a shallow
+    two-day rest whose last day tags the SMA20 and closes up and strong
+    on quiet volume -- a pullback the source would recognise."""
+    close = np.concatenate([np.linspace(40.0, 100.0, 300), np.full(10, 100.0),
+                            list(tail)])
+    close[309] = spike
+    open_ = close.copy()
+    high = close * 1.004
+    low = close * 0.996
+    volume = np.full(len(close), 1_000_000.0)
+    volume[-2:] *= vol_mult
+    low[-1] = close[-1] * 0.985
+    high[-1] = close[-1] * (1.05 if weak_close else 1.004)
+    if gap:
+        open_[309] = close[308] * 1.10
+    return {'close': close, 'high': high, 'low': low, 'open': open_,
+            'volume': volume}
+
+
+def pullback_fires(bars: dict, cfg: dict) -> bool:
+    s = mv.signals(bars, cfg)
+    r = mv.repertoire(bars, cfg, s['setup'], s['pivot'], s['template'])
+    return bool(r['trigger'][-1] and r['label'][-1] == 2)
+
+
+def test_a_clean_pullback_is_taken_by_both_configurations():
+    bars = pullback_case()
+    assert pullback_fires(bars, CFG)
+    assert pullback_fires(bars, strict_cfg()), \
+        'section 14 must not reject the pullback it was written to keep'
+
+
+def test_p1_rejects_a_pullback_on_above_average_volume():
+    bars = pullback_case(vol_mult=1.6)
+    assert pullback_fires(bars, CFG), 'v5r had no volume condition at all'
+    assert not pullback_fires(bars, strict_cfg()), \
+        'an impulsive decline on rising volume is distribution, not a rest'
+
+
+def test_p2_rejects_a_pullback_deeper_than_eight_percent():
+    # a one-day spike to 112, then a rest at 101 -- 9.8% below the high
+    bars = pullback_case(spike=112.0, tail=(100.5, 101.0))
+    assert pullback_fires(bars, CFG)
+    assert not pullback_fires(bars, strict_cfg())
+
+
+def test_p3_rejects_a_day_that_holds_the_line_without_bouncing():
+    bars = pullback_case(tail=(100.0, 99.9))      # closes DOWN on the day
+    assert pullback_fires(bars, CFG)
+    assert not pullback_fires(bars, strict_cfg())
+
+
+def test_p3_rejects_a_close_in_the_lower_half_of_the_range():
+    bars = pullback_case(weak_close=True)
+    assert pullback_fires(bars, CFG)
+    assert not pullback_fires(bars, strict_cfg())
+
+
+def test_p4_rejects_a_high_made_by_a_gap():
+    bars = pullback_case(gap=True)
+    assert pullback_fires(bars, CFG)
+    assert not pullback_fires(bars, strict_cfg()), \
+        'a price that teleported never made the advance it is resting from'
+
+
+def test_app_the_case_that_forced_section_14():
+    """APP 2025-02-24: -19.5% off a gapped high in five sessions on 1.46x
+    volume, bought at the close for a -20% loss two days later. Every
+    section-14 qualifier rejects it; v5r took it."""
+    path = DATA / 'APP.parquet'
+    if not path.exists():
+        pytest.skip('APP not in the price cache')
+    raw = pd.read_parquet(path)
+    bars = {k: raw[k].to_numpy() for k in ('open', 'high', 'low', 'close',
+                                           'volume')}
+    i = int(raw.index.searchsorted(pd.Timestamp('2025-02-24')))
+    fired = []
+    for cfg in (CFG, strict_cfg()):
+        s = mv.signals(bars, cfg)
+        r = mv.repertoire(bars, cfg, s['setup'], s['pivot'], s['template'])
+        fired.append(bool(r['trigger'][i] and r['label'][i] == 2))
+    assert fired == [True, False]

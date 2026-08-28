@@ -644,6 +644,103 @@ the current unconditional partial halves precisely those positions.
 Post-hoc caveat at maximum strength: this targets the tail visible in
 seen data; a backtest of it is decoration. Not built until approved.
 
+## 14. Pullback entry — the four omissions, closed (pre-registered 2026-08-28)
+
+Written after auditing one trade (APP, 2025-02-24, the worst position of
+the test period) against the source. That audit found the pullback entry
+of section 11.3 conformant to its own text and unfaithful to the method
+it claims to implement: it keeps the geometry of Minervini's pullback
+and discards every qualifier that makes it his. The measurement that
+follows is what forces this section — **58.8% of all 1,230 positions
+break at least one of the source's stated pullback conditions, and 20.4%
+break two.** That is not a tail case, and the earlier claim that it was
+is withdrawn.
+
+**Epistemic status — the weakest in this file, stated plainly.** Both
+backtest periods have been seen many times. Worse, the depth condition
+below was measured on this history before being written down: entries
+more than 10% below the 60-day high are over-represented among the worst
+5% of positions in dev (x3.4) and test (x4.4). A constant chosen after
+seeing that is not pre-registered in any meaningful sense. Two things
+limit the damage and neither repairs it: every constant below is taken
+from the source's own stated value rather than from the measured
+optimum, and no threshold will be moved after the run. The forward paper
+ledger is the only honest judge, exactly as sections 10-13 say.
+
+### What the source requires (verified 2026-08-28)
+
+Directly quoted from a fetched page: *"a corrective pullback drifts
+sideways on drying volume, while an impulsive decline falls hard on
+rising volume"*, and *"heavy volume during the handle signals
+distribution — the setup is compromised."* Volume behaviour, not
+geometry, is what separates a rest from a reversal.
+
+Secondary and NOT verified on a fetched page, flagged as such: that the
+pullback should not exceed roughly 8-10% from the high, that the entry
+is a retest of a level the stock broke through (holding it and bouncing
+on fading volume), and that an earnings gap is not itself a clean entry.
+These three drove constants below and their status is recorded here
+rather than asserted.
+
+### The four conditions, added to 11.3
+
+Each one alone rejects the APP trade. All four are required; they apply
+to the `pullback` label only — the cheat and power play carry their own
+volume tests.
+
+1. **P1 volume dry-up (`pb_vol_max: 1.00`).** Both the mean volume from
+   the day after the qualifying 60-day-high close through today, and
+   today's own volume, must be **at or below the 50-day mean**. Section
+   11.3 said "Quiet volume acceptable — pullbacks are quiet by nature",
+   which replaced a test with an assumption; the assumption is false in
+   46.9% of the entries it licensed. The threshold is the 50-day mean
+   itself — the one non-arbitrary level available — not a tuned number.
+   (APP: 1.46x across the slide, 1.54x on the entry day.)
+
+2. **P2 depth cap (`pb_max_depth: 0.08`).** The close must be **at or
+   above 0.92 x the qualifying 60-day-high close**. The source range is
+   8-10%; 8% is the strict end, taken for the same reason section 8b
+   took the strict end of the 20-25% growth range. It is deliberately
+   NOT the 10% that was measured, so the measurement does not set the
+   constant. (APP: -19.5%.)
+
+3. **P3 hold AND bounce.** The source's phrase is holding the level *and
+   bouncing*. Section 11.3 built only the holding: one close above the
+   SMA20. Require additionally **close > the previous close** (the
+   pullback has stopped) **and close >= the midpoint of today's range**
+   (a good close, the definition already in section 12.3). (APP: closed
+   down from 415.31 to 410.45, and below its own midpoint of 410.75.)
+
+   **Declared unbuilt:** the other half of P3 — that the level being
+   retested is a prior *breakout* — is not mechanised. Encoding it needs
+   the base machinery, which fires 6 times in 21 years (see the entry-mix
+   record in FINDINGS), so requiring it would delete the entry rather
+   than repair it. This section therefore closes three and a half of the
+   four omissions, and says so.
+
+4. **P4 no gapped high (`pb_gap_max: 0.05`, `pb_gap_window: 5`).** The
+   qualifying 60-day-high close must **not** sit within 5 sessions after
+   a day that opened more than 5% above the previous close. A price that
+   teleported and then fell back never made the advance the entry is
+   supposed to be resting from. The 5% is the spec's existing chase
+   limit reused, not a new number. (APP: its 60-day high of 510.13 on
+   2025-02-14 came one session after a +31% earnings gap open.)
+
+### Protocol
+
+One run, `--v10` = the standing configuration v5r plus P1-P4, both
+periods, market-on-close, 200 entry-rate-matched controls, against the
+v5r baseline (dev +148.4%, test +146.8%, 97th control percentile in
+both). Trade counts reported beside every number, because these filters
+can only remove entries and the comparison will be lower-powered than
+v5r's. Whatever it says is recorded; nothing is adopted on the strength
+of a backtest over history that has been seen.
+
+**Declared in advance:** if v10 is worse, that is evidence about this
+data and not a licence to loosen the constants back toward what the
+history prefers. If it is better, it is still post-hoc and still waits
+for the forward ledger.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)
@@ -716,6 +813,17 @@ Recorded, not fixed — fixing them is a new pre-registration.
    built on a mismeasurement. Section 6 is left as written because it is
    the pre-registered record; this is the correction.
 
+
+### Section 14 (pullback qualifiers) — BUILT 2026-08-28, and it is worse
+
+`--v10` = v5r + P1-P4. Constants in `minervini_v10:`; six unit tests, one
+per qualifier plus the APP regression; the v5r baseline reproduces to the
+digit with the flag off. Result: dev +148.4% -> +71.1%, test +146.8% ->
++33.4%, and the 23rd control percentile in test. The loss side improved
+as designed (stops 140 -> 104 in dev, smaller average loser in both) and
+the winner side fell further: of v5r's 30 best positions v10 takes 4 and
+5. Full numbers and the two readings in FINDINGS. Per this section's own
+pre-registration the constants are NOT loosened, and v5r stays standing.
 
 ### Section 13 (momentum-conditioned selling) — BUILT 2026-08-28
 

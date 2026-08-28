@@ -1952,6 +1952,74 @@ size.
 the entry type, and it no longer annotates a base and a pivot on trades
 that used neither.
 
+### v10 — the four pullback qualifiers (spec section 14), run 2026-08-28: WORSE, and instructive
+
+The APP audit showed section 11.3 kept the geometry of Minervini's
+pullback entry and dropped every qualifier. Section 14 added them back:
+P1 volume at or below the 50-day mean over the pullback and on the entry
+day, P2 no deeper than 8% below the qualifying 60-day high, P3 an up
+close in the upper half of the day's range (hold AND bounce), P4 the high
+must not sit within 5 sessions after a >5% gap open. Each one alone
+rejects APP; six unit tests pin each to the rejection it causes.
+
+| | v5r baseline | v10 (faithful) |
+|---|---|---|
+| dev total | **+148.4%** | **+71.1%** |
+| test total | **+146.8%** | **+33.4%** |
+| dev / test vs 200 controls | 97th / 97th pct | 68th / **23rd** |
+| trades dev / test | 828 / 639 | 719 / 591 |
+| entry rate dev / test | 0.55 / 0.70 | 0.24 / 0.36 |
+| **avg winner** dev / test | **+17.4% / +20.1%** | **+14.4% / +17.4%** |
+| avg loser dev / test | -5.4% / -5.8% | **-4.9% / -5.5%** |
+| stops dev / test | 140 / 131 | **104 / 113** |
+| mean per position, test | +2.03% | +0.71% |
+| geometric mean per position, test | +1.08% | +0.03% |
+| mean cash | 26.0% | 30.4% |
+
+**The qualifiers did exactly what they were designed to do on the loss
+side and it did not matter.** Stops fall from 140 to 104 in dev, the
+average loser shrinks in both periods -- the APP-shaped trade is gone.
+The winners fall further: the average winner drops 3.0 points in dev and
+2.7 in test, and that is the whole ballgame in a system whose edge lives
+in a 17-20% right tail.
+
+**The measurement that explains it.** Of v5r's 30 best positions, v10
+takes **4** (dev) and **5** (test). The biggest winners were entered on
+days that were not quiet, not shallow, and not up-closes -- they looked
+impulsive at the moment of entry and ran anyway. A filter that demands a
+calm, shallow, bouncing entry systematically declines the start of the
+violent moves.
+
+Note also that v10 is not a subset of v5r: it keeps only 76 of 698 dev
+positions and 52 of 532 in test while taking 631 and 513 in total.
+Rejecting an entry frees the slot for a different name the next day, so
+the path diverges completely. This is a different portfolio, not a
+pruned one.
+
+**Two readings, both stated.**
+
+1. The source's qualifiers describe a discretionary entry that a human
+   reads in context. Mechanised on daily bars they select for calm, and
+   calm is not where the tail lives in this universe.
+2. v5r is the configuration that survived a long sequence of choices made
+   while looking at this same history (v3 -> v4 -> v5 -> the E1-E4
+   ablation -> the size scans). v10 is the first configuration in a while
+   specified from an outside source *before* the run. That the fitted one
+   wins on the data it was fitted to is the least surprising possible
+   outcome, and is not evidence that v5r's rules are better.
+
+Against reading 2, though: v10 sits at the **23rd percentile of its own
+controls in the test period**, meaning three quarters of random
+portfolios drawn from the same template pool beat it. That is bad in
+absolute terms, not merely relative to a fitted alternative.
+
+**Section 14 pre-registered that a worse result is not a licence to
+loosen the constants back toward what the history prefers. It is not
+loosened.** v5r remains the standing configuration, now with the
+explicit and uncomfortable footnote that its pullback entry is not the
+source's pullback entry, and that making it faithful costs 77 and 113
+points on this history.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

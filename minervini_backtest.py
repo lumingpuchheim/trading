@@ -90,6 +90,15 @@ def apply_v3(cfg: dict) -> dict:
     return cfg
 
 
+def apply_v10(cfg: dict) -> dict:
+    """v10 = the standing config v5r + section 14's four pullback
+    qualifiers (dry-up, depth cap, hold-and-bounce, no gapped high)."""
+    cfg = apply_v5(cfg)
+    cfg['minervini_trading']['reentry_fast'] = True      # v5r keeps E3
+    cfg['minervini_trading']['strict_pullback'] = True
+    return cfg
+
+
 def apply_v9(cfg: dict) -> dict:
     """v9 = the standing config v5r (--v5 --e3) + section 13's
     momentum-conditioned selling: the +20% partial becomes conditional on
@@ -155,6 +164,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                          else (PANEL_CACHE_FUND if fund else PANEL_CACHE)))
     if wide:
         cache = cache.with_name(cache.stem + '_wide.npz')
+    if cfg.get('minervini_trading', {}).get('strict_pullback'):
+        cache = cache.with_name(cache.stem + '_v10.npz')
     spy = pd.read_parquet(data_dir / 'ohlcv' / f"{d['benchmark']}.parquet")
     cal = spy.index
 
@@ -727,10 +738,13 @@ def main() -> None:
     v7 = '--v7' in sys.argv
     v6 = '--v6' in sys.argv
     v9 = '--v9' in sys.argv          # §13 momentum-conditioned selling
-    v5 = '--v5' in sys.argv or v6 or v7 or v9
+    v10 = '--v10' in sys.argv        # §14 pullback qualifiers
+    v5 = '--v5' in sys.argv or v6 or v7 or v9 or v10
     v4 = '--v4' in sys.argv or v5
     v3 = '--v3' in sys.argv or v4
-    if v9:
+    if v10:
+        cfg = apply_v10(cfg)
+    elif v9:
         cfg = apply_v9(cfg)
     elif v6:
         cfg = apply_v6(cfg)
@@ -776,7 +790,7 @@ def main() -> None:
     for a in sys.argv:
         if a.startswith('--size='):
             ab += 's' + a[7:].replace('0.','')
-    tag = (('v9' if v9 else 'v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
+    tag = (('v10' if v10 else 'v9' if v9 else 'v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else '')
            + ('_wide' if wide else ''))
     if moc:

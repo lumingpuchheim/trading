@@ -176,6 +176,15 @@ minervini_v9:                     # §13 momentum-conditioned selling, --v9 — 
                                   # largest single-day gain since entry ...
   climax_sell_frac: 0.5           # ... sells half AT THAT CLOSE (still-whole only)
 
+minervini_v10:                    # §14 pullback qualifiers, --v10 — FROZEN
+  pb_vol_max: 1.00                # P1: pullback mean volume AND the entry day
+                                  #     both at or below the 50-day mean
+  pb_max_depth: 0.08              # P2: close >= 0.92 x the qualifying 60d high
+  pb_bounce: true                 # P3: close > previous close, and close at or
+                                  #     above the midpoint of today's range
+  pb_gap_max: 0.05                # P4: the 60d high must not sit within ...
+  pb_gap_window: 5                #     ... 5 sessions after a >5% gap open
+
 minervini_trading:                # portfolio mechanics, identical to lppl_dip2
   stop_loss: 0.92                 # close <= 0.92 x entry -> sell next open
   sma_exit: 50                    # close < SMA50 (trend death) -> sell next open
