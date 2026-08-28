@@ -1516,6 +1516,21 @@ lottery-ticket variance barely touches compounding; at v6's 15-20%
 positions the same variance was already biting (drag scales with the
 square of position size).
 
+#### Correction (user-caught, 2026-08-27): the per-trade averages were size-polluted
+
+The published "+4.57% / +6.08% average per bet" treats every trade ROW as
+equal-sized. It is not: 242 of 824 dev rows (214/638 test) are 5%
+HALF-positions created by the strength rule — and they exist ONLY for
+winners (a half-sale happens after +20%), so they average +23.8% while
+full-size rows average -3.4%. Correct, dollar-weighted per-row mean:
+**dev +1.26%, test +2.03%**. Real full positions: 59/yr dev, 69/yr test
+(not 69/83 — split positions were double-counted). With these inputs the
+account arithmetic closes: dev Σ(weight x ret) = +7.4%/yr vs realized
+6.3% CAGR; test +14.1%/yr vs realized 12.5% (residual = sequencing and
+compounding of drawdowns). The geometric means (+3.52%/+4.56%) are
+correct as computed but describe compounding ONE bet sequentially, not
+the account.
+
 **Sell quality: mediocre and consistent.** Median stock we sell is
 +3.9% higher 60 days later, ~60% are higher across ALL exit reasons —
 we systematically sell things that keep going up (in a survivor
