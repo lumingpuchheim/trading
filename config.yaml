@@ -107,6 +107,8 @@ minervini:                        # Stage-2 breakout — FROZEN by MINERVINI_SPE
   dryup_long: 50
   dryup_max_ratio: 0.75           # ... at or below 75% of the 50d mean volume
   breakout_volume_mult: 1.5       # close-of-day confirmation: 1.5x the 50d mean
+  group_min_members: 5            # §16: fewer ranked members than this and
+                                  # the industry group has no reading that day
   buy_stop_offset: 0.001          # resting buy stop just over the pivot
   max_chase: 0.05                 # never pay more than 5% over the pivot
 

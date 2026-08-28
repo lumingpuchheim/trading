@@ -890,6 +890,62 @@ measure are section 8b's, 8 quarters follows from needing x4 -- but that
 is a weaker guarantee than it sounds, and the forward ledger remains the
 only honest judge.
 
+## 16. Industry-group strength (pre-registered 2026-08-28)
+
+Section 10.2 named this and stopped: "industry-group strength needs a
+sector table we do not cache -- buildable, small data acquisition". It is
+the last unbuilt item on the coverage list that is not data-limited. The
+sourced principle is that leading stocks come from leading groups: a
+strong stock in a strong group beats an equally strong stock in a weak
+one, and the group rolling over is an early warning for every name in it.
+
+**Data.** `fetch_industries.py` -> `data/industries.csv` from the Nasdaq
+screener: **1,491 of 1,496 tickers classified into 141 industry groups**,
+83 of which have 5 or more members. Groups, not the 13 sectors -- 141 is
+the granularity closest to the ~197 groups the source's school uses.
+
+**Mechanism, constants frozen here.**
+
+- **Group strength** on day t = the **median** trailing 126-day return of
+  the group's members with a finite value that day. Median, not mean, so
+  a single moonshot cannot carry a group. 126 days is the existing
+  `rs_lookback`, reused rather than chosen.
+- **Minimum membership: 5.** A group with fewer ranked members that day
+  is unranked, and its members score 0 / fail the gate. 143 tickers sit
+  in groups this small; their exclusion is a data limit, not a signal.
+- **Group percentile** = the group's rank among all ranked groups that
+  day, scaled to [0, 1].
+- **Leading = the top 30%**, `rs_top_fraction`, the constant this repo
+  already uses for stock RS. The commonly reported figure for groups is
+  the top 20%; 30% is taken instead **because it is already in the config
+  and adds no new tuned knob.** Declared, not hidden.
+
+**Two runs, declared together so neither is a scan** (the section 15
+protocol, for the same reason: section 8's audit found the on/off use of
+a filter at the instant of entry is itself a deviation):
+
+1. **`--group`, hard gate.** A name is not eligible unless its group is
+   in the top 30% that day. Applied to `setup`, `watch` and both trigger
+   arrays as well as `liquid` -- the repertoire reads the raw template,
+   so gating `liquid` alone leaks, as the section 15 run proved.
+2. **`--grouprank`, conviction.** Every setup stays eligible; the group
+   percentile becomes the leading slot-ranking key ahead of the existing
+   RS-line / weak-day / RS keys. Trade count is unchanged by
+   construction, so this is the higher-powered test.
+
+Baseline: v5r, dev +148.4% / test +146.8%, 97th control percentile in
+both. 200 entry-rate-matched controls from the same pool each run uses.
+
+**The lookahead in this data, stated plainly.** The classifications are
+CURRENT (2026) and are applied to 2007-2026 history. A company that
+changed business is mislabelled in its past, and today's label embeds
+knowledge of what the company became. It is the same class of error as
+the current-constituent universe and smaller in practice -- a bank stays
+a bank -- but it is real and it flatters the result rather than harming
+it. No point-in-time classification is available on this data.
+
+**Post-hoc caveat unchanged:** both periods have been seen many times.
+
 ---
 
 ## BUILD STATUS (updated 2026-08-27, after implementation)

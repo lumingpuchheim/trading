@@ -677,3 +677,53 @@ def test_a_stale_filing_scores_nothing():
     ni = [8, 8, 8, 8, 10.6, 11.6, 13.1, 15.5]
     # ~170 days after the last filing, past max_report_age_days (120)
     assert legs_on('2022-08-01', ACCEL, ni) == 0
+
+
+# --------------------------- §16: industry-group strength
+
+def test_group_strength_ranks_groups_by_their_median_member():
+    # three groups of five; group 2 strongest, group 0 weakest
+    rs = np.column_stack([np.full(10, 0.05)] * 5 + [np.full(10, 0.15)] * 5
+                         + [np.full(10, 0.25)] * 5)
+    groups = np.array([0] * 5 + [1] * 5 + [2] * 5)
+    pct = mv.group_strength(rs, groups, CFG)
+    assert pct[-1, 0] < pct[-1, 5] < pct[-1, 10]
+    assert pct[-1, 10] == pytest.approx(1.0), 'the best group ranks at 1.0'
+    # every member of a group carries that group's percentile
+    assert len(set(pct[-1, :5])) == 1
+
+
+def test_one_moonshot_does_not_carry_its_group():
+    """The median is the point: a group of laggards with a single huge
+    winner must not rank above a uniformly strong group."""
+    rs = np.column_stack([np.full(10, 0.01)] * 4 + [np.full(10, 5.0)]
+                         + [np.full(10, 0.20)] * 5)
+    groups = np.array([0] * 5 + [1] * 5)
+    pct = mv.group_strength(rs, groups, CFG)
+    assert pct[-1, 0] < pct[-1, 5], 'median, not mean'
+
+
+def test_a_group_below_the_member_minimum_is_unranked():
+    rs = np.column_stack([np.full(10, 0.30)] * 3 + [np.full(10, 0.10)] * 5)
+    groups = np.array([0] * 3 + [1] * 5)
+    pct = mv.group_strength(rs, groups, CFG)
+    assert np.isnan(pct[-1, 0]), 'three members is not a group reading'
+    assert np.isfinite(pct[-1, 5])
+
+
+def test_unclassified_tickers_get_no_group_reading():
+    rs = np.column_stack([np.full(10, 0.10)] * 5 + [np.full(10, 0.20)])
+    groups = np.array([0] * 5 + [-1])
+    pct = mv.group_strength(rs, groups, CFG)
+    assert np.isnan(pct[-1, 5])
+
+
+def test_group_strength_follows_the_members_over_time():
+    """A group that is weak early and strong late must rank that way."""
+    weak_then_strong = np.concatenate([np.full(5, 0.01), np.full(5, 0.40)])
+    steady = np.full(10, 0.20)
+    rs = np.column_stack([weak_then_strong] * 5 + [steady] * 5)
+    groups = np.array([0] * 5 + [1] * 5)
+    pct = mv.group_strength(rs, groups, CFG)
+    assert pct[0, 0] < pct[0, 5], 'weak early'
+    assert pct[-1, 0] > pct[-1, 5], 'strong late'

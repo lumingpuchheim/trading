@@ -155,6 +155,43 @@ def eps_gate(report_dates: np.ndarray, eps: np.ndarray,
     return passes[known] & fresh
 
 
+def group_strength(rs: np.ndarray, groups: np.ndarray, cfg: dict
+                   ) -> np.ndarray:
+    """Industry-group percentile per (day, ticker) -- MINERVINI_SPEC.md 16.
+
+    `rs` is the (days x tickers) trailing-return matrix the trend
+    template's condition 9 already uses; `groups` is one integer group id
+    per ticker, -1 for unclassified. A group's strength on a day is the
+    MEDIAN trailing return of its members with a finite value that day,
+    computed only where at least `group_min_members` members qualify --
+    a median over three names is not a group reading. The result is that
+    group's rank among all ranked groups that day, scaled to [0, 1],
+    higher being stronger; NaN where the group is unranked.
+    """
+    f = cfg['minervini']
+    n, k = rs.shape
+    gids = np.unique(groups[groups >= 0])
+    med = np.full((n, len(gids)), np.nan)
+    for c, g in enumerate(gids):
+        members = np.flatnonzero(groups == g)
+        if len(members) < f['group_min_members']:
+            continue
+        block = rs[:, members]
+        enough = np.isfinite(block).sum(axis=1) >= f['group_min_members']
+        with np.errstate(invalid='ignore'):
+            m = np.nanmedian(np.where(np.isfinite(block), block, np.nan),
+                             axis=1)
+        med[enough, c] = m[enough]
+    pct = pd.DataFrame(med).rank(axis=1, pct=True).to_numpy()
+    out = np.full((n, k), np.nan)
+    col = {g: c for c, g in enumerate(gids)}
+    for j in range(k):
+        c = col.get(groups[j], -1)
+        if c >= 0:
+            out[:, j] = pct[:, c]
+    return out
+
+
 def code33_legs(filed: np.ndarray, revenue: np.ndarray,
                 net_income: np.ndarray, calendar: pd.DatetimeIndex,
                 cfg: dict) -> np.ndarray:

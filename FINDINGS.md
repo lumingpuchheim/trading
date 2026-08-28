@@ -2097,6 +2097,56 @@ void run was discarded and rerun; the numbers above are the fixed ones.
 only ever run on v2 panels, which have no repertoire; every v5-panel
 result (v5, v5r, v9, v10, wide) uses no fundamentals gate.
 
+### Industry-group strength (spec 16, run 2026-08-28): both uses REJECTED
+
+The last unbuilt non-data-limited item on the coverage list. Built from
+the Nasdaq screener: **1,491 of 1,496 tickers in 141 industry groups**,
+83 with 5+ members. A group's strength on a day is the MEDIAN trailing
+126-day return of its ranked members (median so one moonshot cannot carry
+a group); leading = the top 30% of groups, `rs_top_fraction` reused so no
+new constant enters. 6.84M ranked stock-days, 1.99M in a leading group.
+Five unit tests: median not mean, the 5-member minimum, unclassified
+names, and tracking members over time.
+
+| | v5r | gate (`--group`) | ranking (`--grouprank`) |
+|---|---|---|---|
+| dev total | **+148.4%** | +133.3% | +112.1% |
+| test total | **+146.8%** | +53.1% | **-0.8%** |
+| dev / test vs controls | 97th / 97th | 92nd / 57th | 90th / **3rd** |
+| trades dev / test | 828 / 639 | 764 / 638 | 802 / 632 |
+| win rate dev / test | 45.4 / 45.9% | 46.9 / 43.4% | 46.8 / **40.2%** |
+| avg winner dev / test | +17.4 / +20.1% | +14.9 / +18.5% | +14.1 / +16.5% |
+| max drawdown | -24 / -23% | -27 / -29% | -23 / -29% |
+
+**Both uses lose, and the ranking loses catastrophically.** As slot
+priority it takes the test period to flat and to the 3rd control
+percentile -- 97 of 100 random portfolios from the same pool beat it. As
+a filter it costs 15 points in dev and 94 in test and lands at the
+control median.
+
+**Mechanism, same in both.** The average winner shrinks under both uses
+(+20.1% -> +18.5% gated, +16.5% ranked) and the test win rate falls up
+to six points. Preferring the hottest groups concentrates the book in
+whatever sector is already running; in 2019-2026 that means buying
+crowded momentum near its highs. The gate is the milder version of the
+same error, which is why it lands between v5r and the ranking on every
+line.
+
+Note that section 10.2 flagged this risk in advance when it proposed the
+strength ranking: "an RS ranking failed OOS once in the LPPL system as
+slot priority; this is a different system and the claim will be judged on
+the forward ledger". Judged: with groups, it fails here too.
+
+**What this is not.** It is not evidence that industry leadership is
+worthless information -- it is evidence that *preferring leading groups
+at the moment of entry*, in either of the two mechanical forms available
+to us, is harmful on this history. And the data carries a lookahead that
+flatters it rather than harming it (current 2026 classifications applied
+to 2007 days), so the true result is likely worse than measured.
+
+`--group` and `--grouprank` remain runnable to reproduce these numbers.
+v5r stands.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

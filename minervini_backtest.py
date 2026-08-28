@@ -44,9 +44,9 @@ import numpy as np
 import pandas as pd
 
 from lppl_backtest import ROOT, load_config, metrics
-from minervini import (beat_gate, code33_legs, eps_gate, repertoire,
-                       report_within, rs_line_at_high, rs_ok_matrix,
-                       rs_return, signals, weak_day_score)
+from minervini import (beat_gate, code33_legs, eps_gate, group_strength,
+                       repertoire, report_within, rs_line_at_high,
+                       rs_ok_matrix, rs_return, signals, weak_day_score)
 
 START_EQUITY = 100_000.0
 PANEL_CACHE = 'minervini_panel_v2.npz'
@@ -150,7 +150,8 @@ def load_surprise(data_dir) -> pd.DataFrame:
 def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                 beat: bool = False, v3: bool = False,
                 v4: bool = False, v5: bool = False,
-                wide: bool = False, code33: str = '') -> dict:
+                wide: bool = False, code33: str = '',
+                group: str = '') -> dict:
     """Per-day signal matrices (days x tickers) on the SPY calendar.
 
     fund=True additionally requires the SEPA pillar-2 EPS gate (spec
@@ -172,6 +173,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         cache = cache.with_name(cache.stem + '_v10.npz')
     if code33:
         cache = cache.with_name(cache.stem + f'_c33{code33}.npz')
+    if group:
+        cache = cache.with_name(cache.stem + f'_grp{group}.npz')
     spy = pd.read_parquet(data_dir / 'ohlcv' / f"{d['benchmark']}.parquet")
     cal = spy.index
 
@@ -239,6 +242,23 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                 liquid[:, j] &= beat_gate(g['date'].to_numpy(),
                                           g['surprise_pct'].to_numpy(), cal, cfg)
             print(f'beat gate: {int(liquid.sum())} liquid+qualifying stock-days')
+
+        if group:
+            # §16: industry-group strength. Computed from the same rs
+            # matrix condition 9 uses, so the group reading and the stock
+            # reading are the same measure at two scales.
+            tab = pd.read_csv(data_dir / 'industries.csv')
+            gmap = dict(zip(tab['ticker'], tab['industry']))
+            names = sorted(set(gmap.values()))
+            gid = {g: i for i, g in enumerate(names)}
+            groups = np.array([gid.get(gmap.get(t, None), -1) for t in tickers])
+            group_pct = group_strength(rs, groups, cfg)
+            lead = group_pct >= 1.0 - cfg['minervini']['rs_top_fraction']
+            print(f'industry groups: {int((groups >= 0).sum())} tickers '
+                  f'classified, {int(np.isfinite(group_pct).sum()):,} ranked '
+                  f'stock-days, {int(lead.sum()):,} in a leading group')
+            if group == 'gate':
+                liquid &= lead
 
         if code33:
             # §15: the sales and margin legs, from EDGAR XBRL filings.
@@ -324,6 +344,16 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                 rep_label[:, j] = rep['label']
                 watch[:, j] = rep['armed'] | s['setup']
 
+        if group == 'gate':
+            # same leak as the code33 gate below: the repertoire reads the
+            # raw template, so gating `liquid` alone would not reach it
+            setup &= lead
+            watch &= lead
+            trigger[1:] &= lead[:-1]
+            trigger_moc[1:] &= lead[:-1]
+            print(f'group gate: {int(setup.sum())} setup days, '
+                  f'{int(trigger_moc.sum())} MOC triggers remain')
+
         if code33 == 'gate':
             # The repertoire (§11) reads the RAW trend template, not the
             # `liquid`-gated one, so narrowing `liquid` reaches `setup`
@@ -366,7 +396,9 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                  'rep_label': rep_label, 'watch': watch,
                  'gc': gc, 'udv': udv,
                  'code33': (code33_score if code33
-                            else np.zeros((n, k), dtype=np.int8))}
+                            else np.zeros((n, k), dtype=np.int8)),
+                 'group_pct': (group_pct if group
+                               else np.full((n, k), np.nan))}
         np.savez_compressed(cache, **panel)
         panel['tickers'] = tickers
 
@@ -720,11 +752,15 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                     rsl, wk, rsv = panel['rsl_hi'], panel['weak'], panel['rs']
                     gc_, udv_ = panel.get('gc'), panel.get('udv')
                     c33 = panel.get('code33') if tr.get('code33_rank') else None
+                    gpc = panel.get('group_pct') if tr.get('group_rank') else None
 
                     def key(j):
-                        # §15 run 2: conviction first -- how many Code 33
-                        # legs the name passes -- then the v4 strength keys
+                        # §15/§16 run 2: conviction first -- Code 33 legs or
+                        # the industry-group percentile -- then v4 strength
                         base = [-int(c33[i, j])] if c33 is not None else []
+                        if gpc is not None:
+                            base += [-(gpc[i, j] if np.isfinite(gpc[i, j])
+                                       else -np.inf)]
                         base += [-int(rsl[i, j]),
                                 -(wk[i, j] if np.isfinite(wk[i, j])
                                   else -np.inf)]
@@ -794,6 +830,8 @@ def main() -> None:
     wide = '--wide' in sys.argv      # S&P 1500 + the rest of the US market
     code33 = ('gate' if '--code33' in sys.argv else
               'rank' if '--code33rank' in sys.argv else '')   # §15
+    group = ('gate' if '--group' in sys.argv else
+             'rank' if '--grouprank' in sys.argv else '')     # §16
     v7 = '--v7' in sys.argv
     v6 = '--v6' in sys.argv
     v9 = '--v9' in sys.argv          # §13 momentum-conditioned selling
@@ -824,12 +862,14 @@ def main() -> None:
             cfg['minervini_trading']['equal_weight_fraction'] = float(a[7:])
     if code33 == 'rank':
         cfg['minervini_trading']['code33_rank'] = True
+    if group == 'rank':
+        cfg['minervini_trading']['group_rank'] = True
     if cfg['minervini_trading'].get('adaptive'):
         for k, v in cfg['minervini_v8'].items():
             cfg['minervini_trading'][k] = v
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
                         beat=beat, v3=v3 and not v4, v4=v4 and not v5, v5=v5,
-                        wide=wide, code33=code33)
+                        wide=wide, code33=code33, group=group)
     cal = panel['calendar']
 
     print(f'panel: {len(panel["tickers"])} tickers, '
@@ -853,7 +893,8 @@ def main() -> None:
             ab += 's' + a[7:].replace('0.','')
     tag = (('v10' if v10 else 'v9' if v9 else 'v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else '')
-           + ('_wide' if wide else '') + (f'_c33{code33}' if code33 else ''))
+           + ('_wide' if wide else '') + (f'_c33{code33}' if code33 else '')
+           + (f'_grp{group}' if group else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '
               f'{int(panel["trigger_moc"].sum())} entries available')
