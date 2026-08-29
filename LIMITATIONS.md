@@ -124,9 +124,23 @@ names face, and "more names" would be confounded with "weaker filter".
 
 ## Other known issues
 
-- **Adjusted prices.** yfinance `auto_adjust=True` back-adjusts for splits and
-  dividends. The $5 price filter and the base geometry are therefore applied to
-  adjusted, not actual historical, prices. Dividends are implicitly reinvested.
+- **Split-adjusted prices (dividend adjustment REMOVED 2026-08-29).** Prices
+  now come from `auto_adjust=False, actions=True`, so nothing is rescaled by a
+  reinvestment assumption and `dividends` / `splits` are stored beside the
+  prices. Dividends are added as explicit cash wherever profit is computed
+  (`minervini_bets.py`; `lppl_backtest.close_out`, which also CHARGES them to
+  shorts; `giants_features.total_return_prices`, which now derives the
+  total-return series instead of inverting Yahoo's). What remains: Yahoo's OHLC
+  is still SPLIT adjusted and cannot be had raw from this source, so a 2014
+  close still moves when a 2020 split happens. That is the lesser problem — a
+  split ratio is a discrete public fact, it is in the `splits` column, and the
+  adjustment is exactly invertible. The old convention was rejected because
+  Yahoo recomputes the dividend back-adjustment at download time: a 2015 close
+  depended on payments made in 2016-2026, the file changed on every re-fetch,
+  and nothing computed from it could be reproduced or audited. Measured
+  impact: dividends were 13.5% of dev and 16.6% of test per-bet EV, arriving
+  invisibly; KO's first stored close moved from 10.87 to 20.77; v5r's dev
+  result moved from +148.4% (97th control percentile) to +55.0% (65th).
 - **Point-in-time universe only for liquidity.** The price/dollar-volume filter
   is applied per-day (no lookahead), but index membership itself is as of today.
 - **Stops fill on the next open, measured on the close.** A gap through the
@@ -212,6 +226,68 @@ points, exit points. We built one and a half of them.
 21 years across 1,496 names — roughly eleven a year, in a universe of
 large caps, for a method whose practitioner finds candidates weekly. The
 narrowness is ours, not his.
+
+## Trade filters: what they can and cannot see (added 2026-08-29)
+
+A filter (`filters.py`) ranks the signals the screener already produced
+and decides which one a freed slot is spent on. This is about the FILTER
+models only — the screener's own volume conditions (`dryup_max_ratio`
+0.75, `breakout_volume_mult` 1.5) are a separate matter and are applied
+before any filter sees a candidate.
+
+| model | volume | what's missing |
+|---|---|---|
+| Shapelet | absent | volume entirely |
+| MiniRocket | present, per-channel | the price x volume interaction |
+
+**Shapelet.** `ShapeletFilter(channels=(0,))` reads `logpx` alone. Volume
+is not an input at all. The choice was interpretability — 249 parameters
+and eight curves that can be plotted beside a chart — and the price-only
+shapelets that were drawn (two flat dead units, three single-day spike
+detectors, one dip-and-recover) were found without volume. `--channels 0,2`
+adds it and doubles the parameters to 489. Untried.
+
+**MiniRocket.** All five channels are used, `log_volx` among them, but
+`transform()` convolves ONE CHANNEL AT A TIME and concatenates afterwards,
+so every one of the 4,200 features describes a single channel. No feature
+can express "price contracted WHILE volume dried up" — the ridge can
+weight a price feature and a volume feature, but that is a sum of two
+separate observations, not a co-occurrence.
+
+That conjunction is the VCP claim, so this is not a cosmetic gap. The
+published MiniRocket-Multivariate handles it by assigning each kernel a
+random subset of channels and summing their convolutions BEFORE pooling,
+so one feature fires only when several channels move together. What is
+implemented here is the simpler univariate-applied-per-channel variant.
+
+**BOTH GAPS WERE CLOSED AND BOTH MADE IT WORSE (measured 2026-08-29).**
+Dev, walk-forward, k=0.50, identical protocol in every arm:
+
+| filter | volume | dev total | maxDD |
+|---|---|---|---|
+| AllPass (v5r) | -- | +55.0% | -28.0% |
+| Shapelet, price only | absent | **+126.3%** | -25.3% |
+| MiniRocket, per-channel | present, no interaction | **+104.0%** | -35.8% |
+| Shapelet, price + volume (`--channels 0,2`) | added | +73.7% | -25.9% |
+| MiniRocket-MV (`--mv`) | price x volume interaction | +68.4% | -26.8% |
+
+Shapelet -53pp when volume was added; MiniRocket -36pp when the
+interaction was added. Two different models, two different mechanisms,
+same sign.
+
+Why, most likely. **Capacity is fixed, so volume was not added -- it was
+swapped in.** The shapelet still has 8 curves, each of which must now
+match price AND volume shape at once with the same budget; MiniRocket-MV
+still has 4,200 features, with channel groups replacing channels. What got
+displaced was carrying the result. And the screener has already spent the
+volume information: every candidate passed `dryup_max_ratio` 0.75 and
+`breakout_volume_mult` 1.5, so volume structure inside that set is nearly
+exhausted while price geometry within it still varies freely.
+
+The mechanism described above is still accurate -- per-channel features
+genuinely cannot express a co-occurrence. It simply turns out not to be
+worth expressing here. Caveat: dev only, one run per configuration, 3
+seeds for the shapelet arms.
 
 ## LPPL strategy specifics
 

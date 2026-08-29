@@ -8,3 +8,8 @@ sim/sim.db
 sim/exports/
 data_live/
 sim/jobs.log
+
+# bet ledger and its windows: derived caches, not source.
+# rebuild with:  python minervini_bets.py --windows 252
+results/minervini_bets_v5r.csv
+results/minervini_bets_v5r_windows.npz

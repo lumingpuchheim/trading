@@ -2266,6 +2266,217 @@ bought with exposure (44% invested against 72%), not with skill.
 winners receive capital the flat rule never gives them. That is a
 different experiment and it was not authorised here.
 
+## An outside VCP definition as a second opinion (2026-08-28 — REJECTED)
+
+The user pointed at `marco-hui-95/vcp_screener.github.io`, an independent
+Minervini screener, and asked to trade only when its VCP fires as well.
+Its pattern test is ported in `vcp_marco.py` (`--marco`); the module
+docstring lists what was ported, the causality fix and two deviations.
+
+**Their definition is much looser than ours.** Swings are
+`argrelextrema(order=10)` on intraday highs and lows — a bar that is the
+strict extreme of its own 21-bar window, at any magnitude — where ours
+needs a confirmed 3% close reversal. There is no base rim: the base is
+whatever the contraction run spans, needing only two "weeks". The
+contraction count walks back from the newest and STOPS at the first
+pullback that is not deeper, ignoring everything older, where ours
+rejects the setup if any pair inside the base breaks monotonicity. Depth
+caps are 15% newest / 50% deepest against our 10% / rim re-anchor, and
+the dry-up is `mean(vol,5) < mean(vol,30)` — true about half the time —
+against our quiet day at 0.75x the 50-day mean. Their `condition_8`
+computes the RS-line slope and then tests the MA200 slope, so the RS-line
+leg never runs; their template is not ported, ours does that job.
+
+Measured: their pattern fires on **9.1% of template stock-days** (82,622)
+against ours at **1.2%** (11,171) — one day in eleven against one in
+eighty-one. Intersected, **3,027 of our 11,171 setup days survive (27%)**.
+
+**It cuts the loss and does not improve a single bet.**
+
+| baseline, VCP-only | dev | test |
+|---|---|---|
+| ungated total | -42.8% | -31.3% |
+| gated on their VCP | **-10.9%** | **-11.4%** |
+| ungated euro per bet | 0.9946 | 0.9958 |
+| gated euro per bet | **0.9960** | **0.9959** |
+| bets | 1,122 -> 329 | 1,200 -> 360 |
+| percentile vs controls | 0 -> 4 | 0 -> 10 |
+| mean cash | 85.1% -> 95.4% | |
+
+The per-bet multiple is unchanged to three decimals. The whole
+improvement is **fewer bets at the same losing rate** — the gate raises
+mean cash from 85% to 95%, and a losing system touched less often loses
+less. That is not information; that is a smaller position in the same
+mistake.
+
+**The eject-free check, which is the honest test.** The baseline is
+dominated by `failed_breakout` (296 of 329 trades), so the comparison
+above mostly measures transaction costs. Repeated under `--moc`, where
+price and volume are judged together at the close and nothing is ejected:
+
+| euro per bet, MOC | dev | test |
+|---|---|---|
+| ungated | 0.9860 (n=113) | 0.9839 (n=83) |
+| gated on their VCP | 0.9874 (n=31) | **0.9751** (n=21) |
+
+Better by 0.14 points in dev, **worse by 0.88 in test**, on 31 and 21
+bets. Opposite signs across periods at that sample size is the signature
+of noise, and it fails the standing bar of "positive and non-collapsed in
+BOTH". Gated MOC still sits at the 21st and 14th control percentile.
+
+**REJECTED.** Their VCP is a different, looser pattern, and intersecting
+it with ours selects no better bets. `--marco` stays runnable, and
+`vcp_marco.py` is worth keeping as the one independent implementation of
+this pattern in the repo. Neither this nor section 17 changes the
+standing verdict in LIMITATIONS.md: the VCP path, ours or theirs, is the
+part of this method that does not pay.
+
+## Trade filters: they win by losing less, not by picking winners (2026-08-29)
+
+A filter ranks the signals the screener already emitted and decides which
+one a freed slot is spent on (`filters.py`, `filter_backtest.py`). It plugs
+into `simulate()` through a single new argument -- a (days x tickers)
+boolean `gate` suppressing rejected triggers -- so a filtered run and an
+unfiltered one differ by exactly one thing. All numbers below are dev,
+walk-forward: refitted at the start of every year on data ending 400 days
+earlier, buy threshold frozen from that training window's own scores.
+Prices are the unadjusted ones (see LIMITATIONS.md, 2026-08-29).
+
+**The slot constraint binds almost always** (`slot_pressure.py`). Over
+4,944 trading days with 10 slots: slots FULL on 75.2% of days, full while
+signals were arriving on 70.5%, a free slot with signals on only 3.1%.
+Median signals offered on a green day: 13. **Median free slots: 0.**
+
+| | total | maxDD | trades | invested | jackpot precision |
+|---|---|---|---|---|---|
+| AllPass (v5r) | +55.0% | -28.0% | 832 | 71.7% | 20.2% (base) |
+| MiniRocket k=0.50 | +104.0% | -35.8% | 727 | 65.2% | 20.5% (x1.01) |
+| **Shapelet g=0, k=0.50** | **+126.3%** | **-25.3%** | 828 | 68.7% | 19.4% (**x0.96**) |
+
+Per-trade means are deliberately absent from that table: the run reported
+ARITHMETIC means (+4.06 / +4.84 / +4.98%), which is not what compounds.
+`filter_backtest.py` now reports the geometric mean instead and the arms
+need re-running before a per-trade column can be quoted. For AllPass the
+two differ substantially -- arithmetic +4.06%, **geometric +3.02%**,
+median -0.86% -- and neither is the +1.14% arithmetic / +0.70% geometric
+figure quoted elsewhere, which is over ALL 30,582 signals rather than the
+832 that won a slot. Three populations, three numbers; label which one.
+
+**Same trade count, different trades.** The filters block ~16,500 of
+~30,000 signals yet the book still does ~830 trades. It takes only ~3% of
+signals to keep ten slots busy, so blocking half changes the IDENTITY of
+the trades, not the number. The queue previously chose by arrival order;
+the filter re-chooses.
+
+**Neither model picks jackpots.** Precision on the top-20% label is the
+base rate in every arm: x1.01, x1.00, x0.96, x1.05. The shapelet that
+returned +126.3% selected trades that were 19.4% jackpots against a 20.2%
+baseline -- slightly FEWER than random.
+
+**They win by losing less.** Average trade rises 4.06% -> 4.98% while the
+jackpot share does not move, so the gain sits in the middle and left of
+the distribution. This matches the ledger: the rejected half returned
++0.20%, and **-0.31% once its own top 1% was removed**. The bottom half of
+v5r's signals, stripped of its lottery tickets, loses money; declining it
+is the entire mechanism.
+
+Consequence for the loss function: rewriting it to chase jackpots would
+optimise for the one thing these models demonstrably cannot do. gamma=0 is
+ALREADY pure jackpot classification (MiniRocket's balanced ridge always
+was), and it is the arm with the worst jackpot precision and the best
+equity curve. See the winprob section: p.W is priced flat inside this
+pool, so a better jackpot picker takes more losers with it.
+
+**NEW BASELINES (2026-08-29).** `MiniRocket k=0.50` and `Shapelet gamma=0,
+k=0.50` replace bare v5r as the reference configurations for filter work.
+AllPass remains the control any filter must beat.
+
+Caveats: dev only, and dev is where v5r itself was developed. The shapelet
+leads AllPass every year from 2013 through 2018; MiniRocket only from
+2016, with most of its edge in 2018 alone. Drawdowns move in opposite
+directions (-25.3% vs -35.8%), which one dev period cannot separate.
+
+### Volume adds nothing to either filter (2026-08-29, both REJECTED)
+
+Both gaps recorded in LIMITATIONS.md were closed and both lost. Dev,
+walk-forward, k=0.50, identical protocol:
+
+| filter | volume | dev total | maxDD |
+|---|---|---|---|
+| AllPass (v5r) | -- | +55.0% | -28.0% |
+| Shapelet, price only | absent | **+126.3%** | -25.3% |
+| MiniRocket, per-channel | present, no interaction | **+104.0%** | -35.8% |
+| Shapelet `--channels 0,2` | added | +73.7% | -25.9% |
+| MiniRocket-MV `--mv` | price x volume interaction | +68.4% | -26.8% |
+
+Shapelet -53pp, MiniRocket -36pp. Capacity is FIXED in both, so volume was
+swapped in rather than added: 8 curves that must now match two channels at
+once, 4,200 features reallocated from channels to channel groups. And the
+screener already spent the volume information -- every candidate passed
+`dryup_max_ratio` 0.75 and `breakout_volume_mult` 1.5, so volume structure
+inside the pool is nearly exhausted while price geometry still varies.
+Jackpot precision stayed at the base rate in both (x1.02, x0.98).
+
+### Four losses aimed at jackpots, four failures (2026-08-29, REVERTED)
+
+The filters raise returns while jackpot precision sits at chance, so the
+loss was rewritten four times to attack that directly. `minervini_shapelet.py`
+carries all of them; `--loss f1` is the last and is kept runnable as a
+recorded negative.
+
+| loss | what it rewards | jackpot precision |
+|---|---|---|
+| cost-sensitive BCE, gamma~27 | class, negatives weighted by euros lost | x1.02 |
+| balanced BCE, gamma=0 | class only, no value weighting | x0.96 |
+| symmetric log value, `(u - ln y)^2` | magnitude, 2x and 1/2x cost the same | AUC 0.480 |
+| **soft F-beta, `1 - (1+b2)TP / ((1+b2)TP + b2 FN + FP)`** | ONLY a correct >1.05 call; true negatives appear nowhere | **x0.95** |
+
+The F-beta version is verified to do what it says: "predict nothing"
+scores 0.9998 of a possible 1.0, so the timid collapse gamma-weighted BCE
+fell into is the most expensive strategy available under it. It still
+produced picks containing FEWER >5% winners than random.
+
+**The loss was never the binding constraint.** Four objectives, three
+model families, all at or below the base rate. The information is not in a
+year of price history in a form these models can reach.
+
+Dev results, k=0.50: BCE gamma=0 **+126.3%** (maxDD -25.3%), F-beta +89.7%
+(maxDD **-23.8%**, the best drawdown of any arm, and it blocks only 10,378
+signals against BCE's 16,498 -- a loss paying only for claims approves
+more). Reverted to gamma=0 BCE as the standing shapelet configuration.
+
+### The continuous path 2009-2026, and SPY (2026-08-29)
+
+One run, no dev/test split, no fees, no tax (`equity_vs_spy.py`). Starts
+2009 because the filters cannot score 2007-2008 (under 2,000 training
+rows). Filters are walk-forward: each year fitted on data ending 400 days
+earlier -- the only valid protocol for a continuous path, since a
+dev-fitted model would score 2009-2018 in-sample.
+
+| | final | total | ann | maxDD | trades |
+|---|---|---|---|---|---|
+| **SPY total return** | **1,139,945** | +1039.9% | **+14.81%** | -33.7% | 1 |
+| SPY price only | 829,497 | +729.5% | +12.76% | -34.1% | 1 |
+| MiniRocket k=0.50 | 645,523 | +545.5% | +11.16% | **-28.3%** | 1,222 |
+| Shapelet g=0 k=0.50 | 438,257 | +338.3% | +8.75% | -40.2% | 1,414 |
+| v5r, no filter | 428,244 | +328.2% | +8.61% | -29.7% | 1,379 |
+
+**SPY beats every arm.** Buying it once returns 14.81%/yr against the best
+strategy's 11.16%, before the fees and tax 1,222 round trips pay and a
+single lot does not.
+
+**MiniRocket is the only filter that survives the full path**: +328% ->
++546%, 8.61% -> 11.16%/yr, and drawdown IMPROVES (-29.7% -> -28.3%).
+
+**The shapelet does not.** +338% against v5r's +328% is nothing, with
+drawdown worsening to -40.2%. Its dev result (+126.3%, the best number of
+the session) does not transfer. This reverses the dev ranking and is the
+fourth time today dev and test disagreed on a structural change.
+
+Window caveats, both flattering SPY: it starts after the 2008 crash, the
+one regime where a cash-on-red-light system should earn its keep; and SPY
+here is a single untaxed lot.
+
 ## 4. Statistical reality (applies to everything above)
 
 Per-trade σ ≈ 16–22%. Detecting a true 1% per-trade edge at t=2 needs

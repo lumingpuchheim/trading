@@ -4,8 +4,18 @@ One line per mechanism ever built, with its verdict. Written 2026-08-28
 because the record had grown across FINDINGS, the spec, LIMITATIONS and
 chat until nobody could say what was in and what was out.
 
-**Standing configuration: `v5r` = `--v5 --e3 --moc`.** Dev +148.4%, test
-+146.8%, 97th percentile of 200 entry-rate-matched controls in both.
+**Standing configuration: `v5r` = `--v5 --e3 --moc`.** Dev **+55.0%** (65th
+control percentile), test **+150.9%** (100th), restated 2026-08-29 on
+unadjusted prices. This line previously read +148.4% / +146.8% / 97th in
+both; that was measured on dividend-adjusted prices and does not belong to
+this dataset. See LIMITATIONS.md, "Split-adjusted prices".
+
+**A FILTER LAYER now sits in front of it** (`filters.py`,
+`filter_backtest.py`), ranking the signals the screener already produced
+and deciding which one a freed slot is spent on. Separate layer, its own
+verdicts below. On one continuous 2009-2026 path, no fees or tax:
+v5r +8.61%/yr, +MiniRocket k=0.50 **+11.16%/yr**, +Shapelet g=0 +8.75%/yr,
+**SPY total return +14.81%/yr**.
 
 **Read this first:** the standing configuration takes 1,213 of its 1,230
 positions on the section-11.3 SMA20 pullback and 6 on the pivot
@@ -76,6 +86,25 @@ trade is not his rule".
 
 *(Industry-group strength moved out of this table on 2026-08-28: it was
 built, tested both ways, and rejected. See the OUT table above.)*
+
+## Filter layer — verdicts (added 2026-08-29)
+
+| filter | verdict |
+|---|---|
+| **MiniRocket k=0.50** (84 fixed kernels, PPV, balanced ridge) | **IN.** Dev +104.0%; and the only arm that survives the continuous 2009-2026 path: +8.61% -> +11.16%/yr with drawdown IMPROVING, -29.7% -> -28.3% |
+| **Shapelet g=0 k=0.50** (8 curves x 30 days, 249 params) | **IN on dev, DOES NOT TRANSFER.** Dev +126.3%, best of the session; continuous path +8.75%/yr against v5r's +8.61% — nothing — with drawdown worsening to -40.2% |
+| Volume added to the shapelet (`--channels 0,2`) | OUT. +126.3% -> +73.7% |
+| Price x volume interaction in MiniRocket (`--mv`) | OUT. +104.0% -> +68.4% |
+| Stricter thresholds (k=0.80, k=0.90) | OUT. Starve the book: invested falls 71.7% -> 53.4% -> 40.4% and returns fall below AllPass |
+| **Dilated CNN** (`minervini_cnn.py`) | **OUT, DELETED 2026-08-29: too many parameters, hard to train.** 2,514-3,010 params against an effective sample size of ~3,000-4,000 (windows overlap 251/252 days, labels overlap, ~12 bets share each day's market factor). Every width tried -- 938, 2,514, 4,730, 7,586 -- landed inside its own label-shuffle control: mean lift -0.0013 to +0.0013 against the shuffle's -0.0048, AUC 0.484-0.541 with no ordering by width. A 249-parameter shapelet and a ZERO-learned-parameter MiniRocket both beat it. The shared helpers it happened to contain (`load`, `folds`, `report`, `line`, `jackpot_loss`, the constants) were never CNN-specific and moved to `bets_common.py`; nothing else was lost |
+| F-beta loss, reward only a correct >5% call (`--loss f1`) | **OUT, reverted 2026-08-29.** Dev +89.7% against the BCE shapelet's +126.3%. Kept runnable as a recorded negative, like `--v6` and `--v10`. Its one win: best drawdown of any arm, -23.8% |
+| Jackpot picking, any arm | **Not a capability these models have.** FOUR objectives aimed at it, all landing at or below the base rate: cost-weighted BCE x1.02, balanced BCE x0.96, symmetric log-value AUC 0.480, F-beta rewarding only true positives **x0.95**. The loss was never the binding constraint — the information is not in a year of price history in a form these models can reach. The filters earn their return by declining bad trades, not by finding good ones |
+
+## PROPOSED — not built
+
+| idea | what it would need |
+|---|---|
+| **Combine MiniRocket and Shapelet** | Both raise the per-bet result on dev, from different representations — fixed kernels over five channels versus eight learned price curves. If their scores rank bets differently there is something to gain; if they agree, nothing. **Measure the rank correlation of the two scores on the same candidates FIRST** — that one number decides whether any combiner is worth building. Forms, in rising cost: `AND` (both must approve), rank-average or weighted sum of scores, or a trained second-stage model taking both scores plus context. `filters.py` already has an `Ensemble` class with `all` / `any` / `vote` and rank-average scoring, written and never run. Two constraints that shape the choice: (1) with slots full 70.5% of days, `AND` is strictly more selective and would need each member's threshold LOOSENED to keep the book invested — the k=0.90 row above is what over-selection costs; (2) the shapelet does not survive the continuous path, so any combiner that leans on it inherits that fragility. A weighted form that can down-weight a member is safer than `AND`, and a trained combiner needs its own walk-forward or it just overfits the pair |
 
 ## Standing rules about the process itself
 
