@@ -147,7 +147,14 @@ def load_panel(cfg: dict) -> dict:
         rs[lb:] = np.where(np.isfinite(r), r, -np.inf)
 
         finite_idx = np.flatnonzero(finite)
+        # Cash per share on each ex-date. Prices stopped being dividend
+        # adjusted on 2026-08-29 (download_data.py), so dividends no longer
+        # arrive silently through the price series: a long must be CREDITED
+        # them and a short CHARGED them, explicitly, at close-out.
+        div_arr = (df['dividends'].fillna(0.0).to_numpy()
+                   if 'dividends' in df.columns else np.zeros(n))
         arrays[t] = {'open': df['open'].to_numpy(), 'close': close, 'rs': rs,
+                     'div': div_arr,
                      'close_f': cvals, 'liquid': liquid, 'dip': dip,
                      'dip_band': dip_band, 'pre': pre,
                      'b3': b3, 'tc3': tc3, 'b2': b2, 'tc2': tc2,
@@ -283,16 +290,27 @@ def simulate(panel: dict, cfg: dict, strategy: str, period: tuple[str, str],
         return short_value(pos['invest'], pos['entry_px'], p, cost)
 
     def close_out(t, pos, px, i, reason, d):
+        # Dividends per share over the ex-dates while the position was open.
+        # A long collects them; a short OWES them to the lender, which is
+        # why the sign flips below. Before 2026-08-29 both were silently
+        # baked into the adjusted price series, and the short side was
+        # therefore credited with dividends it would have had to pay.
+        dv = arrays[t].get('div')
+        dps = float(np.nansum(dv[pos['entry_i'] + 1:i + 1])) \
+            if dv is not None else 0.0
         if pos['side'] == 1:
-            proceeds = pos['shares'] * px * (1 - cost)
-            ret = px * (1 - cost) / (pos['entry_px'] * (1 + cost)) - 1
+            proceeds = pos['shares'] * (px * (1 - cost) + dps)
+            ret = (px * (1 - cost) + dps) / (pos['entry_px'] * (1 + cost)) - 1
         else:
-            proceeds = short_value(pos['invest'], pos['entry_px'], px, cost)
+            shares_short = pos['invest'] / pos['entry_px'] \
+                if pos['entry_px'] > 0 else 0.0
+            proceeds = (short_value(pos['invest'], pos['entry_px'], px, cost)
+                        - shares_short * dps)
             ret = proceeds / pos['invest'] - 1
         trades.append({
             'ticker': t, 'entry_date': pos['entry_date'], 'exit_date': d,
             'entry_px': pos['entry_px'], 'exit_px': px,
-            'days_held': i - pos['entry_i'],
+            'days_held': i - pos['entry_i'], 'div_per_share': dps,
             'ret_net': ret, 'exit_reason': reason})
         cooldown[t] = i + tr['reentry_cooldown']
         if reason == 'tc':

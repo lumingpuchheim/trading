@@ -47,6 +47,7 @@ from lppl_backtest import ROOT, load_config, metrics
 from minervini import (beat_gate, code33_legs, eps_gate, group_strength,
                        repertoire, report_within, rs_line_at_high,
                        rs_ok_matrix, rs_return, signals, weak_day_score)
+from vcp_marco import marco_flags
 
 START_EQUITY = 100_000.0
 PANEL_CACHE = 'minervini_panel_v2.npz'
@@ -163,7 +164,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                 beat: bool = False, v3: bool = False,
                 v4: bool = False, v5: bool = False,
                 wide: bool = False, code33: str = '',
-                group: str = '') -> dict:
+                group: str = '', marco: bool = False) -> dict:
     """Per-day signal matrices (days x tickers) on the SPY calendar.
 
     fund=True additionally requires the SEPA pillar-2 EPS gate (spec
@@ -187,6 +188,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         cache = cache.with_name(cache.stem + f'_c33{code33}.npz')
     if group:
         cache = cache.with_name(cache.stem + f'_grp{group}.npz')
+    if marco:
+        cache = cache.with_name(cache.stem + '_marco.npz')
     spy = pd.read_parquet(data_dir / 'ohlcv' / f"{d['benchmark']}.parquet")
     cal = spy.index
 
@@ -207,6 +210,12 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         lo = np.full((n, k), np.nan)
         cl = np.full((n, k), np.nan)
         vol = np.full((n, k), np.nan)
+        # Cash paid per share on each ex-date. Since 2026-08-29 the stored
+        # prices are NOT dividend adjusted, so a holder's dividends have to
+        # be added explicitly wherever profit is computed -- they are no
+        # longer smuggled in by the price series. Zero, not NaN: "no
+        # dividend that day" is a fact, not a missing value.
+        div = np.zeros((n, k))
         liquid = np.zeros((n, k), bool)
         last_i = np.full(k, -1, dtype=np.int64)
 
@@ -225,6 +234,8 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
             lo[:, j] = raw['low'].to_numpy()
             cl[:, j] = c.ffill().to_numpy()
             vol[:, j] = raw['volume'].ffill().to_numpy()
+            if 'dividends' in raw.columns:
+                div[:, j] = raw['dividends'].fillna(0.0).to_numpy()
 
         rs = np.column_stack([rs_return(cl[:, j], cfg) for j in range(k)])
         rs_ok = rs_ok_matrix(rs, liquid, cfg)
@@ -315,6 +326,7 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
         weak = np.full((n, k), np.nan)
         rep_label = np.zeros((n, k), dtype=np.int8)
         watch = np.zeros((n, k), bool)
+        marco_ok = np.zeros((n, k), bool)
         gc = np.full((n, k), np.nan)
         udv = np.full((n, k), np.nan)
         spy_np = spy['close'].to_numpy()
@@ -325,6 +337,10 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
             if v4 or v5:
                 rsl_hi[:, j] = rs_line_at_high(cl[:, j], spy_np)
                 weak[:, j] = weak_day_score(cl[:, j], spy_np, s['base_age'])
+
+            if marco:
+                marco_ok[:, j] = marco_flags({'high': hi[:, j], 'low': lo[:, j],
+                                              'volume': vol[:, j]})
 
             template[:, j] = s['template'] & liquid[:, j]
             trigger_moc[:, j] = s['trigger_moc']
@@ -382,6 +398,26 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
             print(f'Code 33 gate: {int(setup.sum())} setup days, '
                   f'{int(trigger_moc.sum())} MOC triggers remain')
 
+        if marco:
+            # Their VCP is a SETUP state ("a base, not broken out yet"),
+            # the same kind of state as ours, so it gates the watchlist
+            # and every entry that answers to the previous day's list --
+            # the same shape as the code33 and group gates above. The
+            # control pool (`template`) is deliberately NOT gated, so
+            # this run's controls are the same ones the ungated run
+            # faced and the two are directly comparable.
+            print(f'marco VCP: {int(marco_ok.sum()):,} stock-days show their '
+                  f'pattern; ours and theirs agree on '
+                  f'{int((setup & marco_ok).sum()):,} of '
+                  f'{int(setup.sum()):,} setup days')
+            setup &= marco_ok
+            watch &= marco_ok
+            trigger[1:] &= marco_ok[:-1]
+            trigger_moc[1:] &= marco_ok[:-1]
+            print(f'marco gate: {int(setup.sum()):,} setup days, '
+                  f'{int(trigger.sum()):,} buy-stop fills, '
+                  f'{int(trigger_moc.sum()):,} MOC triggers remain')
+
         blackout_days = cfg['minervini'].get('earnings_blackout_days', 0)
         if blackout_days:
             sp = load_surprise(data_dir)
@@ -400,13 +436,14 @@ def build_panel(cfg: dict, rebuild: bool = False, fund: bool = False,
                   f'{int(setup.sum())} setup days remain')
 
         panel = {'tickers': np.array(tickers), 'open': op, 'close': cl,
+                 'div': div,
                  'sma50': sma50, 'template': template, 'setup': setup,
                  'trigger': trigger, 'vol_ok': vol_ok, 'fill_px': fill_px,
                  'trigger_moc': trigger_moc, 'fill_moc': fill_moc,
                  'volx': volx, 'pivot': pivot, 'last_i': last_i,
                  'rs': rs, 'rsl_hi': rsl_hi, 'weak': weak,
                  'rep_label': rep_label, 'watch': watch,
-                 'gc': gc, 'udv': udv,
+                 'gc': gc, 'udv': udv, 'marco': marco_ok,
                  'code33': (code33_score if code33
                             else np.zeros((n, k), dtype=np.int8)),
                  'group_pct': (group_pct if group
@@ -431,7 +468,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
              rng: np.random.Generator | None = None,
              entry_rate: float = 0.0,
              pool_days: list | None = None, moc: bool = False,
-             record: dict | None = None):
+             record: dict | None = None,
+             gate: np.ndarray | None = None):
     """One portfolio path. rng=None runs the strategy; with an rng the run
     is a control (random names, next-open fills).
 
@@ -489,6 +527,13 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         fill_px, trigger = panel['fill_moc'], panel['trigger_moc']
     else:
         fill_px, trigger = panel['fill_px'], panel['trigger']
+    # A trade FILTER (filters.py) plugs in here and nowhere else: a
+    # (days x tickers) boolean that suppresses triggers it rejects. Slots,
+    # cooldown, exits, the market light and the controls are untouched, so
+    # a filtered run and an unfiltered one differ by exactly one thing.
+    # None = take every trigger, which is the standing behaviour.
+    if gate is not None:
+        trigger = trigger & gate
     vol_ok = panel['vol_ok']
     last_i, green = panel['last_i'], panel['green']
     is_control = rng is not None
@@ -517,6 +562,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             # share of the ORIGINAL position this row disposes of, so the
             # euro-per-bet statistics need no assumption about halves
             'weight': pos['shares'] / pos.get('shares0', pos['shares']),
+            # what the WHOLE position cost, so bets can be averaged by
+            # the money in them rather than one-vote-each
+            'bet_eur': pos.get('bet_eur', np.nan),
+            'bet_frac': pos.get('bet_frac', np.nan),
             'exit_reason': reason})
         cd = tr['reentry_cooldown']
         if e3 and reason != 'stop':
@@ -547,6 +596,7 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['entry_px'] = (pos['entry_px'] * pos['shares']
                                    + px * add) / tot
                 pos['shares'] = tot
+                pos['bet_eur'] = pos.get('bet_eur', 0.0) + outflow
                 cash -= outflow
                 pos['added'] = True
 
@@ -567,6 +617,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                     'ret_net': px * (1 - cost)
                                / (pos['entry_px'] * (1 + cost)) - 1,
                     'weight': part / pos['shares0'],
+                    'bet_eur': pos.get('bet_eur', np.nan),
+                    'bet_frac': pos.get('bet_frac', np.nan),
                     'exit_reason': 'strength'})
                 pos['shares'] -= part
                 pos['half_sold'] = True
@@ -596,7 +648,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 continue
             positions[j] = {'shares': shares, 'entry_px': px, 'entry_i': i,
                             'entry_date': cal[i], 'exit_reason': None,
-                            'shares0': shares}
+                            'shares0': shares, 'bet_eur': outflow,
+                            'bet_frac': frac}
             cash -= outflow
 
         # 3. decisions at the close
@@ -675,6 +728,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                             'ret_net': c * (1 - cost)
                                        / (pos['entry_px'] * (1 + cost)) - 1,
                             'weight': part / pos['shares0'],
+                            'bet_eur': pos.get('bet_eur', np.nan),
+                            'bet_frac': pos.get('bet_frac', np.nan),
                             'exit_reason': 'climax_partial'})
                         pos['shares'] -= part
                         pos['half_sold'] = True
@@ -750,7 +805,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                     continue
                 positions[j] = {'shares': shares, 'entry_px': px, 'entry_i': i,
                                 'entry_date': cal[i], 'exit_reason': None,
-                                'shares0': shares, 'leg': 1}
+                                'shares0': shares, 'leg': 1,
+                                'bet_eur': outflow, 'bet_frac': frac}
                 cash -= outflow
 
         # 3c. §17 pyramid: a name we already hold fires a fresh trigger.
@@ -792,6 +848,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['shares'] = tot
                 pos['shares0'] = tot
                 pos['leg'] = leg + 1
+                pos['bet_eur'] = pos.get('bet_eur', 0.0) + outflow
+                pos['bet_frac'] = pos.get('bet_frac', 0.0) + ladder[leg]
                 cash -= outflow
 
         orders = {j: day for j, day in orders.items() if day > i}
@@ -896,6 +954,7 @@ def main() -> None:
               'rank' if '--code33rank' in sys.argv else '')   # §15
     group = ('gate' if '--group' in sys.argv else
              'rank' if '--grouprank' in sys.argv else '')     # §16
+    marco = '--marco' in sys.argv   # gate on the marco-hui-95 VCP too
     v7 = '--v7' in sys.argv
     v6 = '--v6' in sys.argv
     v9 = '--v9' in sys.argv          # §13 momentum-conditioned selling
@@ -936,7 +995,7 @@ def main() -> None:
             cfg['minervini_trading'][k] = v
     panel = build_panel(cfg, rebuild='--rebuild' in sys.argv, fund=fund,
                         beat=beat, v3=v3 and not v4, v4=v4 and not v5, v5=v5,
-                        wide=wide, code33=code33, group=group)
+                        wide=wide, code33=code33, group=group, marco=marco)
     cal = panel['calendar']
 
     print(f'panel: {len(panel["tickers"])} tickers, '
@@ -961,7 +1020,7 @@ def main() -> None:
     tag = (('v11' if v11 else 'v10' if v10 else 'v9' if v9 else 'v7' if v7 else ('v5_' + ab) if ab else 'v6' if v6 else 'v5' if v5 else 'v4' if v4 else 'v3' if v3 else 'v2') + ('_moc' if moc else '')
            + ('_fund' if fund else '') + ('_beat' if beat else '')
            + ('_wide' if wide else '') + (f'_c33{code33}' if code33 else '')
-           + (f'_grp{group}' if group else ''))
+           + (f'_grp{group}' if group else '') + ('_marco' if marco else ''))
     if moc:
         print('ENTRY: market-on-close (third fill convention) — '
               f'{int(panel["trigger_moc"].sum())} entries available')

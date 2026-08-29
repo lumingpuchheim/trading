@@ -19,7 +19,29 @@ volume, config `data:`) is far stricter and is what actually binds.
 Survivorship bias, and it is WORSE here than for the S&P 1500: this is a
 snapshot of what is listed TODAY. Small caps that failed are absent, and
 small caps fail more often than index members. See LIMITATIONS.md.
-Prices are split/dividend adjusted (yfinance auto_adjust).
+
+PRICES ARE NOT DIVIDEND ADJUSTED (changed 2026-08-29, user decision).
+
+`auto_adjust=False, actions=True`. Every stored close is the close that
+was printed, and `dividends` / `splits` sit in the same file so any
+adjustment can be DERIVED and re-checked. The previous convention
+(`auto_adjust=True`) was rejected for a reason that is not a matter of
+taste: Yahoo recomputes the back-adjustment at download time, so every new
+dividend silently rescales the whole history. A 2015 close depended on
+payments made in 2016-2026, the file changed each time it was re-fetched,
+and no result computed from it could be reproduced or audited.
+
+What this does NOT give you: Yahoo's OHLC is still SPLIT adjusted and
+there is no way to obtain truly raw prices from this source. That is a
+smaller problem -- a split ratio is a discrete public fact, it is stored
+in the `splits` column here, and the adjustment is exactly invertible.
+A dividend adjustment instead bakes in somebody else's assumption about
+reinvestment, which is what could not be audited.
+
+Consequence: files written under the old convention are NOT comparable to
+these. Delete data/ohlcv/ before re-running, delete every
+data/minervini_panel_*.npz built from it, and treat every number recorded
+against the old data as belonging to a different dataset.
 """
 
 import io
@@ -97,8 +119,61 @@ def fetch_wide_universe(have: set[str]) -> list[str]:
     return sorted(set(d['sym']) - {''})
 
 
+CONVENTION = {'auto_adjust': False, 'actions': True,
+              'dividend_adjusted': False, 'split_adjusted_by_source': True}
+
+
+def check_convention(ohlcv_dir: Path, force: bool = False) -> None:
+    """Refuse to mix adjusted and unadjusted files in one directory.
+
+    Silently blending the two conventions is the failure this whole change
+    exists to prevent: the files look identical and every downstream number
+    is quietly wrong. A directory holding parquet files with no marker was
+    written under the OLD (dividend-adjusted) convention.
+    """
+    import json
+    marker = ohlcv_dir / '_convention.json'
+    existing = list(ohlcv_dir.glob('*.parquet'))
+    if marker.exists():
+        old = json.loads(marker.read_text())
+        if old.get('dividend_adjusted') == CONVENTION['dividend_adjusted']:
+            return
+        why = f'marker says dividend_adjusted={old.get("dividend_adjusted")}'
+    elif existing:
+        why = (f'{len(existing)} parquet files with no marker -- written '
+               f'under the old auto_adjust=True convention')
+    else:
+        marker.write_text(json.dumps(CONVENTION, indent=2))
+        return
+    if not force:
+        sys.exit(
+            f'\nREFUSING TO WRITE into {ohlcv_dir}: {why}.\n'
+            f'These prices are NOT dividend adjusted; those are. Mixing them\n'
+            f'silently corrupts every downstream number.\n\n'
+            f'  1. delete {ohlcv_dir}\n'
+            f'  2. delete data/minervini_panel_*.npz (all caches built on it)\n'
+            f'  3. re-run this script\n\n'
+            f'Pass --force only if you have already done 1 and 2.\n')
+    marker.write_text(json.dumps(CONVENTION, indent=2))
+
+
 def clean_ohlcv(raw: pd.DataFrame) -> pd.DataFrame | None:
-    df = raw.rename(columns=str.lower)[['open', 'high', 'low', 'close', 'volume']]
+    """OHLCV as traded, with the corporate actions stored beside it.
+
+    `adj close` is deliberately DISCARDED rather than kept: a column that
+    exists gets used by accident, and the point is that no price in this
+    file has been rescaled by anybody's reinvestment assumption. The
+    `dividends` and `splits` columns put every action on the record, so a
+    total-return series can be DERIVED and checked. Deriving is reversible
+    and auditable; arriving pre-adjusted is neither.
+    """
+    df = raw.rename(columns=str.lower)
+    keep = ['open', 'high', 'low', 'close', 'volume']
+    for src, dst in (('dividends', 'dividends'), ('stock splits', 'splits')):
+        if src in df.columns:
+            df[dst] = df[src].fillna(0.0)
+            keep.append(dst)
+    df = df[keep]
     df = df.dropna(subset=['open', 'high', 'low', 'close'])
     df = df[df['close'] > 0]
     if len(df) < MIN_ROWS:
@@ -120,6 +195,7 @@ def main() -> None:
     ohlcv_dir = data_dir / ('ohlcv_wide' if wide else 'ohlcv')
     ohlcv_dir.mkdir(parents=True, exist_ok=True)
     start = cfg['data']['start_date']
+    check_convention(ohlcv_dir, force='--force' in sys.argv)
 
     if wide:
         have = {p.stem for p in (data_dir / 'ohlcv').glob('*.parquet')}
@@ -143,8 +219,8 @@ def main() -> None:
         print(f'{len(todo)} still to fetch')
     for i in range(0, len(todo), BATCH_SIZE):
         batch = todo[i:i + BATCH_SIZE]
-        raw = yf.download(batch, start=start, auto_adjust=True, group_by='ticker',
-                          progress=False, threads=True)
+        raw = yf.download(batch, start=start, auto_adjust=False, actions=True,
+                          group_by='ticker', progress=False, threads=True)
         for t in batch:
             try:
                 sub = raw[t] if len(batch) > 1 else raw

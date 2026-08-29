@@ -1,10 +1,13 @@
 """Steady Giants phase 2: monthly qualification table per STEADY_GIANTS_SPEC.
 
 For every (ticker, monthly decision date): liquidity, trailing 3y vol,
-5y log-price regression slope/R2 (on total-return prices), dividend
-record, trailing-12m reported EPS, P/E on RECONSTRUCTED NOMINAL prices
-(adjusted prices carry a dividend-adjustment drift that would corrupt
-the own-history ceiling), and expanding own-history P/E percentiles.
+5y log-price regression slope/R2 (on a DERIVED total-return series),
+dividend record, trailing-12m reported EPS, P/E on the nominal close,
+and expanding own-history P/E percentiles.
+
+Since 2026-08-29 the stored prices are unadjusted (download_data.py), so
+the close IS the nominal price and the total-return series is built here
+out of the ex-date cash -- the reverse of what this file used to do.
 
 Output: data/giants_monthly.parquet.  Run: python giants_features.py
 """
@@ -22,13 +25,29 @@ CUT = 0.8           # >20% YoY drop = cut
 MIN_PE_MONTHS = 20  # min own-history months before percentiles exist
 
 
-def nominal_prices(adj: np.ndarray, dates, divs: pd.DataFrame | None) -> np.ndarray:
-    """Invert yfinance's dividend back-adjustment: walk ex-dates from the
-    most recent backwards, accumulating the adjustment factor. Nominal
-    price = adjusted / factor; factor == 1 after the last ex-date."""
-    nominal = adj.copy()
+def total_return_prices(nominal: np.ndarray, dates,
+                        divs: pd.DataFrame | None) -> np.ndarray:
+    """Derive a total-return series from NOMINAL closes plus ex-date cash.
+
+    Replaces `nominal_prices`, which existed only to INVERT yfinance's
+    dividend back-adjustment. Since 2026-08-29 the stored prices are not
+    adjusted at all (`download_data.py`, `auto_adjust=False`), so the
+    stored close IS the nominal price and there is nothing left to undo.
+    What is needed now is the opposite direction: build the total-return
+    series ourselves, out of inputs that can be audited.
+
+    Same walk, opposite operation. Going backwards from the most recent
+    ex-date, accumulate f *= (1 - amount / price_on_that_ex_date) and scale
+    every earlier price by f. Ratios of the result are total returns, and
+    the factor is 1 after the last ex-date so recent prices are untouched.
+
+    Deriving it here rather than accepting it pre-applied is the point:
+    the inputs are a price and a list of payments, both checkable, and the
+    output does not silently change when the vendor re-runs an adjustment.
+    """
+    tr = nominal.copy()
     if divs is None or not len(divs):
-        return nominal
+        return tr
     pos = pd.Series(np.arange(len(dates)), index=dates)
     f = 1.0
     for r in divs.sort_values('date', ascending=False).itertuples():
@@ -36,12 +55,12 @@ def nominal_prices(adj: np.ndarray, dates, divs: pd.DataFrame | None) -> np.ndar
         if loc <= 0 or loc >= len(dates):
             continue
         i = int(pos.iloc[loc])
-        p_ex = adj[i] / f if np.isfinite(adj[i]) else np.nan
+        p_ex = nominal[i]
         if not (np.isfinite(p_ex) and p_ex > r.amount > 0):
             continue
         f *= 1.0 - r.amount / p_ex
-        nominal[:i] = adj[:i] / f
-    return nominal
+        tr[:i] = nominal[:i] * f
+    return tr
 
 
 def slope_r2(y: np.ndarray) -> tuple[float, float]:
@@ -95,11 +114,19 @@ def main() -> None:
         if t == d['benchmark']:
             continue
         df = pd.read_parquet(path).reindex(cal)
-        close = df['close'].to_numpy()
+        close = df['close'].to_numpy()          # NOMINAL, as traded
         dollar = (df['close'] * df['volume']).rolling(
             d['dollar_volume_window']).mean().to_numpy()
-        ret = pd.Series(close).ffill().pct_change().to_numpy()
-        nom = nominal_prices(close, cal, div_by.get(t))
+        # Ex-dates preferred from the price file itself: same download,
+        # same rows, nothing to reconcile between two sources.
+        if 'dividends' in df.columns:
+            dd = df['dividends'].fillna(0.0)
+            dd = dd[dd > 0]
+            divs = pd.DataFrame({'date': dd.index, 'amount': dd.to_numpy()})
+        else:
+            divs = div_by.get(t)
+        tr = total_return_prices(close, cal, divs)
+        ret = pd.Series(tr).ffill().pct_change().to_numpy()   # total return
 
         dv = div_by.get(t)
         ysum = dv.groupby(dv['date'].dt.year)['amount'].sum() \
@@ -115,7 +142,7 @@ def main() -> None:
                     and np.isfinite(dollar[i])
                     and dollar[i] > d['min_dollar_volume']):
                 continue
-            w = close[i - REG_WIN + 1:i + 1]
+            w = tr[i - REG_WIN + 1:i + 1]       # slope on the total return
             r3 = ret[i - VOL_WIN + 1:i + 1]
             if not (np.all(np.isfinite(w)) and np.all(np.isfinite(r3[1:]))):
                 continue
@@ -123,8 +150,9 @@ def main() -> None:
             slope, r2 = slope_r2(np.log(w))
             paid, cut = div_record(ysum, cal[i].year)
             ttm = ttm_eps(eps_dates, eps_vals, cal[i])
-            pe = nom[i] / ttm if np.isfinite(ttm) and ttm > 0 \
-                and np.isfinite(nom[i]) else np.nan
+            # P/E on the nominal price, which is now simply the close
+            pe = close[i] / ttm if np.isfinite(ttm) and ttm > 0 \
+                and np.isfinite(close[i]) else np.nan
 
             rows.append({'ticker': t, 'date': cal[i], 'i': int(i),
                          'vol': vol, 'slope': slope, 'r2': float(r2),
