@@ -31,8 +31,7 @@ import pandas as pd
 from lppl_backtest import ROOT, load_config
 from minervini_backtest import apply_v5, build_panel
 
-TRADES = [ROOT / 'results' / 'minervini_v5_e3_moc_dev_trades.csv',
-          ROOT / 'results' / 'minervini_v5_e3_moc_test_trades.csv']
+TRADES = [ROOT / 'results' / 'minervini_v5_e3_moc_trades.csv']
 
 
 def main() -> None:

@@ -43,7 +43,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import roc_auc_score
 
-from bets_common import (AUX_Q, DEV, DEV_END, folds, jackpot_loss, line,
+from bets_common import (AUX_Q, DEV, folds, jackpot_loss, line,
                            load, report)
 
 
@@ -261,17 +261,20 @@ def main() -> None:
     gamma_arg = opt('--gamma', 'auto')     # 'auto' derives it per fold
     lossmode = opt('--loss', 'class')      # 'value' = symmetric log error
     seeds = list(range(opt('--seeds', 3, int)))
-    embargo = opt('--embargo', 400, int)
-    thr = np.quantile(y[date <= DEV_END], AUX_Q)
-    aux = (y >= thr).astype(np.float32)
+    # no embargo constant: a training bet is kept if it CLOSED before
+    # the validation block opened (bets_common._purge)
+    thr = float(np.quantile(y, AUX_Q))    # for the banner only; the label
+    aux = np.zeros(len(y), np.float32)    # is cut per fold, in the loop
     npar = K * len(chans) * L + K + 1
     print(f'shapelets: {K} x {L} days x {len(chans)} channel(s) '
           f'{[names[c] for c in chans]} = {npar:,} parameters, '
           f'temp {temp}, loss {lossmode}, gamma {gamma_arg}, '
-          f'label y>={thr:.4f}', flush=True)
+          f'label ~y>={thr:.4f}, cut per fold', flush=True)
 
     rows, last = [], None
-    for tr, va, v0, v1 in folds(date, opt('--folds', 4, int), embargo):
+    for tr, va, v0, v1 in folds(date, opt('--folds', 4, int), d['exit']):
+        # the label, cut at AUX_Q of THIS fold's training rows
+        aux = (y >= float(np.quantile(y[tr], AUX_Q))).astype(np.float32)
         mu = x[tr].mean(axis=(0, 2), keepdims=True)
         sd = x[tr].std(axis=(0, 2), keepdims=True) + 1e-6
         t = lambda m: torch.from_numpy((x[m] - mu) / sd).to(DEV)

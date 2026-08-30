@@ -219,7 +219,11 @@ trading:                          # section 6 — FIXED, never tuned
 
 backtest:                        # section 7
   start: "2007-01-01"
-  dev_end: "2018-12-31"          # development period: 2007 - 2018
-  test_start: "2019-01-01"       # test period: 2019 - today
+  # LEGACY ONLY. The Minervini path has no development / test split --
+  # see EVALUATION_SPEC.md. These two keys are read by the older system
+  # (backtest.py, lppl_*.py, learn.py) and by nothing else; the same goes
+  # for learning.penalty_folds above. Do not reintroduce them anywhere.
+  dev_end: "2018-12-31"
+  test_start: "2019-01-01"
   random_seed: 42                # for template and random strategies
   results_dir: "results"

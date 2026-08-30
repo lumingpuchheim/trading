@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from geostats import geo_per_bet
 from lppl_backtest import ROOT, load_config, metrics
 from minervini_backtest import apply_v5, build_panel, pool_by_day, simulate
 
@@ -52,15 +53,14 @@ def main() -> None:
     bt = base['backtest']
 
     periods = {}
-    for name, a, b in [('dev', bt['start'], bt['dev_end']),
-                       ('test', bt['test_start'], str(cal[-1].date()))]:
+    for name, a, b in [('full', bt['start'], str(cal[-1].date()))]:
         j0 = int(cal.searchsorted(pd.Timestamp(a)))
         j1 = int(cal.searchsorted(pd.Timestamp(b), side='right')) - 1
         periods[name] = (j0, j1)
 
     curves: dict = {}
     print(f'{"config":14s} {"period":6s} {"total":>9s} {"ann":>7s} '
-          f'{"maxDD":>8s} {"trades":>7s} {"geo/trade":>10s} {"invested":>9s}')
+          f'{"maxDD":>8s} {"trades":>7s} {"geo/bet":>10s} {"invested":>9s}')
     for n_slots, wt in specs:
         cfg = apply_v5(load_config())
         cfg['minervini_trading']['reentry_fast'] = True
@@ -72,8 +72,7 @@ def main() -> None:
                                        pool_days=pool)
             t = pd.DataFrame(tr_)
             m = metrics(t, eq, inv)
-            r = t['ret_net'].to_numpy() if len(t) else np.array([0.0])
-            geo = float(np.exp(np.log1p(r).mean()) - 1)
+            geo = geo_per_bet(t) - 1.0        # one vote per position
             curves[(tag, pname)] = eq
             print(f'{tag:14s} {pname:6s} {m["total_return"]:+8.1%} '
                   f'{m["ann_return"]:+6.1%} {m["max_drawdown"]:+7.1%} '

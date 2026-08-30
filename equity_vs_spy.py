@@ -31,9 +31,10 @@ import pandas as pd
 
 from filters import ShapeletFilter
 from giants_features import total_return_prices
+from geostats import geo_per_bet
 from lppl_backtest import ROOT, load_config, metrics
 from minervini_backtest import apply_v5, build_panel, pool_by_day, simulate
-from bets_common import AUX_Q, DEV_END, load
+from bets_common import AUX_Q, LOOKBACK_YEARS, load, warmup_rows, year_blocks
 from minervini_rocket import ALPHAS, fit_biases, kernels, transform
 from sklearn.linear_model import RidgeClassifierCV
 
@@ -78,17 +79,16 @@ def main() -> None:
         tj = mm['ticker_j'].to_numpy(np.int64)
         dt = mm['entry_date'].to_numpy().astype('datetime64[D]')
         yr = mm['entry_date'].dt.year.to_numpy()
-        thr = float(np.quantile(yy[dt <= DEV_END], AUX_Q))
-        aux = (yy >= thr).astype(np.int8)
+        # the label is cut per fold, inside the loop below, from that
+        # fold's own training rows (EVALUATION_SPEC.md rule 1)
+        aux = np.zeros(len(yy), np.int8)
         years = sorted(set(yr[(ei >= j0) & (ei <= j1)]))
         keep = opt('--keep', 0.5, float)
 
         W = kernels(); dil = [1, 2, 4, 8, 16]
         qs = np.linspace(0.0, 1.0, 4)[1:-1].astype(np.float32)
         rg = np.random.default_rng(0)
-        sd_rows = rg.choice(np.flatnonzero(dt <= DEV_END),
-                            size=min(2000, int((dt <= DEV_END).sum())),
-                            replace=False)
+        sd_rows = warmup_rows(dt, 2000, rg)
         feats = transform(xw, W, dil, fit_biases(xw, W, dil, 2, sd_rows, qs))
 
         only = opt('--only', '')
@@ -96,22 +96,24 @@ def main() -> None:
         for kind in kinds:
             score = np.full(len(aux), np.nan)
             cut = np.full(len(aux), np.inf)
-            for Y in years:
-                trm = dt < np.datetime64(f'{Y}-01-01') - np.timedelta64(400, 'D')
-                ev = yr == Y
-                if trm.sum() < 2000 or not ev.any() or len(set(aux[trm])) < 2:
+            for Y, trm, ev in year_blocks(
+                    dt, exits, lookback_years=LOOKBACK_YEARS):
+                thr = float(np.quantile(yy[trm], AUX_Q))
+                a_tr = (yy[trm] >= thr).astype(np.int8)
+                if len(set(a_tr.tolist())) < 2:
                     continue
+                aux[ev] = (yy[ev] >= thr).astype(np.int8)
                 if kind == 'rocket':
                     mu, sdv = feats[trm].mean(0), feats[trm].std(0) + 1e-8
                     clf = RidgeClassifierCV(alphas=ALPHAS,
                                             class_weight='balanced')
-                    clf.fit((feats[trm] - mu) / sdv, aux[trm])
+                    clf.fit((feats[trm] - mu) / sdv, a_tr)
                     score[ev] = clf.decision_function((feats[ev] - mu) / sdv)
                     s_tr = clf.decision_function((feats[trm] - mu) / sdv)
                 else:
                     f = ShapeletFilter(gamma=0.0, seeds=3, epochs=40,
                                        loss='class')
-                    f.fit(xw[trm], yy[trm], aux[trm].astype(np.float32),
+                    f.fit(xw[trm], yy[trm], a_tr.astype(np.float32),
                           keep=keep)
                     score[ev] = f.score(xw[ev])
                     s_tr = f.score(xw[trm])
@@ -127,11 +129,10 @@ def main() -> None:
     tr_, eq, inv, _ = simulate(panel, cfg, (j0, j1), moc=True, pool_days=pool)
     t = pd.DataFrame(tr_)
     m = metrics(t, eq, inv)
-    r = t['ret_net'].to_numpy()
-    geo = float(np.exp(np.log1p(r).mean()) - 1)
+    geo = geo_per_bet(t) - 1.0            # one vote per position, not per row
     print(f'v5r  total {m["total_return"]:+.1%}  ann {m["ann_return"]:+.2%}  '
           f'maxDD {m["max_drawdown"]:+.1%}  trades {m["n_trades"]}  '
-          f'geo/trade {geo:+.2%}  invested {inv:.1%}')
+          f'geo/bet {geo:+.2%}  invested {inv:.1%}')
 
     bench = cfg['data']['benchmark']
     spy = pd.read_parquet(ROOT / cfg['data']['cache_dir'] / 'ohlcv'
@@ -154,10 +155,8 @@ def main() -> None:
               else 'Shapelet g=0 k=0.50')
         curves[nm] = e2.reindex(idx).ffill()
         d2 = pd.DataFrame(t2)
-        rr2 = d2['ret_net'].to_numpy() if len(d2) else np.array([0.0])
         print(f'{nm:28s} trades {len(d2):5d}  invested {i2:.1%}  '
-              f'geo/trade {np.exp(np.log1p(rr2).mean()) - 1:+.2%}  '
-              f'mean y {1 + rr2.mean():.4f}')
+              f'geo/bet {geo_per_bet(d2) - 1:+.2%}')
     curves.update({
         f'{bench} total return': pd.Series(tot[seg] / tot[j0] * 100_000, idx),
         f'{bench} price only': pd.Series(px[seg] / px[j0] * 100_000, idx),

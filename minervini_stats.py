@@ -1,6 +1,6 @@
 """THE per-bet statistics: how much is left of one euro, per position.
 
-Input: results/minervini_{TAG}_{dev,test}_trades.csv
+Input: results/minervini_{TAG}_trades.csv
 Columns: ticker, entry_date, exit_date, entry_px, exit_px, days_held,
          ret_net, exit_reason
 
@@ -22,9 +22,13 @@ only half the money was riding, and double-counts every winner because
 losers never split. The euro left per euro committed is
 
     multiple = SUM over legs of  weight_leg x (1 + ret_net_leg)
+               + dividends collected / what the position cost
 
 with weight 0.5 for each leg of a split position and 1.0 for an unsplit
-one. That is the number this file reports.
+one. Prices stopped being dividend adjusted on 2026-08-29, so the second
+term is the only place a holder's dividends survive. That is the number
+this file reports, and it comes from geostats.bet_multiples -- the same
+function every other per-bet figure in the repo goes through.
 
 (Approximation, stated: the simulator sells floor(shares/2), so an odd
 share count leaves the rider marginally more than half. The error is
@@ -54,29 +58,57 @@ import sys
 import numpy as np
 import pandas as pd
 
+from geostats import bet_multiples, geo_mean_per_euro
+
 TAG = sys.argv[1] if len(sys.argv) > 1 else 'v5_moc'
 
-for period, years in (('dev', 12.0), ('test', 7.65)):
-    t = pd.read_csv(f'results/minervini_{TAG}_{period}_trades.csv')
+# One continuous record, start to today. The development / test split
+# was removed 2026-08-29: nothing here is fitted, so it only ever cut one
+# result into two halves that were then compared with each other.
+for _ in (0,):
+    t = pd.read_csv(f'results/minervini_{TAG}_trades.csv')
+    span = pd.to_datetime(t['exit_date']).max() - pd.to_datetime(
+        t['entry_date']).min()
+    years = span.days / 365.25
     t['pos_id'] = t['ticker'] + '|' + t['entry_date'].astype(str)
     t['is_split'] = t['pos_id'].duplicated(keep=False)
-    if 'weight' not in t.columns:      # runs written before 2026-08-28
-        t['weight'] = np.where(t['is_split'], 0.5, 1.0)
 
-    # one euro in, this many euros out, per position
-    mult = t.groupby('pos_id').apply(
-        lambda d: float((d['weight'] * (1.0 + d['ret_net'])).sum()),
-        include_groups=False)
-    split = t.groupby('pos_id')['is_split'].first()
+    # one euro in, this many euros out, per position. The collapse lives
+    # in geostats.bet_multiples so that this file, filter_backtest.py,
+    # equity_vs_spy.py, slot_sweep.py and minervini_backtest.py cannot
+    # drift into reporting different per-bet numbers again.
+    mult = bet_multiples(t)
+    split = t.groupby('pos_id')['is_split'].first().reindex(mult.index)
 
-    geo = float(np.exp(np.mean(np.log(mult))))
-    print(f'================ {TAG}  {period}  ({years} years) ================')
+    geo = geo_mean_per_euro(mult)
+
+    # Size-weighted geometric means (geostats.py). The unweighted one
+    # gives a 5% pilot that never added the same vote as a completed 10%
+    # ladder; these weight each bet by the money in it. Two weightings,
+    # because they answer different questions: by EUROS lets late bets
+    # dominate once equity has compounded, by FRACTION OF EQUITY does not.
+    def wgeo(w: pd.Series) -> float:
+        w = w.reindex(mult.index)
+        return geo_mean_per_euro(mult.to_numpy(), w.to_numpy())
+
+    eur = (t.groupby('pos_id')['bet_eur'].first()
+           if 'bet_eur' in t.columns else pd.Series(dtype=float))
+    frac = (t.groupby('pos_id')['bet_frac'].first()
+            if 'bet_frac' in t.columns else pd.Series(dtype=float))
+    print(f'================ {TAG}  ({years:.1f} years) ================')
     print(f'rows in file          : {len(t)}')
     print(f'positions (bets)      : {len(mult)}   '
           f'of which split in two: {int(split.sum())}')
     print()
     print('ONE EURO COMMITTED PER POSITION, EUROS RETURNED:')
-    print(f'   GEOMETRIC mean  : {geo:.4f}   ({geo - 1:+.2%} per bet)')
+    print(f'   GEOMETRIC mean  : {geo:.4f}   ({geo - 1:+.2%} per bet)'
+          '   [one vote per bet]')
+    if len(frac) and frac.notna().any():
+        g = wgeo(frac)
+        print(f'   weighted by % of equity staked : {g:.4f}   ({g - 1:+.2%})')
+    if len(eur) and eur.notna().any():
+        g = wgeo(eur)
+        print(f'   weighted by euros staked       : {g:.4f}   ({g - 1:+.2%})')
     print(f'   median          : {mult.median():.4f}   '
           f'({mult.median() - 1:+.2%})')
     print(f'   worst / best    : {mult.min():.4f} / {mult.max():.4f}')

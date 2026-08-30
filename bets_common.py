@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from geostats import geo_mean_per_euro
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
@@ -27,10 +28,117 @@ except ImportError:                   # standalone (e.g. on a compute box)
 
 WINDOWS = ROOT / 'results' / 'minervini_bets_v5r_windows.npz'
 DEV = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-DEV_END = np.datetime64('2018-12-31')
 TOP_FRAC = 0.10          # the decile a filter would actually bet
 TAIL_Q = 0.99            # "jackpot" for the retention check = top 1% of y
-AUX_Q = 0.80             # the trained label: top 20% of y (y >= ~1.049)
+AUX_Q = 0.80             # the trained label: top 20% of y
+LOOKBACK_YEARS = None    # None = expanding: every year of history so far
+EMBARGO_DAYS = 400       # blanket purge, the default: keep a training bet
+LEGACY_EMBARGO = EMBARGO_DAYS         # only if it was ENTERED this long
+                                      # before the block. Per-row purging
+                                      # on the exit date is available and
+                                      # needs no constant -- pass
+                                      # embargo_days=None with exits -- but
+                                      # the default is the blanket rule, by
+                                      # the operator's decision, so results
+                                      # stay comparable with everything
+                                      # recorded before 2026-08-29.
+MIN_TRAIN = 2000         # a block with less history than this is not scored
+
+# There is NO development period and no test period -- EVALUATION_SPEC.md.
+# A model may only see data from before the block it scores, and that is
+# expressed as a rolling schedule over the whole record, never as a
+# calendar constant. `DEV_END` was deleted on 2026-08-29.
+
+
+def _purge(entries, exits, opens, embargo_days=None):
+    """Training rows a block is allowed to see.
+
+    A bet's label is not known when it is entered -- it is made of prices
+    over the whole holding period -- so a bet entered before the block can
+    still carry the block's own outcomes.
+
+    DEFAULT, per row: keep a bet only if it had CLOSED before the block
+    opened. No constant, nothing to tune, and it cannot go stale.
+
+    `embargo_days` switches to the pre-2026-08-29 BLANKET rule: keep a bet
+    only if it was ENTERED that many days before the block. It is kept so
+    the old schedule can be reproduced and compared, and for callers whose
+    windows carry no exit dates. It is not the default and should not
+    become one: the buffer has to equal the longest hold anyone has seen
+    (400 days here), which pushes every block's training data more than a
+    year into the past to cover the 0.1% of bets that run that long, and
+    it has to be raised again the first time a longer trade appears.
+    """
+    if embargo_days is not None:
+        return entries < opens - np.timedelta64(int(embargo_days), 'D')
+    return exits < opens
+
+
+def year_blocks(dates: np.ndarray, exits: np.ndarray | None,
+                min_train: int = MIN_TRAIN,
+                lookback_years=LOOKBACK_YEARS,
+                embargo_days=EMBARGO_DAYS) -> list:
+    """The walk-forward schedule every fitted thing in this repo shares.
+
+    Returns (year, train_mask, block_mask) per calendar year of the record
+    that has enough history behind it. Training rows are purged per row by
+    exit date (see `_purge`), so a block never learns from a bet that was
+    still open while it ran.
+
+    LOOKBACK -- `lookback_years` keeps only the last N years of whatever
+    survived the purge; None trains on everything so far. Expanding makes
+    the 2026 model see nine times the rows the 2012 model saw, so a change
+    in measured skill cannot be told apart from the training set growing;
+    a fixed window holds every block to the same evidence. It is also what
+    decides cost: expanding is quadratic in years across the whole
+    walk-forward, a window is linear.
+
+    The window is measured back from the NEWEST usable bet, so the purge
+    shifts nothing -- with per-row purging the freshest training bet sits
+    about three weeks before the block instead of thirteen months.
+    """
+    d = np.asarray(dates).astype('datetime64[D]')
+    if exits is None and embargo_days is None:
+        raise ValueError(
+            'year_blocks needs exit dates to purge overlapping labels; '
+            'rebuild the windows with:  python minervini_bets.py '
+            '--windows 252  (or pass embargo_days for the old blanket '
+            'rule)')
+    ex = None if exits is None else np.asarray(exits).astype('datetime64[D]')
+    yr = pd.to_datetime(d).year.to_numpy()
+    span = None if not lookback_years else np.timedelta64(
+        int(round(float(lookback_years) * 365)), 'D')
+    out = []
+    for Y in sorted(set(int(v) for v in yr)):
+        block = yr == Y
+        tr = _purge(d, ex, np.datetime64(str(Y) + '-01-01'), embargo_days)
+        if span is not None and tr.any():
+            tr = tr & (d >= d[tr].max() - span)
+        if tr.sum() >= min_train and block.any():
+            out.append((Y, tr, block))
+    return out
+
+
+def label_from(y: np.ndarray, train: np.ndarray) -> np.ndarray:
+    """The jackpot label, cut at AUX_Q of the TRAINING rows alone.
+
+    Cutting it once on a fixed slice of history -- what `DEV_END` used to
+    do -- measures a 2026 fold against a yardstick made in 2018."""
+    return (y >= float(np.quantile(y[train], AUX_Q))).astype(np.int8)
+
+
+def warmup_rows(dates: np.ndarray, n: int, rng) -> np.ndarray:
+    """Rows for fitting the MiniRocket bias quantiles: a sample of the
+    EARLIEST bets in the record.
+
+    The biases are quantiles of random convolution outputs and carry no
+    label information, but they are still fitted from data, so they have
+    to come from before every block that will be scored. Taking them from
+    the start of the record keeps that true for every fold without
+    re-running the transform once per fold."""
+    order = np.argsort(np.asarray(dates).astype('datetime64[D]'), kind='stable')
+    pool = order[:max(n * 3, n)]
+    return rng.choice(pool, size=min(n, len(pool)), replace=False)
 
 
 def jackpot_loss(logit, a, y, gamma: float, rho: float):
@@ -57,34 +165,48 @@ def load(path=None) -> dict:
     d = {k: z[k] for k in z.files}
     d['x'] = d['x'].astype(np.float32)      # a shipped file may be float16
     d['date'] = d['entry_date'].astype('datetime64[D]')
+    # exit dates are what purges overlapping labels. Windows written
+    # before 2026-08-29 have none, and year_blocks says so rather than
+    # quietly falling back to a constant that would need re-tuning.
+    d['exit'] = (d['exit_date'].astype('datetime64[D]')
+                 if 'exit_date' in d else None)
     print(f'{len(d["y"]):,} bets, windows {d["x"].shape}, device {DEV}, '
           f'channels {[str(c) for c in d["channels"]]}')
     return d
 
 
-def folds(dates: np.ndarray, k: int, embargo_days: int) -> list:
-    """Expanding-window walk-forward inside dev, each validation block
-    purged from the training set by `embargo_days` CALENDAR days -- longer
-    than the ledger's longest hold, so no training bet's label can resolve
-    inside the block it is scored on."""
-    dev = dates[dates <= DEV_END]
-    edges = pd.to_datetime(pd.Series(dev)).quantile(
+def folds(dates: np.ndarray, k: int, exits: np.ndarray | None,
+          embargo_days=None) -> list:
+    """Expanding-window walk-forward over the WHOLE record. Training
+    rows are purged per row by exit date, so no training bet's label can
+    resolve inside the block it is scored on (see `_purge`).
+
+    The last block runs to the end of the record: no tail is reserved,
+    and every block is scored by a fit that ended before it."""
+    ex = None if exits is None else np.asarray(exits).astype('datetime64[D]')
+    edges = pd.to_datetime(pd.Series(dates)).quantile(
         np.linspace(0.4, 1.0, k + 1)).to_numpy().astype('datetime64[D]')
     out = []
     for i in range(k):
         v0, v1 = edges[i], edges[i + 1]
-        tr = (dates < v0 - np.timedelta64(embargo_days, 'D'))
+        tr = _purge(dates, ex, v0, embargo_days)
         va = (dates >= v0) & (dates < v1) if i < k - 1 else \
-             (dates >= v0) & (dates <= DEV_END)
+             (dates >= v0)
         if tr.sum() > 500 and va.sum() > 200:
             out.append((tr, va, str(v0), str(v1)))
     return out
 
 
 def report(score: np.ndarray, y: np.ndarray) -> dict:
-    """What decides whether a filter is worth anything: the mean of what it
-    would BUY, and whether it kept the jackpots. Read `keep1%` -- a model
-    can lift the selected mean while quietly dropping the tail."""
+    """What decides whether a filter is worth anything: what a euro
+    becomes on the bets it would BUY, and whether it kept the jackpots.
+    Read `keep1%` -- a model can lift the selected mean while quietly
+    dropping the tail.
+
+    GEOMETRIC (arithmetic removed 2026-08-29). `y` is one multiple per
+    bet, and multiples are averaged by multiplying: a filter that raises
+    the arithmetic mean by catching one 6x while losing on the rest has
+    not found a book anyone can hold."""
     n = len(y)
     k = max(1, int(round(n * TOP_FRAC)))
     sel = np.argsort(-score)[:k]
@@ -94,8 +216,9 @@ def report(score: np.ndarray, y: np.ndarray) -> dict:
         rho = spearmanr(score, y).statistic
     lab = (y >= np.quantile(y, AUX_Q)).astype(int)
     auc = roc_auc_score(lab, score) if 0 < lab.sum() < n else np.nan
-    return {'n': n, 'pool': y.mean(), 'top': y[sel].mean(),
-            'lift': y[sel].mean() - y.mean(), 'keep1%': keep,
+    pool, top = geo_mean_per_euro(y), geo_mean_per_euro(y[sel])
+    return {'n': n, 'pool': pool, 'top': top,
+            'lift': top - pool, 'keep1%': keep,
             'rho': rho, 'auc': auc}
 
 

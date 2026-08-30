@@ -28,12 +28,13 @@ import sys
 
 import numpy as np
 import pandas as pd
+from geostats import geo_mean_per_euro
 from scipy.stats import spearmanr
 from sklearn.linear_model import RidgeClassifierCV
 
 from filters import ShapeletFilter
 from lppl_backtest import ROOT
-from bets_common import AUX_Q, DEV_END, load
+from bets_common import AUX_Q, LOOKBACK_YEARS, load, warmup_rows, year_blocks
 from minervini_rocket import ALPHAS, fit_biases, kernels, transform
 
 LEDGER = ROOT / 'results' / 'minervini_bets_v5r.csv'
@@ -46,7 +47,7 @@ def main() -> None:
         return cast(av[av.index(flag) + 1]) if flag in av else default
 
     keep = opt('--keep', 0.5, float)
-    embargo = opt('--embargo', 400, int)
+    lookback = opt('--lookback', LOOKBACK_YEARS or 0, float) or None
 
     d = load(str(WINDOWS))
     led = pd.read_csv(LEDGER, parse_dates=['entry_date'])
@@ -59,35 +60,36 @@ def main() -> None:
     y = m['y'].to_numpy(np.float64)
     date = m['entry_date'].to_numpy().astype('datetime64[D]')
     yr = m['entry_date'].dt.year.to_numpy()
-    thr = float(np.quantile(y[date <= DEV_END], AUX_Q))
+    thr = float(np.quantile(y, AUX_Q))   # descriptive only, never fitted on
     aux = (y >= thr).astype(np.int8)
-    years = sorted(set(yr[date <= DEV_END]))
+    # every year of the record, not just the ones before 2019
+    years = sorted(set(int(v) for v in yr))
 
     W = kernels(); dil = [1, 2, 4, 8, 16]
     qs = np.linspace(0.0, 1.0, 4)[1:-1].astype(np.float32)
     rg = np.random.default_rng(0)
-    sd_rows = rg.choice(np.flatnonzero(date <= DEV_END),
-                        size=min(2000, int((date <= DEV_END).sum())),
-                        replace=False)
+    sd_rows = warmup_rows(date, 2000, rg)
     feats = transform(x, W, dil, fit_biases(x, W, dil, 2, sd_rows, qs))
 
     score = {k: np.full(len(y), np.nan) for k in ('rocket', 'shapelet')}
     cut = {k: np.full(len(y), np.inf) for k in ('rocket', 'shapelet')}
-    for Y in years:
-        tr = date < np.datetime64(f'{Y}-01-01') - np.timedelta64(embargo, 'D')
-        ev = (yr == Y) & (date <= DEV_END)
-        if tr.sum() < 2000 or not ev.any() or len(set(aux[tr])) < 2:
+    for Y, tr, ev in year_blocks(date, d['exit'][m['wrow'].to_numpy()],
+                                 lookback_years=lookback):
+        # the label both filters train on is cut at AUX_Q of THIS fold's
+        # training rows -- never once, from a fixed slice of history
+        a_tr = (y[tr] >= float(np.quantile(y[tr], AUX_Q))).astype(np.int8)
+        if len(set(a_tr.tolist())) < 2:
             continue
         mu, sd = feats[tr].mean(0), feats[tr].std(0) + 1e-8
         clf = RidgeClassifierCV(alphas=ALPHAS, class_weight='balanced')
-        clf.fit((feats[tr] - mu) / sd, aux[tr])
+        clf.fit((feats[tr] - mu) / sd, a_tr)
         score['rocket'][ev] = clf.decision_function((feats[ev] - mu) / sd)
         cut['rocket'][ev] = np.quantile(
             clf.decision_function((feats[tr] - mu) / sd), keep)
 
         f = ShapeletFilter(gamma=0.0, seeds=opt('--seeds', 3, int),
                            epochs=opt('--epochs', 40, int), loss='class')
-        f.fit(x[tr], y[tr], aux[tr].astype(np.float32), keep=keep)
+        f.fit(x[tr], y[tr], a_tr.astype(np.float32), keep=keep)
         score['shapelet'][ev] = f.score(x[ev])
         cut['shapelet'][ev] = np.quantile(f.score(x[tr]), keep)
         print(f'  {Y}: both filters fitted on {int(tr.sum()):,}, '
@@ -110,8 +112,9 @@ def main() -> None:
     print(f'   Jaccard = {inter / max(1, union):.3f}   '
           f'(1.00 = identical, {keep:.2f} approx = independent)')
 
-    print(f'\n3. does the disagreement pay?  pool mean y = {yy.mean():.4f}')
-    print(f'   {"cell":26s} {"n":>7s} {"mean y":>9s} {"vs pool":>9s} '
+    gpool = geo_mean_per_euro(yy)   # GEOMETRIC: y is a multiple per bet
+    print(f'\n3. does the disagreement pay?  pool geo y = {gpool:.4f}')
+    print(f'   {"cell":26s} {"n":>7s} {"geo y":>9s} {"vs pool":>9s} '
           f'{">5% share":>10s}')
     cells = [('both approve', ar & as_),
              ('rocket only', ar & ~as_),
@@ -120,14 +123,15 @@ def main() -> None:
     for nm, sel in cells:
         if sel.sum() == 0:
             continue
-        print(f'   {nm:26s} {int(sel.sum()):7,d} {yy[sel].mean():9.4f} '
-              f'{yy[sel].mean() - yy.mean():+9.4f} {aa[sel].mean():10.1%}')
+        g = geo_mean_per_euro(yy[sel])
+        print(f'   {nm:26s} {int(sel.sum()):7,d} {g:9.4f} '
+              f'{g - gpool:+9.4f} {aa[sel].mean():10.1%}')
 
     a, b = (ar & ~as_), (~ar & as_)
     if a.sum() and b.sum():
-        gap = yy[a].mean() - yy[b].mean()
+        gap = geo_mean_per_euro(yy[a]) - geo_mean_per_euro(yy[b])
         print(f'\n   VERDICT: the two disagreement cells differ by '
-              f'{gap:+.4f} in mean y.')
+              f'{gap:+.4f} in geo y.')
         print('   Near zero -> the disagreement is noise, no combiner helps.')
         print('   Clearly non-zero -> there is signal in WHO disagrees.')
 

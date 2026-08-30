@@ -21,7 +21,7 @@ small -- describes this problem.
 
 Label and protocol are the CNN's, so the numbers are comparable line for
 line: a = 1[y >= 80th percentile of DEV], purged walk-forward with a
-400-day embargo, test period never touched unless --test is passed.
+labels purged by exit date; --test pools every block out of fold.
 
 Usage
     python minervini_rocket.py --data results/..._f16.npz
@@ -38,7 +38,8 @@ import torch
 import torch.nn.functional as F
 from sklearn.linear_model import RidgeClassifierCV
 
-from bets_common import (AUX_Q, DEV_END, folds, line, load, report)
+from bets_common import (AUX_Q, LOOKBACK_YEARS, folds, label_from, line,
+                         load, report, warmup_rows, year_blocks)
 
 KERNEL_LEN = 9
 N_POS = 3                     # weights: 3 twos and 6 minus-ones, so they sum to 0
@@ -200,10 +201,13 @@ def shuffle_labels(y, date, mode: str, rng):
     return out
 
 
-def evaluate(feats, y, aux, date, nfold, embargo, verbose=True):
+def evaluate(feats, y, date, exits, nfold, verbose=True):
+    """Walk-forward validation over the whole record. The label is cut at
+    AUX_Q of each fold's OWN training rows -- never once, from a fixed
+    slice of history (EVALUATION_SPEC.md rule 1)."""
     rows = []
-    for tr, va, v0, v1 in folds(date, nfold, embargo):
-        sc, alpha = ridge_scores(feats[tr], aux[tr], feats[va])
+    for tr, va, v0, v1 in folds(date, nfold, exits):
+        sc, alpha = ridge_scores(feats[tr], label_from(y, tr)[tr], feats[va])
         m = report(sc, y[va]); m['alpha'] = alpha
         rows.append(m)
         if verbose:
@@ -227,8 +231,7 @@ def main() -> None:
         y = y[np.random.default_rng(0).permutation(len(y))]
         print('LABEL-SHUFFLE CONTROL: lift ~0, keep1% ~10%, auc ~0.50 expected')
 
-    thr = np.quantile(y[date <= DEV_END], AUX_Q)
-    aux = (y >= thr).astype(np.int8)
+    thr = float(np.quantile(y, AUX_Q))    # for the banner only
     dil = [int(v) for v in opt('--dilations', '1,2,4,8,16').split(',')]
     nb = opt('--biases', 2, int)
     qs = np.linspace(0.0, 1.0, nb + 2)[1:-1].astype(np.float32)
@@ -236,19 +239,18 @@ def main() -> None:
     W = kernels()
     print(f'MiniRocket: {W.shape[0]} fixed kernels x {len(dil)} dilations '
           f'{dil} x {nb} biases x {x.shape[1]} channels, '
-          f'label y>={thr:.4f} ({aux.mean():.1%} positive)')
+          f'label ~y>={thr:.4f}, cut per fold on its own training rows')
     print('learned parameters in the transform: 0', flush=True)
 
     rng = np.random.default_rng(0)
-    seed_rows = rng.choice(np.flatnonzero(date <= DEV_END),
-                           size=min(2000, int((date <= DEV_END).sum())),
-                           replace=False)
+    seed_rows = warmup_rows(date, 2000, rng)
     bias = fit_biases(x, W, dil, nb, seed_rows, qs)
     feats = transform(x, W, dil, bias)
     del x
 
-    nfold, embargo = opt('--folds', 4, int), opt('--embargo', 400, int)
-    agg, rows = evaluate(feats, y, aux, date, nfold, embargo)
+    nfold = opt('--folds', 4, int)
+    lookback = opt('--lookback', LOOKBACK_YEARS or 0, float) or None
+    agg, rows = evaluate(feats, y, date, d['exit'], nfold)
 
     n_perm = opt('--permtest', 0, int)
     modes = opt('--nulls', 'row,block').split(',')
@@ -270,9 +272,7 @@ def main() -> None:
             print(f'--- null model: {mode} ---', flush=True)
             for i in range(n_perm):
                 yp = shuffle_labels(y, date, mode, pr)
-                ap = (yp >= np.quantile(yp[date <= DEV_END],
-                                        AUX_Q)).astype(np.int8)
-                a2, r2 = evaluate(feats, yp, ap, date, nfold, embargo,
+                a2, r2 = evaluate(feats, yp, date, d['exit'], nfold,
                                   verbose=False)
                 null['mean_lift'].append(a2['lift'])
                 null['max_lift'].append(max(r['lift'] for r in r2))
@@ -298,10 +298,21 @@ def main() -> None:
                       f'{p:9.3f}')
 
     if '--test' in av:
-        tr = date <= DEV_END - np.timedelta64(embargo, 'D')
-        te = date > DEV_END
-        s_, alpha = ridge_scores(feats[tr], aux[tr], feats[te])
-        print(line('  TEST 2019-2026', report(s_, y[te])) + f'  alpha {alpha:.3g}')
+        # Out-of-fold over the WHOLE record: every block scored by a fit
+        # that ended `embargo` days before it, then pooled. There is no
+        # reserved tail and no special year (EVALUATION_SPEC.md rule 1).
+        score = np.full(len(y), np.nan)
+        for Y, trm, ev in year_blocks(date, d['exit'],
+                                      lookback_years=lookback):
+            a_tr = label_from(y, trm)[trm]
+            if len(set(a_tr.tolist())) < 2:
+                continue
+            score[ev], alpha = ridge_scores(feats[trm], a_tr, feats[ev])
+            print(f'  {Y}: fit {int(trm.sum()):,}, scored {int(ev.sum()):,}, '
+                  f'alpha {alpha:.3g}', flush=True)
+        oof = np.isfinite(score)
+        print(line(f'  OUT-OF-FOLD, all {int(oof.sum()):,}',
+                   report(score[oof], y[oof])))
 
 
 if __name__ == '__main__':

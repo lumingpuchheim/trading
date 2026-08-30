@@ -56,6 +56,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from geostats import geo_mean_per_euro
 from lppl_backtest import ROOT, load_config
 from minervini_backtest import apply_v5, build_panel, market_green
 
@@ -229,8 +230,15 @@ def build_ledger(panel: dict, cfg: dict, fix_egg: bool,
     print(f'signals in panel: {int(panel["trigger_moc"].sum()):,}  '
           f'from {cfg["backtest"]["start"]}: {int(trig.sum()):,}')
     if not all_days:
-        trig &= green[:, None]
-        print(f'on a green market light: {int(trig.sum()):,}')
+        # The market light is read the day the ORDER is placed, not the day
+        # the signal prints: simulate() places tomorrow's orders at tonight's
+        # close. Keying this on green[i] instead of green[i-1] left 591
+        # signals the book can buy and no filter can score, which every
+        # filter arm then took unconditionally (EVALUATION_SPEC.md rule 3).
+        prev = np.zeros_like(green)
+        prev[1:] = green[:-1]
+        trig &= prev[:, None]
+        print(f'orderable (light green the day before): {int(trig.sum()):,}')
 
     rows = []
     days, names = np.nonzero(trig)
@@ -238,37 +246,47 @@ def build_ledger(panel: dict, cfg: dict, fix_egg: bool,
         row = price_bet(i0, j, arr, p)
         if row is not None:
             rows.append(row)
-    df = pd.DataFrame(rows)
-    dev_end = pd.Timestamp(cfg['backtest']['dev_end'])
-    df['period'] = np.where(df['entry_date'] <= dev_end, 'dev', 'test')
-    return df
+    return pd.DataFrame(rows)
 
 
 def summarise(df: pd.DataFrame) -> None:
-    """Everything printed, nothing selected. The mean is the answer to
-    'what does one euro become'; the trimmed mean says whether a handful
-    of rows is carrying it."""
-    print(f'\n{"":12s} {"n":>7s} {"mean y":>9s} {"median":>8s} {"win%":>7s} '
-          f'{"p99 y":>8s} {"top5% share":>12s} {"mean ex-top1%":>14s}')
-    for period, g in df.groupby('period', sort=False):
+    """Everything printed, nothing selected.
+
+    GEOMETRIC, everywhere (arithmetic removed 2026-08-29). `y` is already
+    one multiple per bet -- the half-sale and the final exit blended into
+    one number, dividends inside it -- so the only thing left to get
+    right is the average, and the average that answers 'what does one
+    euro become' is the one that compounds. The arithmetic mean printed
+    here read 1.0122 and was compared for weeks against a portfolio
+    figure that was neither arithmetic nor per-bet. The trimmed column
+    says whether a handful of rows is carrying the result.
+    """
+    print(f'\n{"":12s} {"n":>7s} {"geo y":>9s} {"median":>8s} {"win%":>7s} '
+          f'{"p99 y":>8s} {"top5% share":>12s} {"geo ex-top1%":>14s}')
+    for label, g in (('all bets', df),):
         y = g['y'].to_numpy()
         prof = y - 1.0
         gross = prof[prof > 0].sum()
         top5 = np.sort(prof)[-max(1, len(prof) // 20):].sum()
         keep = y <= np.quantile(y, 0.99)
-        print(f'{period:12s} {len(y):7,d} {y.mean():9.4f} '
+        print(f'{label:12s} {len(y):7,d} {geo_mean_per_euro(y):9.4f} '
               f'{np.median(y):8.4f} {(y > 1).mean():6.1%} '
               f'{np.quantile(y, 0.99):8.3f} '
               f'{top5 / gross if gross > 0 else np.nan:11.1%} '
-              f'{y[keep].mean():14.4f}')
+              f'{geo_mean_per_euro(y[keep]):14.4f}')
+    dead = int((df['y'] <= 0).sum())
+    if dead:
+        # a total loss has no logarithm; say so rather than let the
+        # geometric mean quietly drop the worst bets in the book
+        print(f'  ({dead} bets with y <= 0 dropped by the geometric mean)')
 
-    print('\nby entry type (mean y / n):')
-    piv = df.pivot_table(index='rep', columns='period', values='y',
-                         aggfunc=['mean', 'size'])
+    print('\nby entry type (geo y / n):')
+    piv = df.groupby('rep')['y'].agg(
+        ['size', ('geo', geo_mean_per_euro)])
     print(piv.to_string(float_format=lambda v: f'{v:.4f}'))
 
-    print('\nby exit reason (mean y / n, both periods):')
-    ex = df.groupby('exit_reason')['y'].agg(['size', 'mean', 'median'])
+    print('\nby exit reason (geo y / n):')
+    ex = df.groupby('exit_reason')['y'].agg(['size', ('geo', geo_mean_per_euro), 'median'])
     print(ex.sort_values('size', ascending=False).to_string(
         float_format=lambda v: f'{v:.4f}'))
 
@@ -320,7 +338,7 @@ def dump_windows(df: pd.DataFrame, panel: dict, width: int) -> None:
         WIN_OUT, x=x, y=d['y'].to_numpy(np.float32),
         r=d['r'].to_numpy(np.float32),
         entry_date=d['entry_date'].to_numpy().astype('datetime64[D]'),
-        period=d['period'].to_numpy().astype('U4'),
+        exit_date=d['exit_date'].to_numpy().astype('datetime64[D]'),
         rep=d['rep'].to_numpy().astype('U8'),
         ticker=d['ticker'].to_numpy().astype('U8'),
         channels=np.array(['logpx', 'log_px_over_sma50', 'log_volx',

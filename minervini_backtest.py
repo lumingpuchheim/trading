@@ -43,6 +43,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from geostats import geo_per_bet
 from lppl_backtest import ROOT, load_config, metrics
 from minervini import (beat_gate, code33_legs, eps_gate, group_strength,
                        repertoire, report_within, rs_line_at_high,
@@ -535,6 +536,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     if gate is not None:
         trigger = trigger & gate
     vol_ok = panel['vol_ok']
+    # Prices are NOT dividend adjusted since 2026-08-29, so a holder's
+    # dividends are cash that has to be credited here or it disappears
+    # from the book. `div` is zeros where nothing was paid, never NaN.
+    div = panel.get('div')
     last_i, green = panel['last_i'], panel['green']
     is_control = rng is not None
     if pool_days is None:
@@ -566,6 +571,9 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             # the money in them rather than one-vote-each
             'bet_eur': pos.get('bet_eur', np.nan),
             'bet_frac': pos.get('bet_frac', np.nan),
+            # dividend cash collected by the shares THIS row disposes of;
+            # summed over a position's rows it is the whole bet's dividends
+            'div_eur': pos.get('div_ps', 0.0) * pos['shares'],
             'exit_reason': reason})
         cd = tr['reentry_cooldown']
         if e3 and reason != 'stop':
@@ -577,6 +585,21 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     for i in range(j0, j1 + 1):
         if park:
             cash *= spy_f[i]     # idle balance rides SPY (flow costs unmodelled)
+
+        # 0. dividends, before anything sells. You collect an ex-date if
+        #    you held INTO it: an entry fills at this day's close so it
+        #    misses today, an exit fills at this day's open and still
+        #    gets paid, and a half-sale that fills this morning collects
+        #    on the whole position one last time. Same window as
+        #    minervini_bets.py -- the ledger and the book must price the
+        #    same bet identically or their averages cannot be compared.
+        if div is not None and positions:
+            for j, pos in positions.items():
+                d = div[i, j]
+                if d:
+                    cash += pos['shares'] * d
+                    pos['div_ps'] = pos.get('div_ps', 0.0) + d
+
         # 1. exits fill at the open, freeing capital before any entry
         for j in [j for j, p in positions.items() if p['exit_reason']]:
             pos = positions.pop(j)
@@ -595,6 +618,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 tot = pos['shares'] + add
                 pos['entry_px'] = (pos['entry_px'] * pos['shares']
                                    + px * add) / tot
+                # the added shares never collected the dividends already
+                # banked, so the per-share figure dilutes; the euros it
+                # stands for do not change
+                pos['div_ps'] = pos.get('div_ps', 0.0) * pos['shares'] / tot
                 pos['shares'] = tot
                 pos['bet_eur'] = pos.get('bet_eur', 0.0) + outflow
                 cash -= outflow
@@ -619,6 +646,7 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                     'weight': part / pos['shares0'],
                     'bet_eur': pos.get('bet_eur', np.nan),
                     'bet_frac': pos.get('bet_frac', np.nan),
+                    'div_eur': pos.get('div_ps', 0.0) * part,
                     'exit_reason': 'strength'})
                 pos['shares'] -= part
                 pos['half_sold'] = True
@@ -730,6 +758,7 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                             'weight': part / pos['shares0'],
                             'bet_eur': pos.get('bet_eur', np.nan),
                             'bet_frac': pos.get('bet_frac', np.nan),
+                            'div_eur': pos.get('div_ps', 0.0) * part,
                             'exit_reason': 'climax_partial'})
                         pos['shares'] -= part
                         pos['half_sold'] = True
@@ -845,6 +874,7 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                         > pos['shares'] * (c - pos['entry_px']):
                     continue
                 pos['entry_px'] = blended     # stop, 2R and +20% all move up
+                pos['div_ps'] = pos.get('div_ps', 0.0) * pos['shares'] / tot
                 pos['shares'] = tot
                 pos['shares0'] = tot
                 pos['leg'] = leg + 1
@@ -1005,12 +1035,13 @@ def main() -> None:
           f'({int((panel["trigger"] & panel["vol_ok"]).sum())} volume-confirmed)')
 
     today = str(cal[-1].date())
-    periods = {}
-    for name, a, b in [('dev', bt['start'], bt['dev_end']),
-                       ('test', bt['test_start'], today)]:
-        j0 = int(cal.searchsorted(pd.Timestamp(a)))
-        j1 = int(cal.searchsorted(pd.Timestamp(b), side='right')) - 1
-        periods[name] = (j0, j1)
+    # ONE continuous run, start to today. The development / test split at
+    # 2019 was removed 2026-08-29: nothing in the screener is fitted, so
+    # it split a result in half rather than an experiment, and the word
+    # collided with the rolling fit boundary the filters use.
+    periods = {'full': (
+        int(cal.searchsorted(pd.Timestamp(bt['start']))),
+        int(cal.searchsorted(pd.Timestamp(today), side='right')) - 1)}
 
     moc = '--moc' in sys.argv
     ab = ''.join(f[2:] for f in ('--e1','--e2','--e3','--e4','--park','--craft') if f in sys.argv)
@@ -1038,10 +1069,17 @@ def main() -> None:
         # win rate removed 2026-08-28: being right 90% of the time at
         # break-even while the rest takes real money still loses, so it
         # cannot say whether a system works. The per-bet euro multiple is
-        # the honest unit -- minervini_stats.py.
+        # the honest unit -- geostats.geo_per_bet.
         m.pop('win_rate', None)
+        # `avg_trade` removed 2026-08-29 for two reasons at once: it is an
+        # ARITHMETIC mean, and it averages ROWS, so a position that sold
+        # half at +20% votes twice while a loser votes once. It read
+        # 1.0406 next to a 1.0302 computed from the same trades in
+        # filter_backtest.py, and neither was the per-bet number.
+        m.pop('avg_trade', None)
+        m['geo_bet'] = geo_per_bet(trades)
         rate = len(trades) / slot_days if slot_days else 0.0
-        trades.to_csv(results / f'minervini_{tag}_{pname}_trades.csv', index=False)
+        trades.to_csv(results / f'minervini_{tag}_trades.csv', index=False)
         curves[pname] = equity
 
         ctl_tot, ctl_n = [], []
@@ -1060,9 +1098,9 @@ def main() -> None:
         summary[pname] = m
         pd.DataFrame({'seed': np.arange(n_ctl), 'total_return': ctl_tot,
                       'n_trades': ctl_n}).to_csv(
-            results / f'minervini_{tag}_controls_{pname}.csv', index=False)
+            results / f'minervini_{tag}_controls.csv', index=False)
 
-        print(f'\n=== {pname} {cal[period[0]].date()} .. '
+        print(f'\n=== {cal[period[0]].date()} .. '
               f'{cal[period[1]].date()} ===')
         print({k: (round(v, 4) if isinstance(v, float) else v)
                for k, v in m.items()})
@@ -1078,9 +1116,9 @@ def main() -> None:
         plt.xlabel('total return, %')
         plt.legend()
         plt.grid(alpha=0.3)
-        plt.title(f'Minervini v2 vs random-template controls, {pname}')
+        plt.title('Minervini v2 vs random-template controls')
         plt.tight_layout()
-        plt.savefig(results / f'minervini_{tag}_controls_{pname}.png', dpi=120)
+        plt.savefig(results / f'minervini_{tag}_controls.png', dpi=120)
         plt.close()
 
         spy = panel['spy_close'].iloc[period[0]:period[1] + 1]
@@ -1091,15 +1129,15 @@ def main() -> None:
         plt.yscale('log')
         plt.legend()
         plt.grid(alpha=0.3)
-        plt.title(f'Minervini v2 Stage-2 breakouts, {pname}')
+        plt.title('Minervini v2 Stage-2 breakouts')
         plt.tight_layout()
-        plt.savefig(results / f'minervini_{tag}_equity_{pname}.png', dpi=120)
+        plt.savefig(results / f'minervini_{tag}_equity.png', dpi=120)
         plt.close()
 
     pd.DataFrame(summary).T.to_csv(results / f'minervini_{tag}_summary.csv')
 
     # --- how often does it actually bet? The cash side of the book, daily.
-    cash_s = pd.concat([cash['dev'], cash['test']]).sort_index()
+    cash_s = cash['full'].sort_index()
     cash_s.name = 'cash_fraction'
     cash_s.to_csv(results / f'minervini_{tag}_cash.csv')
     yr = cash_s.groupby(cash_s.index.year)
@@ -1120,12 +1158,11 @@ def main() -> None:
                        alpha=0.35, label='cash')
     ax[0].plot(cash_s.index, cash_s.rolling(63).mean() * 100, color='crimson',
                lw=1.2, label='cash, 63-day mean')
-    ax[0].axvline(cash['test'].index[0], color='k', ls=':', lw=1)
     ax[0].set_ylabel('cash, % of equity')
     ax[0].set_ylim(0, 100)
     ax[0].legend(loc='upper right')
     ax[0].grid(alpha=0.3)
-    ax[0].set_title(f'{tag}: cash held day by day (dev | test), '
+    ax[0].set_title(f'{tag}: cash held day by day, '
                     f'mean {cash_s.mean():.0%}')
     ax[1].plot(cash_s.index, (cash_s < 0.05).rolling(252).mean() * 100,
                color='darkgreen', lw=1.2)

@@ -12,13 +12,12 @@ actually uses is the ordering among the candidates available that morning.
 So candidates are grouped by day, ranked inside the day, and outcomes are
 read off the rank -- never off the raw level.
 
-The table that matters is the last one: mean y by the slot the sorter
+The table that matters is the last one: geo y by the slot the sorter
 would have handed the bet. If position 1 does not beat position 10, the
 ranking is not selecting.
 
 Usage
-    python rs_keys_ev.py                # dev
-    python rs_keys_ev.py --period test
+    python rs_keys_ev.py                # the whole record
 """
 
 import sys
@@ -26,6 +25,7 @@ import sys
 import numpy as np
 import pandas as pd
 
+from geostats import geo_mean_per_euro
 from lppl_backtest import ROOT, load_config
 from minervini_backtest import apply_v5, build_panel
 
@@ -33,14 +33,19 @@ LEDGER = ROOT / 'results' / 'minervini_bets_v5r.csv'
 
 
 def by_bucket(df, col, y, nb=10, label=''):
-    """Mean y by within-day quantile of `col`, high bucket = best rank."""
+    """Geometric mean y by within-day quantile of `col`, high bucket =
+    best rank. Geometric because y is a multiple per bet, and this table
+    is read against the portfolio's own per-bet figure: two averages of
+    different kinds cannot be compared, which is exactly the mistake this
+    file was used to make."""
     r = df.groupby('day')[col].rank(pct=True, ascending=False)
     b = np.clip((r * nb).astype(int), 0, nb - 1)
-    out = df.assign(_b=b).groupby('_b')[y].agg(['size', 'mean'])
+    out = df.assign(_b=b).groupby('_b')[y].agg(
+        ['size', ('mean', geo_mean_per_euro)])
     print(f'\n  {label} (within-day rank, bucket 0 = strongest)')
     for i, row in out.iterrows():
         print(f'    bucket {i:2d}  n={int(row["size"]):6,d}  '
-              f'mean y {row["mean"]:.4f}')
+              f'geo y {row["mean"]:.4f}')
     lo, hi = out['mean'].iloc[0], out['mean'].iloc[-1]
     print(f'    strongest minus weakest: {lo - hi:+.4f}')
 
@@ -56,10 +61,9 @@ def main() -> None:
     cal = panel['calendar']
     rsl, wk, rsv = panel['rsl_hi'], panel['weak'], panel['rs']
 
+    # the whole record, start to today: this file fits nothing, so there
+    # is nothing a period split could hold out (EVALUATION_SPEC.md)
     led = pd.read_csv(LEDGER, parse_dates=['entry_date'])
-    dev_end = pd.Timestamp(cfg['backtest']['dev_end'])
-    led = (led[led.entry_date <= dev_end] if opt('--period', 'dev') == 'dev'
-           else led[led.entry_date > dev_end])
     i = led['entry_i'].to_numpy(np.int64)
     j = led['ticker_j'].to_numpy(np.int64)
     d = pd.DataFrame({'day': i, 'y': led['y'].to_numpy(float),
@@ -67,14 +71,14 @@ def main() -> None:
                       'weak': np.where(np.isfinite(wk[i, j]), wk[i, j], -np.inf),
                       'rs': np.where(np.isfinite(rsv[i, j]), rsv[i, j], -np.inf)})
     print(f'{len(d):,} candidates on {d["day"].nunique():,} days, '
-          f'pool mean y {d["y"].mean():.4f}, '
+          f'pool geo y {geo_mean_per_euro(d["y"]):.4f}, '
           f'median {d.groupby("day").size().median():.0f} candidates/day')
 
-    g = d.groupby('rsl')['y'].agg(['size', 'mean'])
+    g = d.groupby('rsl')['y'].agg(['size', ('mean', geo_mean_per_euro)])
     print('\n  rsl_hi (RS line at a 250-day high)')
     for v, row in g.iterrows():
         print(f'    {"True " if v else "False"}  n={int(row["size"]):6,d}  '
-              f'mean y {row["mean"]:.4f}')
+              f'geo y {row["mean"]:.4f}')
     if len(g) == 2:
         print(f'    True minus False: {g["mean"].iloc[1] - g["mean"].iloc[0]:+.4f}')
 
@@ -94,7 +98,8 @@ def main() -> None:
 
     order = [str(k) for k in range(1, 11)] + ['11-15', '16-25', '26+']
     d['slot'] = d['pos'].map(bucket)
-    t = (d.groupby('slot', observed=True)['y'].agg(['size', 'mean'])
+    t = (d.groupby('slot', observed=True)['y']
+         .agg(['size', ('mean', geo_mean_per_euro)])
          .reindex(order).dropna())
     print('\n  BY THE SLOT THE SORTER WOULD GIVE IT '
           '(1 = first choice of the day)')
@@ -102,12 +107,13 @@ def main() -> None:
         if s == 'x':
             continue
         print(f'    position {str(s):>6s}  n={int(row["size"]):6,d}  '
-              f'mean y {row["mean"]:.4f}')
+              f'geo y {row["mean"]:.4f}')
     top = d[d['pos'] <= 10]['y']
     rest = d[d['pos'] > 10]['y']
-    print(f'\n    top 10 per day : n={len(top):6,d}  mean y {top.mean():.4f}')
-    print(f'    everyone else  : n={len(rest):6,d}  mean y {rest.mean():.4f}')
-    print(f'    difference     : {top.mean() - rest.mean():+.4f}')
+    gtop, grest = geo_mean_per_euro(top), geo_mean_per_euro(rest)
+    print(f'\n    top 10 per day : n={len(top):6,d}  geo y {gtop:.4f}')
+    print(f'    everyone else  : n={len(rest):6,d}  geo y {grest:.4f}')
+    print(f'    difference     : {gtop - grest:+.4f}')
 
 
 if __name__ == '__main__':

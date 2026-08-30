@@ -29,7 +29,7 @@ import minervini as mv
 from lppl_backtest import ROOT, load_config
 
 PRE, POST = 320, 60
-DEFAULT = {'test': ['DOCN', 'CMI', 'POWL'], 'dev': ['V', 'BJRI', 'NDSN']}
+DEFAULT = ['DOCN', 'CMI', 'POWL', 'V', 'BJRI', 'NDSN']
 
 
 def base_and_contractions(close: np.ndarray, zz: dict, upto: int, cfg: dict):
@@ -171,15 +171,14 @@ def main() -> None:
     cfg = load_config()
     results = ROOT / cfg['backtest']['results_dir']
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    period = 'dev' if '--period' in sys.argv and 'dev' in sys.argv else 'test'
     tag = next((a.split('=')[1] for a in sys.argv if a.startswith('--tag=')),
                'v3_moc' if '--v3' in sys.argv else 'v2_moc')
-    trades = pd.read_csv(results / f'minervini_{tag}_{period}_trades.csv',
+    trades = pd.read_csv(results / f'minervini_{tag}_trades.csv',
                          parse_dates=['entry_date', 'exit_date'])
     worst = '--worst' in sys.argv
     want = args or (list(trades.nsmallest(3, 'ret_net')['ticker']) if worst
-                    else DEFAULT[period])
-    print(f'{period} period ({"worst" if worst else "best"} trades):')
+                    else DEFAULT)
+    print(f'whole record ({"worst" if worst else "best"} trades):')
     for t in want:
         row = trades[trades['ticker'] == t]
         if not len(row):

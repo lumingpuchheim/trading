@@ -13,3 +13,6 @@ sim/jobs.log
 # rebuild with:  python minervini_bets.py --windows 252
 results/minervini_bets_v5r.csv
 results/minervini_bets_v5r_windows.npz
+
+# the fit cache: rebuilt on demand, ~1 GB (fitcache.py, modelstore.py)
+results/.fitcache/

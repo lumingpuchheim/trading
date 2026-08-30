@@ -42,7 +42,8 @@ from sklearn.linear_model import RidgeClassifierCV
 
 from lppl_backtest import ROOT, load_config
 from minervini_backtest import apply_v5, build_panel
-from bets_common import AUX_Q, DEV_END, load
+from bets_common import (AUX_Q, MIN_TRAIN, label_from, load,
+                         warmup_rows, year_blocks)
 from minervini_rocket import ALPHAS, fit_biases, kernels, transform
 
 LEDGER = ROOT / 'results' / 'minervini_bets_v5r.csv'
@@ -73,26 +74,23 @@ def main() -> None:
     tj = m['ticker_j'].to_numpy(np.int64)
     date = m['entry_date'].to_numpy().astype('datetime64[D]')
     yr = m['entry_date'].dt.year.to_numpy()
-    aux = (y >= float(np.quantile(y[date <= DEV_END], AUX_Q))).astype(np.int8)
 
     # --- walk-forward MiniRocket score: never scores a year it saw --------
     W = kernels(); dil = [1, 2, 4, 8, 16]
     qs = np.linspace(0.0, 1.0, 4)[1:-1].astype(np.float32)
     rg = np.random.default_rng(0)
-    seed = rg.choice(np.flatnonzero(date <= DEV_END),
-                     size=min(2000, int((date <= DEV_END).sum())), replace=False)
+    seed = warmup_rows(date, 2000, rg)
     feats = transform(x, W, dil, fit_biases(x, W, dil, 2, seed, qs))
     rocket = np.full(len(y), np.nan)
-    for Y in sorted(set(yr)):
-        tr = date < np.datetime64(f'{Y}-01-01') - np.timedelta64(400, 'D')
-        ev = yr == Y
-        if tr.sum() < 2000 or not ev.any() or len(set(aux[tr])) < 2:
+    for Y, trm, ev in year_blocks(date, exits):
+        a_tr = label_from(y, trm)[trm]
+        if len(set(a_tr.tolist())) < 2:
             continue
-        mu, sd = feats[tr].mean(0), feats[tr].std(0) + 1e-8
+        mu, sd = feats[trm].mean(0), feats[trm].std(0) + 1e-8
         clf = RidgeClassifierCV(alphas=ALPHAS, class_weight='balanced')
-        clf.fit((feats[tr] - mu) / sd, aux[tr])
+        clf.fit((feats[trm] - mu) / sd, a_tr)
         rocket[ev] = clf.decision_function((feats[ev] - mu) / sd)
-        print(f'  rocket {Y}: fit {int(tr.sum()):,}', flush=True)
+        print(f'  rocket {Y}: fit {int(trm.sum()):,}', flush=True)
 
     wv = wk[ei, tj]
     X = pd.DataFrame({'rocket': rocket,
@@ -105,24 +103,38 @@ def main() -> None:
     r = np.log(np.clip(y, 1e-6, None))
 
     ok = np.isfinite(rocket)
-    tr = ok & (date <= DEV_END)
-    te = ok & (date > DEV_END)
-    print(f'\ntrain {int(tr.sum()):,} (dev)   test {int(te.sum()):,} (2019-2026)')
     print(f'weak is NaN on {X["weak_na"].mean():.1%} of rows '
           f'-- kept as NaN and flagged, not imputed')
 
-    gb = HistGradientBoostingRegressor(
-        loss='squared_error',            # on ln(y): 2x and 1/2x cost the same
-        max_iter=400, learning_rate=0.05, max_leaf_nodes=15,
-        min_samples_leaf=200, l2_regularization=1.0,
-        early_stopping=True, validation_fraction=0.15, random_state=0)
-    gb.fit(X[tr], r[tr])
-    pr = gb.predict(X[te])
-    rt = r[te]
+    # Walk-forward over the whole record: each block predicted by a model
+    # fitted only on what came before it, then pooled. `base` carries that
+    # fold's own training mean, which is the constant the R2 is against --
+    # so the comparison is never made against a future average.
+    pred = np.full(len(y), np.nan)
+    base = np.full(len(y), np.nan)
+    gb = None
+    for Y, trm, ev in year_blocks(date, exits):
+        m_, e_ = trm & ok, ev & ok
+        if m_.sum() < MIN_TRAIN or not e_.any():
+            continue
+        gb = HistGradientBoostingRegressor(
+            loss='squared_error',        # on ln(y): 2x and 1/2x cost the same
+            max_iter=400, learning_rate=0.05, max_leaf_nodes=15,
+            min_samples_leaf=200, l2_regularization=1.0,
+            early_stopping=True, validation_fraction=0.15, random_state=0)
+        gb.fit(X[m_], r[m_])
+        pred[e_] = gb.predict(X[e_])
+        base[e_] = float(r[m_].mean())
+        print(f'  gb {Y}: fit {int(m_.sum()):,}, '
+              f'predicted {int(e_.sum()):,}', flush=True)
+
+    te = np.isfinite(pred)
+    pr, rt = pred[te], r[te]
+    print(f'\nout of fold: {int(te.sum()):,} bets')
 
     ss_res = float(((rt - pr) ** 2).sum())
-    ss_tot = float(((rt - r[tr].mean()) ** 2).sum())
-    print(f'\n--- TEST 2019-2026, prediction quality on ln(y) ---')
+    ss_tot = float(((rt - base[te]) ** 2).sum())
+    print(f'\n--- OUT OF FOLD, whole record, prediction quality on ln(y) ---')
     print(f'  R2 vs the train-mean constant : {1 - ss_res / ss_tot:+.5f}')
     print(f'  RMSE (log)                    : {np.sqrt(ss_res / len(rt)):.5f}')
     print(f'  RMSE of the constant          : {np.sqrt(ss_tot / len(rt)):.5f}')
@@ -143,7 +155,8 @@ def main() -> None:
 
     pi = permutation_importance(gb, X[te], rt, n_repeats=10, random_state=0,
                                 scoring='neg_mean_squared_error')
-    print(f'\n  permutation importance (drop in log-MSE when shuffled)')
+    print(f'\n  permutation importance of the LAST fold\'s model, scored on '
+          f'every out-of-fold row (drop in log-MSE when shuffled)')
     for k, name in sorted(zip(pi.importances_mean, X.columns), reverse=True):
         print(f'    {name:10s} {k:+.6f}')
 

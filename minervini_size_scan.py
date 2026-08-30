@@ -26,8 +26,9 @@ panel = build_panel(base, v5=True)
 cal = panel['calendar']
 pool = pool_by_day(panel['watch'])
 periods = {}
-for name, a, b in [('dev', '2007-01-01', '2018-12-31'),
-                   ('test', '2019-01-01', '2026-08-25')]:
+# One continuous record, start to today: nothing here is fitted, so
+# the 2019 split only ever cut one result in half (EVALUATION_SPEC.md).
+for name, a, b in [('full', '2007-01-01', str(cal[-1].date()))]:
     j0 = int(cal.searchsorted(pd.Timestamp(a)))
     j1 = int(cal.searchsorted(pd.Timestamp(b), side='right')) - 1
     periods[name] = (j0, j1)
@@ -55,7 +56,7 @@ df.to_csv(ROOT / 'results' / 'minervini_size_scan.csv', index=False)
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 for ax, col, lab in [(axes[0], 'total', 'total return'),
                      (axes[1], 'positions', 'funded bets')]:
-    for per, g in df.groupby('period'):
+    for per, g in df.groupby('period'):   # one group: the whole record
         ax.plot(g['size'] * 100, g[col] * (100 if col == 'total' else 1),
                 marker='o', label=per)
     ax.set_xlabel('slot size %')

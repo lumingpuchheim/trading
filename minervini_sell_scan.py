@@ -30,26 +30,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from geostats import geo_per_bet
 from lppl_backtest import ROOT, load_config
 from minervini_backtest import apply_v5, build_panel, pool_by_day, simulate
 
 FRACTIONS = [0.00, 0.10, 0.20, 0.25, 0.33, 0.40, 0.50, 0.60, 0.67,
              0.75, 0.90, 1.00]
-
-
-def euro_per_bet(trades: pd.DataFrame) -> float:
-    """Geometric mean of the euro returned per euro committed, over
-    positions. Uses the recorded per-row share weight, so it is exact for
-    any split ratio rather than assuming halves."""
-    if not len(trades):
-        return np.nan
-    t = trades.copy()
-    t['pos_id'] = t['ticker'] + '|' + t['entry_date'].astype(str)
-    mult = t.groupby('pos_id').apply(
-        lambda d: float((d['weight'] * (1.0 + d['ret_net'])).sum()),
-        include_groups=False)
-    mult = mult[mult > 0]
-    return float(np.exp(np.mean(np.log(mult))))
 
 
 def main() -> None:
@@ -59,8 +45,7 @@ def main() -> None:
     cal = panel['calendar']
     pool = pool_by_day(panel['watch'])
     periods = {}
-    for name, a, b in [('dev', '2007-01-01', '2018-12-31'),
-                       ('test', '2019-01-01', str(cal[-1].date()))]:
+    for name, a, b in [('full', '2007-01-01', str(cal[-1].date()))]:
         j0 = int(cal.searchsorted(pd.Timestamp(a)))
         j1 = int(cal.searchsorted(pd.Timestamp(b), side='right')) - 1
         periods[name] = (j0, j1)
@@ -74,7 +59,7 @@ def main() -> None:
             tr, eq, inv, _ = simulate(panel, cfg, pr, pool_days=pool, moc=True)
             pos = (tr['ticker'] + '|' + tr['entry_date'].astype(str)).nunique()
             row[f'{per}_bets'] = pos
-            row[f'{per}_euro'] = euro_per_bet(tr)
+            row[f'{per}_euro'] = geo_per_bet(tr)
             row[f'{per}_total'] = eq.iloc[-1] / eq.iloc[0] - 1
             row[f'{per}_maxdd'] = float((eq / eq.cummax() - 1).min())
         rows.append(row)
@@ -88,7 +73,7 @@ def main() -> None:
     d.to_csv(out / 'minervini_sell_scan.csv', index=False)
 
     fig, ax = plt.subplots(1, 2, figsize=(13, 5))
-    for per, col in (('dev', 'tab:blue'), ('test', 'tab:red')):
+    for per, col in (('full', 'tab:blue'),):
         ax[0].plot(d['sell_frac'] * 100, (d[f'{per}_euro'] - 1) * 100,
                    'o-', color=col, label=per)
         ax[1].plot(d['sell_frac'] * 100, d[f'{per}_total'] * 100,

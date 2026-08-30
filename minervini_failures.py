@@ -36,7 +36,7 @@ WINDOW = 60          # event-study half-width
 def case_panels(panel: dict, cfg: dict, results) -> None:
     cal = panel['calendar']
     pos = {d: i for i, d in enumerate(cal)}
-    trades = pd.read_csv(results / 'minervini_test_trades.csv',
+    trades = pd.read_csv(results / 'minervini_trades.csv',
                          parse_dates=['entry_date', 'exit_date'])
     worst = trades.nsmallest(N_CASES, 'ret_net')
 
@@ -84,7 +84,6 @@ def event_study(panel: dict, cfg: dict, results) -> None:
     cal = panel['calendar']
     close = panel['close']
     n = len(cal)
-    dev_end = int(cal.searchsorted(pd.Timestamp(bt['dev_end']), side='right'))
     rng = np.random.default_rng(bt['random_seed'])
 
     def paths(mask: np.ndarray, limit: int | None = None) -> np.ndarray:
@@ -103,24 +102,19 @@ def event_study(panel: dict, cfg: dict, results) -> None:
 
     plt.figure(figsize=(12, 7))
     x = np.arange(-WINDOW, WINDOW + 1)
-    styles = {'dev': ('tab:blue', slice(0, dev_end)),
-              'test': ('tab:red', slice(dev_end, n))}
-    stats = []
-    for name, (color, sl) in styles.items():
-        m = np.zeros_like(panel['trigger'])
-        m[sl] = panel['trigger'][sl]
-        p = paths(m)
-        c = np.zeros_like(panel['template'])
-        c[sl] = panel['template'][sl]
-        pc = paths(c, limit=4000)
-        plt.plot(x, np.median(p, axis=0), color=color, lw=2,
-                 label=f'{name} triggers (n={len(p)})')
-        plt.plot(x, np.median(pc, axis=0), color=color, lw=1, ls='--',
-                 alpha=0.7, label=f'{name} random template days (n={len(pc)})')
-        stats.append({'period': name, 'n_triggers': len(p),
-                      'med_60d_after_trigger': float(np.median(p[:, -1]) - 1),
-                      'med_60d_after_template': float(np.median(pc[:, -1]) - 1),
-                      'share_below_entry_at_60d': float((p[:, -1] < 1).mean())})
+    # One record, start to today -- the dev / test colouring was removed
+    # 2026-08-29 (EVALUATION_SPEC.md): nothing here is fitted, so the two
+    # curves were the same measurement drawn twice.
+    p = paths(panel['trigger'])
+    pc = paths(panel['template'], limit=4000)
+    plt.plot(x, np.median(p, axis=0), color='tab:blue', lw=2,
+             label=f'triggers (n={len(p)})')
+    plt.plot(x, np.median(pc, axis=0), color='tab:blue', lw=1, ls='--',
+             alpha=0.7, label=f'random template days (n={len(pc)})')
+    stats = [{'n_triggers': len(p),
+              'med_60d_after_trigger': float(np.median(p[:, -1]) - 1),
+              'med_60d_after_template': float(np.median(pc[:, -1]) - 1),
+              'share_below_entry_at_60d': float((p[:, -1] < 1).mean())}]
     plt.axvline(0, color='black', lw=0.8)
     plt.axhline(1.0, color='black', lw=0.6, alpha=0.4)
     plt.xlabel('trading days from the breakout trigger')
