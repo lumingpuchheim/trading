@@ -245,6 +245,12 @@ def main() -> None:
 
     cfg = apply_v5(load_config())
     cfg['minervini_trading']['reentry_fast'] = True          # v5r
+    # --no-fees: the bets themselves, with no commission. The round trip
+    # costs 0.40pp per bet on every arm equally, so it never changes a
+    # comparison -- it only makes every absolute number look worse.
+    if '--no-fees' in av:
+        cfg['minervini_trading']['cost_per_side'] = 0.0
+        print('fees OFF: cost_per_side = 0')
     panel = build_panel(cfg, v5=True)
     cal = panel['calendar']
     bt = cfg['backtest']
