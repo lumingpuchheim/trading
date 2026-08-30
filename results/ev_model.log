@@ -1,0 +1,52 @@
+55,792 bets, windows (55792, 5, 252), device cpu, channels ['logpx', 'log_px_over_sma50', 'log_volx', 'rs_pctile', 'log_spy_over_sma200']
+transform: 55,792 rows -> 4,200 features (0.94 GB)
+  first batch ok
+  rocket 2009: fit 2,173
+  rocket 2010: fit 2,241
+  rocket 2011: fit 3,112
+  rocket 2012: fit 5,243
+  rocket 2013: fit 7,095
+  rocket 2014: fit 9,392
+  rocket 2015: fit 13,587
+  rocket 2016: fit 17,073
+  rocket 2017: fit 20,025
+  rocket 2018: fit 22,403
+  rocket 2019: fit 27,121
+  rocket 2020: fit 30,568
+  rocket 2021: fit 33,874
+  rocket 2022: fit 36,060
+  rocket 2023: fit 41,297
+  rocket 2024: fit 42,223
+  rocket 2025: fit 44,731
+  rocket 2026: fit 49,406
+
+train 28,341 (dev)   test 25,210 (2019-2026)
+weak is NaN on 100.0% of rows -- kept as NaN and flagged, not imputed
+
+--- TEST 2019-2026, prediction quality on ln(y) ---
+  R2 vs the train-mean constant : -0.00381
+  RMSE (log)                    : 0.10094
+  RMSE of the constant          : 0.10075
+  spearman(pred, actual y)      : +0.0347
+  predicted spread: min 0.9877  max 1.0268  sd 0.0057
+
+  decile of prediction (0 = worst predicted)
+    dec      n  predicted y   actual y
+      0  2,509       0.9954     1.0122
+      1  2,468       1.0016     1.0131
+      2  2,587       1.0038     1.0087
+      3  2,167       1.0059     1.0089
+      4  2,879       1.0076     1.0097
+      5  2,547       1.0093     1.0083
+      6  2,290       1.0104     1.0050
+      7  2,922       1.0109     1.0044
+      8  2,318       1.0119     1.0087
+      9  2,523       1.0157     1.0037
+    top decile minus bottom: -0.0084   pool 1.0082
+
+  permutation importance (drop in log-MSE when shuffled)
+    rsl_hi     +0.000001
+    weak_na    +0.000000
+    weak       +0.000000
+    rocket     -0.000009
+    rs         -0.000010
