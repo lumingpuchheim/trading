@@ -136,9 +136,10 @@ not the one that decides:
    the top of that sort gets the slot. Since `weak` is 99.99% NaN, the
    real picker is `rsl_hi` → `rs` → alphabet.
 4. The loss that trained stage 2 was a classification against a binary
-   top-20% label. Even when the labelled quantity was the rate target,
-   the model saw only "top fifth or not" (`filter_backtest.py`,
-   `score_walk_forward`: `aux = y >= thr`).
+   top-20% label (`filter_backtest.py`, `score_walk_forward`:
+   `aux = y >= thr`). A rate-target variant was written and it changed
+   only *which* quantity was binarised — the model still saw "top fifth
+   or not", never the rate.
 
 ### Where the objective leaks
 
@@ -210,8 +211,8 @@ visible as such.
 
 **Loss: least squares on the rate itself.** The fit is a ridge
 *regression* of the realised rate on the features (closed form,
-`RidgeCV`, same walk-forward schedule, embargo and fit banner as
-today). Squared error estimates the expected rate; ranking by expected
+`RidgeCV`, same walk-forward schedule and embargo as today). Squared
+error estimates the expected rate; ranking by expected
 rate is the greedy-optimal slot assignment when every slot-day not
 spent on A is available to B. The loss is the goal — nothing is
 binarised, thresholded or re-sorted after it.
@@ -219,8 +220,11 @@ binarised, thresholded or re-sorted after it.
 ### The target, carefully
 
 Definitions: `y` = euros returned per euro committed (dividends in,
-`geostats.bet_multiples` convention), `t` = trading days held, floored
-at `t_floor` for the reason documented at `filter_backtest.py:449`.
+`geostats.bet_multiples` convention), `t` = **trading** days held —
+calendar days have a minimum of zero and would divide by zero — floored
+at `t_floor` days. The floor exists because 1.8% of bets close within
+three days and carry ~14% of the total `|rate|` mass, overwhelmingly
+fast stop-outs whose rates run to -0.11/day against a best of +0.012.
 
 **The quantity optimised is `ln(y)/t`, and a bet is one vote.** Every
 bet is the same size — a flat tenth of equity — so bet size is a
@@ -241,8 +245,7 @@ constant and never weights anything.
   Multiples decompose *arithmetically* by capital share (never logs);
   the streams' rates then combine by those same shares. Ending the
   first stream's clock at the half-sale is the point: banked capital is
-  free capital, and the rate target credits it. **This is exactly the
-  leg blend already at `filter_backtest.py:466`, which stands.**
+  free capital, and the rate target credits it.
 - **Per portfolio (the evaluation).** The geometric mean of daily
   multiples, one vote per bet:
 
@@ -268,9 +271,20 @@ light already does the regime version of this.
 |---|---|
 | `filters.py` | `decide`/`threshold`/`keep` retire; the interface is `fit(features, r)` + `score`. `AllPass` retires with the veto. The baseline becomes **StrengthScore** — the old sort key encoded as a score — so the control arm runs the same code path as every fitted arm (Rule 3 preserved) and must reproduce **+291.5%** before any fitted row is read |
 | `minervini_backtest.py` | `simulate(scores=...)`; `take` = top slots by score. `key()` survives only for the legacy no-score path |
-| `filter_backtest.py` | rate is the only target; the leg blend at `:466` stands as the agreed definition; `RidgeCV` regression replaces `RidgeClassifierCV`; `aux`, jackpot stats and `--keeps` retire |
+| `filter_backtest.py` | `ln(y)/t` is the only target, with the leg blend above; the ledger must carry `half_frac`, `y_half`, `half_days_held` and `days_held` per signal (`minervini_bets.py`); `RidgeCV` regression replaces `RidgeClassifierCV`; `aux`, jackpot stats and `--keeps` retire |
 | caches | feature caches are keyed on the transform and survive untouched; block and model caches refit — a regression is a different estimator, so this is a real refit of the ridge stages, not a key-field accident |
-| `EVALUATION_SPEC.md` | Rule 3's baseline definition becomes StrengthScore; the fit banner gains `target=rate/day estimator=ridge-reg`; `G_day` joins the reported figures |
+| `EVALUATION_SPEC.md` | Rule 3's baseline definition becomes StrengthScore; every run prints its target and estimator (`target=ln(y)/t estimator=ridge-reg`) beside the embargo and window it already reports; `G_day` joins the reported figures |
+
+**State of the tree, 2026-08-31.** This section is a design to be
+built, not a description of code that exists. The working tree was
+reverted to `56ead0c` on the operator's instruction, which removed an
+uncommitted day of work: the rate target and its leg blend in
+`filter_backtest.py`, the one-fit-configuration rules and banner, the
+model store, and the Hydra / MultiRocket filters. So the rate target
+described above has to be written again from this definition, and the
+tree today has only the binary top-20% label. `minervini_hydra.py`,
+`minervini_multirocket.py` and four test files survive untracked in the
+working directory but nothing imports them.
 
 Headline evaluation is unchanged: one continuous path through
 `simulate()`, per-bet figures through `geostats.py`, the control arm
