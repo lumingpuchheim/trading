@@ -663,3 +663,102 @@ fold lines' loss-vs-constant count on r.
    out-of-fold error against the constant, on r.
 5. The Amendment 4 two-head caches remain loadable as the record;
    single-fit caches key under their own name.
+
+---
+
+## Amendment 6 — the fixed-horizon experiment (2026-08-31)
+
+Operator decision: force-sell every position `H` trading days after
+entry, and train on EXPECTED VALUE — the plain per-bet log multiple,
+no rent, no ratio, no floor. With the holding time capped, "profit
+per bet" and "profit per slot-time" stop being different rankings, so
+the training-vs-trading mismatch that consumed Amendments 4 and 5 is
+removed by the trading rule instead of by loss engineering.
+
+Background that makes this worth running: the value-shaped model was
+the one that picked demonstrably better bets than strength (geo/bet
++1.18% vs +0.82% on the fitted years) and lost only by trading too
+few. The cap attacks "too few" directly.
+
+### The one change to the book
+
+A new exit, `max_hold`: at the close of the `H`-th trading day after
+entry, any remaining position is marked for exit and fills at the next
+open, like the other slow exits. **Everything else in the ladder is
+unchanged** — stop, tennis window, egg, breakeven, SMA50, the +20%
+half-sale all stay — so the experiment changes exactly one thing and
+its verdict attributes. Config knob `max_hold_days`; absent or 0 = off,
+and with it off the +291.5% control reproduces bit for bit.
+
+`H = 42` is the primary (about two months: above the commission
+floor, below the obvious tail-amputation zone, roughly twice the
+current median hold), with `21` and `63` as the band — one number is
+a guess, three are a measurement.
+
+### The target
+
+Per signal, under the amended ladder:
+
+    r = ln(y)                                    unsplit
+    r = 0.5·ln(y_half) + 0.5·ln(y_rest)          split (operator rule:
+                                                 each leg counts 0.5)
+
+One model per fold on that number — the Amendment 5 rule stands, no
+composition of parts — same features, same grouped-CV alpha, same
+schedule. Evaluation per bet stays `geostats` (geometric mean, one
+vote per bet). Labels are rebuilt per `H` (the exits changed, so `y`,
+`y_half`, `days_held` change); the WINDOWS do not (features are
+entry-day history), so every feature cache survives and only labels
+and fits are re-made.
+
+### New features: the voided data, admitted through two gates
+
+Candidates, all already fetched and in the panel: the Code 33
+fundamental legs (EPS, sales, margins), `group_pct` (industry-group
+strength), earnings surprise. Their old rejections are void — they
+were hard gates in the retired architecture; as feature columns under
+this target they are untested. Each enters as a (value, finite) pair
+with per-year coverage printed.
+
+    Gate 1 — sign stability (seconds): per-year Spearman of feature
+      vs target; admitted if the sign agrees in >= 10 of 15 years.
+    Gate 2 — tiny model (minutes): ridge on the candidate columns
+      alone; admitted if it beats the constant in >= 8 of 15 folds.
+
+Only survivors join the full model. No book is simulated for a
+feature set that has not cleared Gate 2 — the fold line is the gate,
+the book is the ceremony.
+
+### Run order — fastest to slowest, each step a go/no-go
+
+1. **Feature gates on the CURRENT ledger** (no rebuild needed;
+   seconds to minutes). Read: which candidates survive at all.
+2. **The cap's own price, before any model**: rebuild the ledger at
+   `H=42` and run the STRENGTH ordering under the capped ladder.
+   This one cheap book measures what the time cap costs the incumbent
+   — the right-tail truncation, priced directly. If the capped
+   control collapses against the uncapped +291.5%, that headwind is
+   known before a single fit is paid for.
+3. **Fold lines at `H=42`**: the value target on existing features
+   (fits refit — labels changed; transforms cached). The gate:
+   beats-the-constant in most folds. The value target has never been
+   fitted on capped labels; the cap compresses the right tail into
+   the estimable range, so this is a genuinely new measurement, not
+   a rerun.
+4. **The band**: repeat 2-3 at `H=21` and `H=63`.
+5. **Books and the yardstick**: the capped book gets its OWN 200-way
+   within-day permutation band (the 276-point band belongs to the
+   uncapped book and may not be borrowed). Judged on per-bet geo,
+   maxDD, and that band. Fees on by default; one `--no-fees` run to
+   read the commission cost of the faster recycling.
+6. **Gate-2 survivors join the full model**; repeat 3 and 5 once.
+
+### Acceptance
+
+1. Knob off → today's book bit for bit, +291.5% control, as always.
+2. Banner carries `max_hold=42d` (or 21/63) and the target name.
+3. Ledger and label caches key on `H`; windows and feature caches are
+   untouched and shared across all `H`.
+4. The split convention (0.5 per leg) is pinned by a hand-built test.
+5. Every step of the run order prints its go/no-go number before the
+   next step spends anything.
