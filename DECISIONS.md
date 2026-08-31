@@ -10,12 +10,14 @@ unadjusted prices. This line previously read +148.4% / +146.8% / 97th in
 both; that was measured on dividend-adjusted prices and does not belong to
 this dataset. See LIMITATIONS.md, "Split-adjusted prices".
 
-**A FILTER LAYER now sits in front of it** (`filters.py`,
-`filter_backtest.py`), ranking the signals the screener already produced
-and deciding which one a freed slot is spent on. Separate layer, its own
-verdicts below. On one continuous 2009-2026 path, no fees or tax:
-v5r +8.61%/yr, +MiniRocket k=0.50 **+11.16%/yr**, +Shapelet g=0 +8.75%/yr,
-**SPY total return +14.81%/yr**.
+**A FILTER LAYER sat in front of it** (`filters.py`,
+`filter_backtest.py`) — a veto plus a hard-coded strength sort. **That
+architecture was audited and retired on 2026-08-31** (see "The filter
+architecture is wrong", below); its verdicts table still stands as a
+record but no longer binds anything. Its numbers, for the record, one
+continuous 2009-2026 path, no fees or tax: v5r +8.61%/yr, +MiniRocket
+k=0.50 +11.16%/yr, +Shapelet g=0 +8.75%/yr, **SPY total return
++14.81%/yr**.
 
 **Read this first:** the standing configuration takes 1,213 of its 1,230
 positions on the section-11.3 SMA20 pullback and 6 on the pivot
@@ -87,9 +89,21 @@ trade is not his rule".
 *(Industry-group strength moved out of this table on 2026-08-28: it was
 built, tested both ways, and rejected. See the OUT table above.)*
 
-## Filter layer — verdicts (added 2026-08-29)
+## Filter layer — verdicts (added 2026-08-29; **VOIDED 2026-08-31**)
 
-| filter | verdict |
+**Every verdict in this table was measured through the architecture
+retired below: binary top-20% label → quantile veto → hard-coded
+strength re-rank.** They are records of that chain, not conclusions
+about the transforms, losses or features inside it. A transform that
+lost as a veto (volume, MV, the CNN's widths), a loss that lost when
+binarised (F-beta, the rate target), and a capability ruled out across
+four classification objectives (jackpot picking) have all only ever
+been tried in a pipeline whose decision the loss never saw. None of
+these rows may be cited to rule anything in or out under the ranker;
+re-measure there first. The numbers stay as the record of what the
+retired architecture did.
+
+| filter | verdict *(void — retired architecture)* |
 |---|---|
 | **MiniRocket k=0.50** (84 fixed kernels, PPV, balanced ridge) | **IN.** Dev +104.0%; and the only arm that survives the continuous 2009-2026 path: +8.61% -> +11.16%/yr with drawdown IMPROVING, -29.7% -> -28.3% |
 | **Shapelet g=0 k=0.50** (8 curves x 30 days, 249 params) | **IN on dev, DOES NOT TRANSFER.** Dev +126.3%, best of the session; continuous path +8.75%/yr against v5r's +8.61% — nothing — with drawdown worsening to -40.2% |
@@ -100,11 +114,173 @@ built, tested both ways, and rejected. See the OUT table above.)*
 | F-beta loss, reward only a correct >5% call (`--loss f1`) | **OUT, reverted 2026-08-29.** Dev +89.7% against the BCE shapelet's +126.3%. Kept runnable as a recorded negative, like `--v6` and `--v10`. Its one win: best drawdown of any arm, -23.8% |
 | Jackpot picking, any arm | **Not a capability these models have.** FOUR objectives aimed at it, all landing at or below the base rate: cost-weighted BCE x1.02, balanced BCE x0.96, symmetric log-value AUC 0.480, F-beta rewarding only true positives **x0.95**. The loss was never the binding constraint — the information is not in a year of price history in a form these models can reach. The filters earn their return by declining bad trades, not by finding good ones |
 
+## The filter architecture is wrong — audit and replacement (2026-08-31, proposed)
+
+**Verdict: the veto-plus-strength-sort construction is replaced, not
+tuned.** No further loss functions, thresholds or ensembles are to be
+tried inside it.
+
+### What the code does today, end to end
+
+A signal reaches the book through four stages, and the trained one is
+not the one that decides:
+
+1. The screener (v5r) proposes candidates — ~13 on a green day, against
+   a median of **zero** free slots.
+2. A model scores each candidate's window, and a quantile threshold
+   frozen at fit time turns the score into a yes/no veto
+   (`filters.py`, `decide`). After that the score is thrown away — it
+   never reaches the simulator.
+3. `simulate()` sorts the survivors by hard-coded keys — `rsl_hi`, then
+   `weak`, then `rs`, then ticker (`minervini_backtest.py:934`) — and
+   the top of that sort gets the slot. Since `weak` is 99.99% NaN, the
+   real picker is `rsl_hi` → `rs` → alphabet.
+4. The loss that trained stage 2 was a classification against a binary
+   top-20% label. Even when the labelled quantity was the rate target,
+   the model saw only "top fifth or not" (`filter_backtest.py`,
+   `score_walk_forward`: `aux = y >= thr`).
+
+### Where the objective leaks
+
+Three lossy conversions sit between the goal (growth per slot-day) and
+the decision, each discarding what the previous stage produced:
+
+- the continuous outcome is binarised into a top-quantile label before
+  training — the loss cannot prefer +40% over +6%, or a 20-day gain
+  over the same gain in 60 days;
+- the trained score is collapsed to a boolean veto at a frozen
+  quantile — the ranking information the fit did learn is discarded at
+  decision time;
+- the survivors are re-ranked by fixed keys the loss has never seen —
+  the pick the money actually rides on is made by a component that was
+  never trained and cannot learn.
+
+Nothing in this chain optimises the goal, so its relation to the goal
+is accidental: the system can sit below AllPass indefinitely, and would
+sit above it with the veto inverted. Which way it lands is not
+informative and is deliberately not investigated (operator instruction,
+2026-08-31). The finding is the architecture, not any loss inside it.
+
+### What this audit voids
+
+A conclusion is only as good as the pipeline that measured it, and this
+pipeline could not translate a better model into a better book. So:
+
+- **Every row of the filter-layer verdicts table above is void as a
+  verdict** — MiniRocket IN, the shapelet's non-transfer, volume OUT in
+  both forms, strict thresholds OUT, the CNN, F-beta, and "jackpot
+  picking is not a capability these models have". All were measured as
+  vetoes in front of a picker the loss never saw. The numbers remain
+  correct records of the retired chain and nothing more.
+- **The threshold rows are doubly void**: "k=0.80 starves the book" is
+  a statement about the veto mechanism itself, which no longer exists.
+- **CLAUDE.md's stated goal** ("an ensembled investment strategy out of
+  weak filters", filters that "earn by declining bad trades") describes
+  the retired architecture and needs rewording once the ranker stands.
+- The screener-level IN/OUT tables (v5r mechanisms) are unaffected —
+  they were measured with the strength sort as part of v5r itself, and
+  v5r as-is remains the baseline. "Strength ranking §10.2" stays IN for
+  the baseline, and under the ranker it is subsumed: the keys become
+  features, and StrengthScore becomes the control arm.
+
+### The replacement: one ranker, one target, no downstream picker
+
+One trained model — call it the **ranker** — produces one number per
+orderable signal: the predicted growth rate of a euro spent on it. The
+slot decision reads that number directly:
+
+    take = top free-slots of the day's usable pool, by predicted rate,
+           ticker as the determinism tie
+
+No veto, no threshold, no `--keeps`, no strength keys in the sort. The
+slot capacity is the only selectivity. The `key()` function and the
+boolean `gate` both retire; `simulate()` takes a (days × tickers) score
+matrix instead.
+
+**Features: everything, including the old picker.** The ranker's input
+is the window transform (MiniRocket features as today) **plus** the
+panel columns the hard-coded sort used to spend — `rsl_hi`, `rs`,
+`weak`, `group_pct`, `code33` — plus anything else already in the
+panel. This is what makes the architecture safe: a linear ranker with
+positive weight on `rsl_hi` and `rs` and zero elsewhere *is* today's
+v5r ordering. The hypothesis space contains the current system, so
+persistent underperformance of the baseline stops being an available
+failure mode of the design and becomes an ordinary fitting failure,
+visible as such.
+
+**Loss: least squares on the rate itself.** The fit is a ridge
+*regression* of the realised rate on the features (closed form,
+`RidgeCV`, same walk-forward schedule, embargo and fit banner as
+today). Squared error estimates the expected rate; ranking by expected
+rate is the greedy-optimal slot assignment when every slot-day not
+spent on A is available to B. The loss is the goal — nothing is
+binarised, thresholded or re-sorted after it.
+
+### The target, carefully
+
+Definitions: `y` = euros returned per euro committed (dividends in,
+`geostats.bet_multiples` convention), `t` = trading days held, floored
+at `t_floor` for the reason documented at `filter_backtest.py:449`.
+
+**The quantity optimised is `ln(y)/t`, and a bet is one vote.** Every
+bet is the same size — a flat tenth of equity — so bet size is a
+constant and never weights anything.
+
+- **Per signal (the training target).** An unsplit bet:
+
+      r = ln(y) / t
+
+  A split bet is two capital streams of the one bet: the banked half
+  earned `ln(y_half)` over its own `t_half` days, the rest earned
+  `ln(y_rest)` over the full `t`. Sum both wins, each stream at its own
+  rate, each with its capital share `f` (0.5 under the +20% half-sale):
+
+      r = f·ln(y_half)/t_half + (1-f)·ln(y_rest)/t
+      y_rest = (y - f·y_half) / (1-f)
+
+  Multiples decompose *arithmetically* by capital share (never logs);
+  the streams' rates then combine by those same shares. Ending the
+  first stream's clock at the half-sale is the point: banked capital is
+  free capital, and the rate target credits it. **This is exactly the
+  leg blend already at `filter_backtest.py:466`, which stands.**
+- **Per portfolio (the evaluation).** The geometric mean of daily
+  multiples, one vote per bet:
+
+      G_day = exp( (1/n) · sum(r_i) )        n = bets taken
+
+  reported beside `geo_per_bet` (the per-bet multiple, `geostats.py`),
+  which is unchanged.
+
+*(Operator decision 2026-08-31: equal weight per bet. A euro-day
+weight — `f·t` in both the leg blend and the portfolio average — was
+proposed and rejected: it re-weights long bets upward, undoing the
+per-day normalisation the target exists for. Do not re-propose.)*
+
+**The natural zero.** The predicted rate is on cash's own scale: cash
+earns 0.0/day. A slot may therefore stay empty when the best
+candidate's predicted rate is negative — read off the predicted
+quantity itself, not a tuned threshold. Off by default; the market
+light already does the regime version of this.
+
+### What changes, by file
+
+| | change |
+|---|---|
+| `filters.py` | `decide`/`threshold`/`keep` retire; the interface is `fit(features, r)` + `score`. `AllPass` retires with the veto. The baseline becomes **StrengthScore** — the old sort key encoded as a score — so the control arm runs the same code path as every fitted arm (Rule 3 preserved) and must reproduce **+291.5%** before any fitted row is read |
+| `minervini_backtest.py` | `simulate(scores=...)`; `take` = top slots by score. `key()` survives only for the legacy no-score path |
+| `filter_backtest.py` | rate is the only target; the leg blend at `:466` stands as the agreed definition; `RidgeCV` regression replaces `RidgeClassifierCV`; `aux`, jackpot stats and `--keeps` retire |
+| caches | feature caches are keyed on the transform and survive untouched; block and model caches refit — a regression is a different estimator, so this is a real refit of the ridge stages, not a key-field accident |
+| `EVALUATION_SPEC.md` | Rule 3's baseline definition becomes StrengthScore; the fit banner gains `target=rate/day estimator=ridge-reg`; `G_day` joins the reported figures |
+
+Headline evaluation is unchanged: one continuous path through
+`simulate()`, per-bet figures through `geostats.py`, the control arm
+reproduced before any fitted row is read.
+
 ## PROPOSED — not built
 
 | idea | what it would need |
 |---|---|
-| **Combine MiniRocket and Shapelet** | Both raise the per-bet result on dev, from different representations — fixed kernels over five channels versus eight learned price curves. If their scores rank bets differently there is something to gain; if they agree, nothing. **Measure the rank correlation of the two scores on the same candidates FIRST** — that one number decides whether any combiner is worth building. Forms, in rising cost: `AND` (both must approve), rank-average or weighted sum of scores, or a trained second-stage model taking both scores plus context. `filters.py` already has an `Ensemble` class with `all` / `any` / `vote` and rank-average scoring, written and never run. Two constraints that shape the choice: (1) with slots full 70.5% of days, `AND` is strictly more selective and would need each member's threshold LOOSENED to keep the book invested — the k=0.90 row above is what over-selection costs; (2) the shapelet does not survive the continuous path, so any combiner that leans on it inherits that fragility. A weighted form that can down-weight a member is safer than `AND`, and a trained combiner needs its own walk-forward or it just overfits the pair |
+| **Combine MiniRocket and Shapelet** | **Superseded 2026-08-31: written in veto terms (`AND`/`vote`, thresholds to loosen) for the retired architecture.** Under the ranker the same idea is one line — both transforms' features in the same regression — and needs no combiner, no vote and no threshold. The historical text is kept below for the record. — Both raise the per-bet result on dev, from different representations — fixed kernels over five channels versus eight learned price curves. If their scores rank bets differently there is something to gain; if they agree, nothing. **Measure the rank correlation of the two scores on the same candidates FIRST** — that one number decides whether any combiner is worth building. Forms, in rising cost: `AND` (both must approve), rank-average or weighted sum of scores, or a trained second-stage model taking both scores plus context. `filters.py` already has an `Ensemble` class with `all` / `any` / `vote` and rank-average scoring, written and never run. Two constraints that shape the choice: (1) with slots full 70.5% of days, `AND` is strictly more selective and would need each member's threshold LOOSENED to keep the book invested — the k=0.90 row above is what over-selection costs; (2) the shapelet does not survive the continuous path, so any combiner that leans on it inherits that fragility. A weighted form that can down-weight a member is safer than `AND`, and a trained combiner needs its own walk-forward or it just overfits the pair |
 
 ## Standing rules about the process itself
 
