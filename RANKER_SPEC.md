@@ -580,3 +580,86 @@ outer book's total: that is tuning on the one path we have.
 6. The `ridge-ycv` fold caches of the ratio era remain loadable (the
    record is not overwritten); rent-era caches key under a new name
    that includes both heads and `c`'s derivation.
+
+---
+
+## Amendment 5 — train one thing (2026-08-31)
+
+Amendment 4's target stands word for word. Its TWO-HEAD CONSTRUCTION
+is retired as the decision path — a specification error, owned here.
+
+### What the measured run proved about the construction
+
+The two heads were regularised independently: the grouped CV judged
+the profit head alone (found noise, shrank it to a constant, alpha at
+the 1e8 ceiling in all 15 folds) and the days head alone (found
+signal, kept it). But profit and duration are correlated in the data
+— long holds are the survivors and winners, short holds include the
+stop-outs — so the subtraction `constant − c·predicted_days` charged
+duration its rent while ignoring duration's profit association, and
+the composed score ranked its own target NEGATIVELY out of fold
+(spearman ~ −0.1 in most folds). Two individually-optimal parts,
+composed into worse than nothing.
+
+The rule that generalises, alongside "one bet, one multiple, one
+average": **a decision comes from the single best estimate of the
+decision quantity, never from separately tuned estimates of its
+parts.**
+
+### The construction that replaces it
+
+Per fold, ONE ridge, fitted directly on the rent number:
+
+    row:     all features (transform output + the key columns, as now)
+    answer:  r = ln(y) − c·t          (split legs as Amendment 4)
+
+- `c` is DERIVED exactly as Amendment 4 built it — the Dinkelbach
+  iteration at the book's own selectivity — printed, never a knob.
+  (`c` may not be chosen by CV on r's own error: each `c` defines a
+  different target scale, so those errors are not comparable. The
+  held-out top-slice ratio selection stays in reserve, as before.)
+- Alpha is chosen by the Amendment 1 grouped purged criterion, judged
+  on the WHOLE rent number's held-out error — never per part.
+- The score is that one model's prediction. Nothing subtracts two
+  fits anywhere in the decision path. The two heads may still be
+  FITTED AND PRINTED as diagnostics — they are how the flat profit
+  half was discovered — but no score may be composed from them.
+- The `c/2, c, 2c` sensitivity band stays mandatory: three single
+  fits per fold, each with its own CV'd alpha. Cheap; honest.
+
+Everything else stands: features, exits, schedule, control,
+evaluation columns (`geo/bet`, `G_day`, `G_rent`), the Amendment 3
+noise yardstick.
+
+### The reading, fixed before the run
+
+Totals are inside the measured 276-point permutation band and decide
+nothing. The arm is judged on maxDD, geo/bet and `G_rent`, plus the
+fold lines' loss-vs-constant count on r.
+
+1. **The fit beats the constant in most folds and the ordering holds
+   its sign** → the first right-shaped, right-composed model of these
+   features; measure it on the readable columns and only then revisit
+   Amendment 3's frozen transforms.
+2. **The fit shrinks to a constant** → flat scores, the book keeps
+   the control ordering, and that is the CORRECT behaviour, not a
+   failure: with no estimable difference between candidates, the
+   right amount of reordering is none. Record the closing verdict:
+   these window features do not improve the slot decision for
+   growth; the program's proven yield is the ratio-era
+   crash-avoidance signal and its drawdown cut; the next euro goes
+   to new information in the ledger, not new geometry over the same
+   windows.
+
+### Acceptance
+
+1. The control reproduces, as always, before any fitted row is read.
+2. The existing equivalence test is repurposed as the guard it always
+   was: a single ridge on `ln(y) − c·t` at one alpha equals the
+   two-head difference at that SAME alpha — and the decision path is
+   the single ridge, verifiable by reading `RentRanker.score`.
+3. No score anywhere is a difference of separately-regularised fits.
+4. Fold lines print alpha, `c`, its iteration count, and train /
+   out-of-fold error against the constant, on r.
+5. The Amendment 4 two-head caches remain loadable as the record;
+   single-fit caches key under their own name.
