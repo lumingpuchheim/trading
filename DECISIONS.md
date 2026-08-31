@@ -260,6 +260,14 @@ weight — `f·t` in both the leg blend and the portfolio average — was
 proposed and rejected: it re-weights long bets upward, undoing the
 per-day normalisation the target exists for. Do not re-propose.)*
 
+*(Later the same day, operator-approved: `ln(y)/t` is superseded AS
+THE TRAINED OBJECTIVE by the rent target `ln(y) − c·t` —
+`RANKER_SPEC.md` Amendment 4. The measured ground: the ratio prefers
+a small fast win over a jackpot and is dominated by stop-outs, and
+the book trained on it held longer, bet less and lost the total. One
+vote per bet stands unchanged in the rent loss; `G_day` keeps this
+section's definition as a reported column.)*
+
 **The natural zero.** The predicted rate is on cash's own scale: cash
 earns 0.0/day. A slot may therefore stay empty when the best
 candidate's predicted rate is negative — read off the predicted

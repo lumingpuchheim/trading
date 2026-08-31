@@ -466,3 +466,117 @@ configs; 3.4 rides on 3.2. Everything reuses cached folds — no fit is
 re-run anywhere. If 3.1 and 3.2 both fail, no third transform fixes
 throughput either, and the register should say where the question
 moved: new information into the ledger, or sizing by score.
+
+---
+
+## Amendment 4 — the rent target: profit minus slot rent (2026-08-31)
+
+Supersedes the ratio target `ln(y)/t` AS THE TRAINED OBJECTIVE. The
+ratio stays reportable (`G_day` keeps its definition), but nothing
+trains on it any more.
+
+### Why the ratio target was the wrong shape
+
+A slot's long-run growth is TOTAL log-profit over TOTAL days across
+the bets that occupy it — a ratio of sums. The trained target was the
+average of each bet's OWN ratio, and the two disagree exactly where
+the money is:
+
+    +10% in 20 days    ratio +0.0048/day   <- ratio target's favourite
+    +40% in 180 days   ratio +0.0019/day   <- the jackpot, ranked BELOW it
+    -8% stop in 3 days ratio -0.028/day    <- dominates the loss; costs
+                                              the account 0.8% and frees
+                                              the slot in days
+
+The ratio target is anti-right-tail and stop-out-obsessed. The
+measured book agreed: better bets, longer holds, fewer draws, lower
+total (DECISIONS.md, "The ranker, measured"; the blend runs). The 3.1
+blend proved the two orderings compose on quality, and 3.2 attacks
+throughput — this amendment fixes what the model is FOR.
+
+### The target
+
+    r  =  ln(y)  −  c · t
+
+`y` = euros returned per euro committed (dividends in, as before);
+`t` = trading days held, **no floor — `t_floor` is void**, nothing
+divides by days any more. A split bet decomposes as before: multiples
+arithmetically by capital share, and each stream owes rent for its own
+days:
+
+    r = f·(ln(y_half) − c·t_half) + (1−f)·(ln(y_rest) − c·t)
+
+A bet pays its profit and owes rent for every day it blocks the slot.
+Ranking by expected `r` is the greedy-optimal slot decision for the
+ratio-of-sums objective (the standard linearisation of a fractional
+objective). Long holds are charged linearly — the push the old target
+never had — and the jackpot outranks the fast small win again.
+
+### The two heads, and why the rent sweep is free
+
+Ridge is linear in its target and the target is linear in `c`, so fit
+TWO ridges per fold — one on `ln(y)`, one on `t` — and the rent model
+for EVERY `c` is their difference:
+
+    score(c) = predicted_profit − c · predicted_days
+
+One fit pair per fold serves the whole `c` grid, and the heads are
+diagnostics in their own right: `predicted_days` shows directly
+whether the model steers toward long holds. Alpha is chosen per head
+by the Amendment 1 criterion, unchanged (the eigendecomposition is
+target-independent, so this costs one extra back-substitution, not a
+second decomposition).
+
+### Finding `c`: derived, not tuned
+
+Per fold, from that fold's own training window:
+
+    c0 = mean(ln y) / mean(t)          over the training bets
+    iterate: rank training bets by score(c_k); take the top slice at
+             the book's own selectivity (the taken/orderable fraction
+             of the training window); c_{k+1} = that slice's
+             sum(ln y) / sum(t); stop when the change is < 5% or after
+             3 rounds.
+
+This is the standard fractional-programming iteration; it converges
+monotonically and never leaves the training window. `c` is therefore
+a per-fold derived quantity, printed on the fold line — NOT a knob.
+
+**Sensitivity line, mandatory:** each arm's book is also run at `c/2`
+and `2c` (free — same two heads) and the three totals print together.
+A book that swings hard across that band is fragile and the run says
+so. Theory expects the ranking to move slowly with `c`; verify, don't
+assume.
+
+**Held in reserve, only if the sensitivity line shows `c` matters:**
+choose `c` jointly with alpha on the Amendment 1 grouped purged years,
+maximising the held-out top-slice `sum(ln y)/sum(t)` — the true
+objective, inside the training window. `c` may NEVER be chosen by the
+outer book's total: that is tuning on the one path we have.
+
+### What this voids
+
+- `t_floor` and its rationale (fast stop-outs no longer explode a
+  denominator). The `--floor` flag dies.
+- The ratio target as anything trained. `G_day` remains a REPORTED
+  column with its existing definition, beside a new one: `G_rent`,
+  the mean of `r` over the bets taken, same shape as `G_day`.
+- Nothing else: exits, schedule, grouped CV, control, evaluation
+  through `geostats.py` all stand. MultiRocket/Hydra stay frozen
+  until the rent-trained rocket is measured (Amendment 3 order).
+
+### Acceptance
+
+1. The control reproduces, as always.
+2. Equivalence test: at fixed `c`, the two-head difference reproduces
+   a direct single ridge on `ln(y) − c·t` to float tolerance — the
+   linearity claim, pinned.
+3. A hand-built split-bet example reproduces the leg decomposition
+   above bit for bit.
+4. The fold line prints the derived `c`, its iteration count, and
+   both heads' metrics; the book prints the `c/2, c, 2c` sensitivity
+   line.
+5. `grep -n floor filter_backtest.py` finds nothing load-bearing.
+6. The `ridge-ycv` fold caches of the ratio era remain loadable (the
+   record is not overwritten); rent-era caches key under a new name
+   that includes both heads and `c`'s derivation.
