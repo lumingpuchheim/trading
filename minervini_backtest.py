@@ -554,6 +554,16 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     # reached the ledger, so it never triggers).
     if scores is not None and gate is not None:
         raise ValueError('scores and gate are two architectures; pass one')
+    # Slot capacity: by POSITION COUNT (today's book), or by CAPITAL when
+    # `capital_slots` is set. Under capital slots a position that banked
+    # its +20% half occupies only the fraction it still holds (~0.5), so
+    # two split positions free one whole slot between them and the
+    # freed capital can buy an 11th name. Off by default: every recorded
+    # book, the +291.5% control included, was measured by position count.
+    cap_slots = bool(tr.get('capital_slots'))
+
+    def pos_weight(p) -> float:
+        return min(1.0, p['shares'] / p['shares0']) if cap_slots else 1.0
     vol_ok = panel['vol_ok']
     # Prices are NOT dividend adjusted since 2026-08-29, so a holder's
     # dividends are cash that has to be credited here or it disappears
@@ -679,8 +689,9 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
             px = fill_px[i, j] if not is_control else op[i, j]
             if not is_control and not trigger[i, j]:
                 continue                      # never touched, or too extended
-            if j in positions or len(positions) >= tr['max_positions'] \
-                    or not np.isfinite(px):
+            if j in positions or not np.isfinite(px) \
+                    or sum(pos_weight(p) for p in positions.values()) \
+                    > tr['max_positions'] - 1 + 1e-9:
                 continue
             frac = tr['equal_weight_fraction']
             if risk_frac:
@@ -837,7 +848,8 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 px = fill_px[i, j]
                 if (not trigger[i, j] or j in positions
                         or not np.isfinite(px)
-                        or len(positions) >= tr['max_positions']):
+                        or sum(pos_weight(p) for p in positions.values())
+                        > tr['max_positions'] - 1 + 1e-9):
                     continue
                 if min_score is not None and scores is not None                         and not scores[i, j] >= min_score:
                     # the natural zero: cash grows at 0.0/day, so a slot
@@ -915,8 +927,14 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         orders = {j: day for j, day in orders.items() if day > i}
 
         # 4. place tomorrow's orders
-        exiting = sum(1 for p in positions.values() if p['exit_reason'])
-        slots = tr['max_positions'] - (len(positions) - exiting) - len(orders)
+        exiting = sum(pos_weight(p) for p in positions.values()
+                      if p['exit_reason'])
+        open_w = sum(pos_weight(p) for p in positions.values())
+        # a new entry is a whole 10% bet, so only WHOLE free slots arm
+        # orders: floor. With capital_slots off every weight is 1.0 and
+        # this floor of an integer-valued float is the old integer.
+        slots = int(np.floor(tr['max_positions'] - (open_w - exiting)
+                             - len(orders) + 1e-9))
         market_ok = (dimmer[i] >= dim_min) if (dimmer is not None and dim_min)             else green[i]
         if slots > 0 and market_ok and i + 1 < len(cal):
             slot_days += slots

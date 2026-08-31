@@ -72,6 +72,7 @@ trade is not his rule".
 | Industry-group strength, hard gate (top 30% of groups) | **rejected** | dev +133%, test +53%; at the control median in test |
 | v11 pyramid 5/3/2 (pilot 5%, adds 3% and 2%) | **rejected** | euro/bet 1.0082/1.0108 -> 0.9978/0.9997; the pyramided sixth of positions loses 4.6/4.7 pts because the ladder caps at the flat 10%, so adds only raise the cost basis without adding capital |
 | Industry-group strength, conviction ranking | **rejected** | dev +112%, test **-0.8%**, 3rd control percentile — 97 of 100 random portfolios beat it |
+| Capital-counted slots (a split position occupies its remaining ~half, freed halves finance extra positions) | **rejected 2026-08-31** | measured under the ranker era on operator request: strength +291.5% -> +259.8%, rocket +234.6% -> +159.1%; more bets (+44/+58), more time invested (+3 pts), lower total — same sign in both arms and both measurement windows, so not path noise. Per-bet quality of the whole book falls (+0.57% -> +0.44%): the extra capacity recomposes the book, not just appends to it. The `capital_slots` knob stays in `simulate()`, off; with it off the +291.5% control reproduces bit for bit |
 
 ## Never built, and why
 

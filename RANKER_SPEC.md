@@ -389,3 +389,80 @@ feature matrix.
    differ is invalid and no book from it may be quoted.
 4. Fold lines and book rows print in the shared format, so the four
    arms read side by side in one console.
+
+---
+
+## Amendment 3 — four measurements before any new transform (2026-08-31)
+
+MultiRocket and Hydra are NOT to be built until these four have run
+and been read. Each is a run, not a model; together they either
+justify the two rewrites or kill them cheaply. Standing facts they
+build on: rocket picks better bets and fewer of them (+0.76%/bet,
+876 vs 988 on the fitted years, book total below the control's); the
+bet-count gap is hold duration, not declining (no threshold exists,
+invested time is HIGHER); capital-counted slots were measured and
+rejected (DECISIONS.md, OUT table).
+
+### 3.1 The blend — the decisive run
+
+A rank-average ensemble of the two orderings that exist:
+
+    per day, over the day's pool:
+      p_strength = percentile rank of the strength ordering
+      p_rocket   = percentile rank of the rocket scores
+      score      = w * p_rocket + (1-w) * p_strength,  w in {0.25, 0.5, 0.75}
+
+Per-day percentiles, not raw values — the two scales are
+incommensurable (one is an integer encoding, one is a rate). Both
+inputs are readable at the fill close (strength's keys a day earlier),
+so the blend inherits causality. No new fits: rocket's cached
+out-of-fold scores and the strength matrix are both already on disk.
+
+Reading, fixed now: any w beating the strength book on the agreed
+columns → the quality-plus-throughput mechanism works, and each
+DECORRELATED additional arm has a measurable slot to improve — build
+the transforms. Every w landing between its members → blending
+dilutes; more same-window transforms would dilute too; the rewrites
+are cancelled and the next lever is information, not geometry.
+
+### 3.2 Slot count under the ranker
+
+`slot_sweep`'s recorded row (20 x 5%: same total, twice the trades,
+maxDD -30.2% -> -21.7%, under the strength ordering) has never been
+run with a fitted arm. Rocket's failure mode is exactly too few
+draws. Run strength and rocket at 15 x 6.67% and 20 x 5% (config
+values `max_positions` / `equal_weight_fraction`; keep 100% gross —
+the bet-size scan rejected changing gross exposure). Reading: does
+rocket's per-bet edge survive smaller bets and convert to total at
+higher throughput? Note `geo/bet` mechanically drops for every arm at
+5% bets; compare arms within a config, never across configs.
+
+### 3.3 The noise yardstick, then the verdict bar
+
+We watched a 40-point total-return difference flip sign with the
+measurement path. Before any new arm is judged: shuffle the rocket
+scores within each day (pool preserved, N >= 100 permuted books,
+seconds each) and read the spread of totals. Differences inside that
+spread are unreadable and may not decide anything. Then the verdict
+bar for MultiRocket / Hydra is PRE-REGISTERED here: they are judged on
+per-bet geo, `G_day`, maxDD, loss-vs-constant fold count, and rank
+correlation against rocket's scores (decorrelation is the point of
+building them); total return counts only outside the permutation
+spread. A transform whose scores correlate > ~0.8 with rocket's adds
+nothing an ensemble can use, whatever its book says.
+
+### 3.4 The natural zero, along for the ride
+
+`--min-score 0` is implemented and has never run: a slot stays in
+cash when the best candidate's predicted rate is negative. One flag
+on the 3.2 runs. Reading: if the model's "don't buy" has value it
+shows as invested down, drawdown down, total held; if not, that is
+worth one recorded line and the flag stays off.
+
+### Order and cost
+
+3.3's permutations and 3.1's blends share one session with 3.2's
+configs; 3.4 rides on 3.2. Everything reuses cached folds — no fit is
+re-run anywhere. If 3.1 and 3.2 both fail, no third transform fixes
+throughput either, and the register should say where the question
+moved: new information into the ledger, or sizing by score.
