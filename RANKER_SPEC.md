@@ -220,3 +220,103 @@ far that goes but does not reverse it. So `G_day` is a ranking-quality
 number, not a statement about what a euro did — `geo/bet` is that — and
 the two are printed side by side, each beside the pool, for exactly
 that reason.
+
+---
+
+## Amendment 1 — alpha by grouped, purged cross-validation (2026-08-31)
+
+Supersedes "Alpha by exact leave-one-out" above. The mechanics of that
+paragraph were right and its criterion was wrong: the measured run
+(DECISIONS.md, "The ranker, measured") chose alpha=100 by leave-one-out
+while the out-of-fold loss said a constant beat the fit in all 18
+folds. Leave-ONE-bet-out cannot see that, because the bets are not
+independent: ~12 share each trading day's market move, and their
+252-day windows overlap almost completely. Hiding one bet leaves its
+twins — same day, same stock weeks apart, same market month — in the
+training set, so the criterion recognises the held-out bet rather than
+predicting it, and it under-regularises with full confidence.
+
+The fix hides a bet together with its twins. Not the outer block: the
+outer out-of-fold loss may never judge alpha, or the block leaks into
+model selection and the walk-forward stops being one.
+
+### The criterion
+
+Inside each outer fold's training window, group the training bets by
+the **calendar year of entry**. For each candidate alpha and each
+usable held-out year Y:
+
+    inner-train = training bets whose entry is more than EMBARGO
+                  (400) calendar days from BOTH boundaries of Y
+    fit ridge(alpha) on inner-train, mse per bet on Y's bets
+
+Pool the held-out bets across years — one vote per bet, the same
+convention as everywhere else — and take the alpha with the smallest
+pooled mse. The purge is symmetric on purpose: the left side keeps Y's
+outcomes out of what the inner fit trains on (the embargo exceeds the
+longest hold), the right side keeps out the bets whose feature windows
+look back into Y and whose holding periods overlap Y's unresolved
+tails. One constant, already defined, both directions.
+
+**Usability.** A held-out year counts only if its inner-train keeps at
+least `INNER_MIN = 1,000` rows after the purge. A fold needs at least
+two usable held-out years to choose alpha honestly; below that it
+fits nothing and keeps the control ordering, exactly as 2007-2008 do
+today. Consequence, stated rather than hidden: the purge is brutal on
+the earliest windows, so the first fitted year will move later than
+2009. Where it lands is measured by the run, not assumed here.
+
+**The grid grows upward**: `logspace(-3, 8, 23)`, so the criterion is
+able to say "shrink almost everything" if that is the truth. The old
+top of 1e5 presumed an answer.
+
+### Computation
+
+Gram matrices add over rows, which is the whole trick. One pass builds
+the full Gram `G_total = X'X` and `b_total = X'y` (float32 sgemm
+accumulated into float64, as now). Per held-out year, one pass over
+the removed rows (Y plus its purge margins) builds `G_out`, and
+
+    G_inner = G_total - G_out,   b_inner = b_total - b_out
+
+One eigendecomposition of `G_inner` then serves the entire alpha grid
+for that year. Peak memory stays at a few p x p float64 matrices
+(~142 MB each at p = 4,206), never an n x p copy. Cost: one
+eigh(4,206) per usable held-out year per outer fold — minutes per
+fold, roughly 150-250 decompositions over the full record. Prove it on
+the short window first; note `--until 2012-12-31` may contain ZERO
+fitted folds under the usability rule, so the fail-fast window for
+this change is `--until 2014-12-31`.
+
+### Interface and bookkeeping
+
+- `Ranker.fit(F, r)` gains the entry dates: `fit(F, r, when)`. The
+  grouping is the fit's own business; the driver already has the
+  dates. `StrengthScore` ignores the argument.
+- Cache entries are keyed under a NEW name (`ridge-ycv`) with the grid
+  in the key, so nothing collides with the measured `ridge-loo` run,
+  which stays on disk as the record behind the DECISIONS row.
+- The banner prints `estimator=ridge-ycv`; the fold line appends the
+  count of usable held-out years, e.g. `alpha 3162 (9y)`. A fold that
+  keeps the control ordering says so on its line.
+
+Nothing else moves: target, floor, features, outer schedule, fold-line
+metrics and the control invariant are all as specified above.
+
+### Acceptance
+
+1. A test asserts no inner-train row's entry is within 400 calendar
+   days of its held-out year, for every (fold, year) pair actually
+   used.
+2. Gram subtraction equals the directly computed inner Gram on a small
+   case, to float tolerance (unit test).
+3. The twin test, pinning the mechanism this amendment exists for:
+   synthetic data where same-day rows share their noise. Leave-one-out
+   must choose a smaller alpha than the grouped criterion on the same
+   matrix, and the grouped choice must have the smaller error on a
+   held-out continuation. If this test cannot tell them apart, the
+   implementation missed the point.
+4. The control reproduces, unchanged (Acceptance 1 above); the
+   StrengthScore book is untouched by this amendment.
+5. The measured `ridge-loo` fold metrics remain loadable from the
+   cache after the change (the record is not overwritten).

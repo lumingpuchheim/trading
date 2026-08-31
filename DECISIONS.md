@@ -337,7 +337,11 @@ rather than collapses. So this row is a bad regression that is a
 slightly-better-than-nothing ranker -- NOT evidence about the target,
 which has not yet been given a fit that minimises it out of fold. The
 next measurement is a shrinkage sweep judged on out-of-fold loss instead
-of on training LOO.
+of on training LOO. *(Specified 2026-08-31 as `RANKER_SPEC.md`
+Amendment 1 — with one correction: the sweep's judge is grouped,
+purged cross-validation INSIDE the training window, never the outer
+out-of-fold loss, which would leak the scored block into model
+selection.)*
 
 **Both books sit below the pool on `G_day`** (-0.36% and -0.27% against
 -0.24%), which is less strange than it looks. A per-day rate with one
