@@ -300,6 +300,8 @@ reproduced before any fitted row is read.
 
 ## The ranker, measured — MiniRocket against do-nothing (2026-08-31)
 
+> **SUPERSEDED the same day by "The alpha was the whole story" below.** Everything here was measured with alpha chosen by leave-one-bet-out, which RANKER_SPEC Amendment 1 then showed cannot see past a bet's same-day twins. The book numbers in this section are the record of that estimator, not of MiniRocket as a ranker. The reasoning about the architecture, the target and the pool still stands.
+
 **Verdict: the architecture stands, the arm does not.** One record,
 2007-01-03 .. 2026-08-27, one continuous path, embargo 400d, expanding
 window, `target=ln(y)/t` floored at 3 trading days,
@@ -365,6 +367,56 @@ What this does NOT say: no row of the voided verdicts table is
 reinstated or refuted by it. This is one transform, one estimator and
 one target measured under the new architecture, and it is the first such
 row.
+
+
+## The alpha was the whole story — Amendment 1, measured (2026-08-31)
+
+**Verdict: the criterion was the bug, not the transform.** Same record,
+same schedule, same features, same target; the only change is that alpha
+is chosen by grouped, purged cross-validation instead of
+leave-one-bet-out (RANKER_SPEC.md Amendment 1, `estimator=ridge-ycv`).
+
+| arm | total | ann | maxDD | rows | bets | geo/bet | G_day | invested |
+|---|---|---|---|---|---|---|---|---|
+| **strength** (control) | **+291.5%** | +7.2% | -30.2% | 1,477 | 1,252 | +0.57% | -0.3561% | 73.4% |
+| **rocket, ridge-ycv** | +234.6% | +6.3% | **-23.0%** | 1,303 | 1,143 | **+0.76%** | **-0.2222%** | 74.4% |
+| rocket, ridge-loo *(superseded)* | +136.3% | +4.5% | -21.6% | 1,368 | 1,196 | +0.35% | -0.2655% | 74.4% |
+| the whole candidate pool | — | — | — | — | 55,737 | +0.52% | -0.2380% | — |
+
+**The loss now beats the constant**: row-weighted out-of-fold R2
+**+0.038**, better than predicting the fold's own training mean in **13
+of 15** fitted folds, against **0 of 18** under leave-one-out. The last
+fold is the best of the run (+0.08, out-of-fold Spearman +0.18). Three
+folds -- 2009, 2010, 2011 -- cannot supply two purged years and fit
+nothing, exactly as the amendment predicted; 48,600 of 55,737 signals
+are scored and the rest keep the control ordering.
+
+**The alpha moved four orders of magnitude**: 100 under leave-one-out,
+**1e+06** for 2012-2014 and **3.16e+06** from 2015 on. It did NOT pin at
+the grid's 1e+08 ceiling, so the criterion found an interior optimum
+rather than asking for the mean. Training Spearman collapsed from +0.87
+to about +0.12 while out-of-fold Spearman rose to +0.12-+0.18: the fit
+stopped memorising and kept the rank. Standardised features make the
+comparable quantity alpha/n -- 0.003 under leave-one-out against about
+88 now, which is the same statement in the only units where it means
+anything.
+
+**What the arm is worth, stated carefully.** It beats the control and
+the pool on every per-bet measure -- +0.76% per bet against +0.57% and
++0.52%, and G_day -0.2222% against -0.3561% and the pool's -0.2380%,
+the first arm ever to beat the pool on the quantity it is trained on --
+with a drawdown a quarter smaller, on 109 fewer bets at the same time
+invested. **And it still loses the book: +234.6% against +291.5%.**
+That is not a contradiction. Ten bets are open at once, so the equity
+curve depends on when capital was committed and not only on what each
+bet returned; one vote per bet and one continuous path answer different
+questions and they disagree here. Which of the two is the objective is
+a decision, and it is not taken in this row.
+
+What this does NOT say: no row of the voided verdicts table is
+reinstated or refuted. It does say that "MiniRocket as a ranker is worse
+than doing nothing", recorded in the section above, was a statement
+about leave-one-bet-out.
 
 
 ## PROPOSED — not built

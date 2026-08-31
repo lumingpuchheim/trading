@@ -43,6 +43,12 @@ LEGACY_EMBARGO = EMBARGO_DAYS         # only if it was ENTERED this long
                                       # stay comparable with everything
                                       # recorded before 2026-08-29.
 MIN_TRAIN = 2000         # a block with less history than this is not scored
+INNER_MIN = 1000         # RANKER_SPEC Amendment 1: a held-out YEAR inside
+                         # a fold's training window counts toward the
+                         # alpha choice only if at least this many rows
+                         # survive the symmetric 400-day purge around it.
+                         # A fold with fewer than two usable years fits
+                         # nothing and keeps the control ordering.
 T_FLOOR = 3              # trading days: the shortest hold a rate is
                          # allowed to be divided by. 1.8% of bets close
                          # inside three days and carry ~14% of the total

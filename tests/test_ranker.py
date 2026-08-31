@@ -22,8 +22,9 @@ import numpy as np
 import pytest
 from sklearn.linear_model import Ridge
 
-from bets_common import T_FLOOR, rate_target
-from rankers import loo_ridge, strength_matrix
+from bets_common import EMBARGO_DAYS, T_FLOOR, rate_target
+from rankers import (inner_split, loo_ridge, strength_matrix,
+                     ycv_ridge)
 from test_bet_multiples import DIV, ENTRY_I, PATH, _cfg, _ledger_y, _panel
 
 
@@ -175,3 +176,104 @@ def test_the_alpha_search_prefers_more_shrinkage_on_pure_noise():
     _, _, a_noise, _ = loo_ridge(X, noise)
     _, _, a_signal, _ = loo_ridge(X, signal)
     assert a_noise > a_signal
+
+
+# --------------------------------- the alpha criterion (Amendment 1)
+
+def test_the_purge_is_symmetric_and_keeps_the_year_out_of_the_inner_fit():
+    when = np.arange(np.datetime64('2008-01-01'),
+                     np.datetime64('2016-01-01')).astype('datetime64[D]')
+    for Y in range(2009, 2015):
+        out, held = inner_split(when, Y, EMBARGO_DAYS)
+        assert held.sum() in (365, 366)
+        assert (when[held] >= np.datetime64(f'{Y}-01-01')).all()
+        assert (when[held] <= np.datetime64(f'{Y}-12-31')).all()
+        # nothing the inner fit may see is within the embargo of either
+        # boundary -- the acceptance condition, stated as the test
+        gap = np.timedelta64(EMBARGO_DAYS, 'D')
+        inner = when[~out]
+        d0 = np.abs(inner - np.datetime64(f'{Y}-01-01'))
+        d1 = np.abs(inner - np.datetime64(f'{Y}-12-31'))
+        assert (d0 > gap).all() and (d1 > gap).all()
+        assert not (held & ~out).any()
+
+
+def test_the_purge_reaches_both_ways_not_just_backwards():
+    when = np.array(['2010-06-01', '2011-06-01', '2013-06-01', '2014-06-01'],
+                    dtype='datetime64[D]')
+    out, held = inner_split(when, 2012, 400)
+    # 2011 and 2013 are inside 400 days of a boundary; 2010 and 2014 are
+    # not. A one-sided purge would keep 2013.
+    assert list(out) == [False, True, True, False]
+    assert not held.any()
+
+
+def test_gram_subtraction_equals_the_directly_computed_inner_gram():
+    rng = np.random.default_rng(3)
+    X = rng.normal(size=(400, 25)).astype(np.float32)
+    y = rng.normal(size=400)
+    out = rng.random(400) < 0.3
+    G_direct = np.asarray(X[~out].T @ X[~out], dtype=np.float64)
+    G_sub = (np.asarray(X.T @ X, dtype=np.float64)
+             - np.asarray(X[out].T @ X[out], dtype=np.float64))
+    assert G_sub == pytest.approx(G_direct, rel=1e-5, abs=1e-4)
+    b_direct = np.asarray(X[~out].T @ y[~out].astype(np.float32), np.float64)
+    b_sub = (np.asarray(X.T @ y.astype(np.float32), np.float64)
+             - np.asarray(X[out].T @ y[out].astype(np.float32), np.float64))
+    assert b_sub == pytest.approx(b_direct, rel=1e-5, abs=1e-4)
+
+
+def _twins(n_years, rows_per_day, days_per_year, p, rng, start=2000):
+    """Rows that come in twins: everyone trading on the same day shares a
+    feature direction AND the outcome noise that direction can be used to
+    memorise. This is the shape of the real ledger -- ~12 bets share each
+    day's market move -- reduced to the smallest thing that has it."""
+    when, X, y = [], [], []
+    beta = rng.normal(size=p) / np.sqrt(p)
+    for k in range(n_years):
+        Y = start + k
+        for d in range(days_per_year):
+            day = (np.datetime64(f'{Y}-01-01')
+                   + np.timedelta64(int(d * 360 / days_per_year), 'D'))
+            u = rng.normal(size=p)                 # the day's direction
+            g = rng.normal() * 1.5                 # the day's shared noise
+            xs = u + 0.5 * rng.normal(size=(rows_per_day, p))
+            when += [day] * rows_per_day
+            X.append(xs)
+            y.append(xs @ beta * 0.10 + g + 0.3 * rng.normal(rows_per_day))
+    X = np.concatenate(X).astype(np.float32)
+    return (np.array(when, dtype='datetime64[D]'), X - X.mean(0),
+            np.concatenate(y))
+
+
+def test_leave_one_out_is_fooled_by_the_twins_and_the_grouping_is_not():
+    """The mechanism this amendment exists for, in one test.
+
+    Leave-ONE-out hides a row and leaves its same-day twins in the
+    training set, so the day's shared noise is still there to be
+    recognised and the criterion under-regularises. Grouping by year
+    hides a row together with every twin it has. If these two agree, the
+    implementation has missed the point.
+    """
+    rng = np.random.default_rng(11)
+    grid = np.logspace(-2, 6, 17)
+    when, X, y = _twins(12, 8, 30, 120, rng)
+    _, _, a_loo, _ = loo_ridge(X, y, alphas=grid)
+    coef_y, b_y, a_ycv, _, used = ycv_ridge(X, y, when, alphas=grid,
+                                            embargo=400, inner_min=200)
+    assert len(used) >= 2
+    assert a_loo < a_ycv, (a_loo, a_ycv)
+
+    # and the grouped choice is the better one on a held-out continuation
+    when2, X2, y2 = _twins(3, 8, 30, 120, rng, start=2100)
+    X2 = X2.astype(np.float32)
+    coef_l, b_l, _, _ = loo_ridge(X, y, alphas=[a_loo])
+    err_loo = np.mean((X2 @ coef_l.astype(np.float32) + b_l - y2) ** 2)
+    err_ycv = np.mean((X2 @ coef_y.astype(np.float32) + b_y - y2) ** 2)
+    assert err_ycv < err_loo, (err_ycv, err_loo)
+
+
+def test_a_window_with_too_few_purged_years_fits_nothing():
+    rng = np.random.default_rng(12)
+    when, X, y = _twins(2, 8, 30, 40, rng)      # two years, 400d purge
+    assert ycv_ridge(X, y, when, embargo=400, inner_min=200) is None

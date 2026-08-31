@@ -183,7 +183,12 @@ one day earlier, which is where `simulate()` reads them today — so it
 is causal by a day's margin and reproduces the incumbent permutation
 exactly.
 
-**Alpha by exact leave-one-out, not GCV.** GCV replaces the hat
+**Alpha by exact leave-one-out, not GCV.** *(Itself superseded hours
+later by Amendment 1 below: exact leave-one-out fixed the degeneracy
+described here and was still the wrong criterion, because the unit it
+leaves out is one bet and a bet's twins stay behind. The paragraph is
+kept because the GCV failure it records is real and would otherwise be
+rediscovered.)* GCV replaces the hat
 diagonal by its mean, and that fails precisely here: three of the first
 four folds have fewer rows than the 4,206 features (2,174 in 2009), the
 fit interpolates, `df -> n`, and the criterion becomes 0/0. It chose

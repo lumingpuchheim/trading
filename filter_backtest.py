@@ -31,9 +31,14 @@ ordering in every arm, so the arms differ only where the model exists.
 Usage
     python filter_backtest.py                     # both arms, full record
     python filter_backtest.py --arms strength     # the control alone
-    python filter_backtest.py --until 2012-12-31  # fail fast, minutes
+    python filter_backtest.py --until 2014-12-31  # fail fast (see below)
     python filter_backtest.py --alpha 100         # skip the alpha search
     python filter_backtest.py --dump              # + each arm's trades
+
+The fail-fast window is 2014, not 2012: the alpha criterion purges 400
+days either side of every held-out year inside the training window, and
+a fold needs two years to survive that, so `--until 2012-12-31` can
+contain ZERO fitted folds and prove nothing.
 """
 
 import sys
@@ -44,13 +49,14 @@ from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
 import fitcache
-from bets_common import (AUX_Q, EMBARGO_DAYS, LOOKBACK_YEARS, T_FLOOR, load,
-                         rate_target, warmup_rows, year_blocks)
+from bets_common import (AUX_Q, EMBARGO_DAYS, INNER_MIN, LOOKBACK_YEARS,
+                         T_FLOOR, load, rate_target, warmup_rows,
+                         year_blocks)
 from geostats import bet_multiples, geo_mean_per_euro
 from lppl_backtest import ROOT, load_config, metrics
 from minervini_backtest import apply_v5, build_panel, pool_by_day, simulate
 from minervini_rocket import fit_biases, kernels, transform
-from rankers import RidgeRanker, strength_matrix
+from rankers import YCV_ALPHAS, RidgeRanker, strength_matrix
 
 LEDGER = ROOT / 'results' / 'minervini_bets_v5r.csv'
 WINDOWS = ROOT / 'results' / 'minervini_bets_v5r_windows.npz'
@@ -127,7 +133,7 @@ def fold_metrics(r_tr, p_tr, r_ev, p_ev) -> dict:
                 'auc_ev': float(auc(r_ev, p_ev))}
 
 
-def fold_line(Y, n_train, m, alpha, cached, r2) -> str:
+def fold_line(Y, n_train, m, alpha, cached, r2, years) -> str:
     # `r2` is the loss against the only honest null there is: predict
     # this fold's own TRAINING mean for every bet in the block. A raw mse
     # on a quantity with sd 7.4e-03 says nothing on its own -- the first
@@ -138,10 +144,12 @@ def fold_line(Y, n_train, m, alpha, cached, r2) -> str:
             f'mse {m["mse_tr"]:.2e} / {m["mse_ev"]:.2e}  R2oof {r2:+6.2f}   '
             f'spear {m["sp_tr"]:+.2f} / {m["sp_ev"]:+.2f}   '
             f'auc {m["auc_tr"]:.2f} / {m["auc_ev"]:.2f}   '
-            f'alpha {alpha:g}{"  (cached)" if cached else ""}')
+            f'alpha {alpha:g} ({years}y)'
+            f'{"  (cached)" if cached else ""}')
 
 
-def score_walk_forward(feats, keys, r, blocks, alpha, src, floor):
+def score_walk_forward(feats, keys, r, date, blocks, alpha, src, floor,
+                       embargo):
     """Fit each block on earlier rows only and score it out of fold.
 
     These fits are closed form -- there are no epochs, so there is no
@@ -159,8 +167,11 @@ def score_walk_forward(feats, keys, r, blocks, alpha, src, floor):
         # the null the loss has to beat, computed here rather than stored:
         # it needs no fit, so a cached fold reports it too
         null = float(np.mean((r[ev] - r[tr].mean()) ** 2))
-        ck = fitcache.key('ridge-loo', src, alpha, floor, keys.shape[1],
-                          tr, ev)
+        # a NEW cache name, with the grid and the criterion's own two
+        # constants in the key: the measured `ridge-loo` entries stay on
+        # disk untouched as the record behind the DECISIONS row
+        ck = fitcache.key('ridge-ycv', src, alpha, floor, keys.shape[1],
+                          tuple(YCV_ALPHAS), embargo, INNER_MIN, tr, ev)
         hit = fitcache.load('block', ck)
         if hit is not None:
             score[ev] = hit['score']
@@ -170,10 +181,20 @@ def score_walk_forward(feats, keys, r, blocks, alpha, src, floor):
             r2s.append(r2)
             n_ev.append(int(ev.sum()))
             print(fold_line(Y, int(tr.sum()), m, float(hit['alpha']), True,
-                            r2), flush=True)
+                            r2, int(hit['years'])), flush=True)
             continue
         xt = np.concatenate([np.asarray(feats[tr], np.float32), keys[tr]], 1)
-        rk = RidgeRanker(alpha=alpha).fit(xt, r[tr])
+        rk = RidgeRanker(alpha=alpha, embargo=embargo).fit(xt, r[tr],
+                                                           date[tr])
+        if not rk.fitted_:
+            # not enough purged years inside the training window to
+            # choose alpha honestly. Fit nothing and leave the block on
+            # the control ordering, exactly as the pre-2009 years are.
+            del xt
+            print(f'  {Y}  train {int(tr.sum()):>7,d}   fewer than two '
+                  f'purged years in the window: no fit, block keeps the '
+                  f'control ordering', flush=True)
+            continue
         p_tr = rk.train_pred_
         del xt
         xe = np.concatenate([np.asarray(feats[ev], np.float32), keys[ev]], 1)
@@ -183,12 +204,13 @@ def score_walk_forward(feats, keys, r, blocks, alpha, src, floor):
         m = fold_metrics(r[tr], p_tr, r[ev], p_ev)
         fitcache.save('block', ck, score=p_ev.astype(np.float64),
                       alpha=np.float64(rk.alpha_),
+                      years=np.int64(len(rk.years_)),
                       **{k: np.float64(v) for k, v in m.items()})
         r2 = 1.0 - m['mse_ev'] / null
         r2s.append(r2)
         n_ev.append(int(ev.sum()))
-        print(fold_line(Y, int(tr.sum()), m, rk.alpha_, False, r2),
-              flush=True)
+        print(fold_line(Y, int(tr.sum()), m, rk.alpha_, False, r2,
+                        len(rk.years_)), flush=True)
     if r2s:
         w = np.asarray(n_ev, float)
         print(f'  loss against the null (predict the training mean): '
@@ -319,7 +341,7 @@ def main() -> None:
     print(f'\nRANKER  embargo={embargo}d  window='
           f'{f"{lookback:g}y" if lookback else "expanding"}  '
           f'target=ln(y)/t  floor={floor}d')
-    print(f'        estimator=ridge-{"loocv" if alpha == "cv" else alpha}  '
+    print(f'        estimator=ridge-{"ycv" if alpha == "cv" else alpha}  '
           f'arms={"+".join(arms)}  features={n_feat:,}  '
           f'blocks={len(blocks)} ({blocks[0][0]}-{blocks[-1][0]})')
     print(f'        window {cal[j0].date()} .. {cal[j1].date()}  '
@@ -369,7 +391,8 @@ def main() -> None:
         feats = rocket_features(x, date, src)
         print(f'\nwalk-forward {arm} fits '
               f'(train / out-of-fold, one line per fold):')
-        score = score_walk_forward(feats, keys, r, blocks, alpha, src, floor)
+        score = score_walk_forward(feats, keys, r, date, blocks, alpha,
+                                   src, floor, embargo)
         ok = np.isfinite(score)
         print(f'  {int(ok.sum()):,} of {len(r):,} signals scored; the rest '
               f'sit in years with too little history to fit on and keep '
