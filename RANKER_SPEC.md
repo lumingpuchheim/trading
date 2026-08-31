@@ -325,3 +325,67 @@ metrics and the control invariant are all as specified above.
    StrengthScore book is untouched by this amendment.
 5. The measured `ridge-loo` fold metrics remain loadable from the
    cache after the change (the record is not overwritten).
+
+---
+
+## Amendment 2 — the keys arms: attribute before building more (2026-08-31)
+
+The measured rocket book (+234.6%, geo/bet +0.76% against the
+control's +0.57%) differs from do-nothing in TWO ways at once: it
+learns weights instead of sorting, and it adds 4,200 kernel features
+on top of the keys. Nothing measured so far separates those. This
+amendment separates them — and prices the old sort's lexicographic
+structure — in one run that costs minutes, because none of it needs a
+transform.
+
+### Two new arms
+
+    'keys'    RidgeRanker on the 6 key columns alone:
+              (rsl_hi, weak, rs) as value/finite pairs, nothing else
+    'keys+'   the same 6 plus two interactions:
+              rsl_hi x rs_value, rsl_hi x rs_finite  (8 columns)
+
+`keys+` exists because the old order is lexicographic and a linear
+blend cannot be that in general. With a BINARY first key it can —
+`C*rsl_hi + rs` with C beyond rs's range reproduces the effective
+order exactly — and the interactions let `rs` carry a different slope
+inside each `rsl_hi` tier, the realistic bent version of the old
+structure. What no linear form can reach is the middle priority of
+`weak`, which decided 8 of 55,737 signals; that residual is accepted,
+not modelled.
+
+Everything else is the rocket arm's, verbatim: same target, same
+grouped purged CV (Amendment 1), same schedule, same usability rule.
+**The tiny feature count must NOT be allowed an earlier first fitted
+year**: all fitted arms share the same fitted years, so the four books
+differ by their features and nowhere else. Comparability over
+coverage.
+
+### The run
+
+    python filter_backtest.py --arms strength,keys,keys+,rocket
+
+One command, four books. The rocket folds are cached; a keys fold's
+eigendecomposition is 6x6; the run costs the panel build plus four
+simulations. The block-cache key must carry the arm's feature identity
+(`keys6` / `keys8` / `rocket`) — `src` alone no longer names the
+feature matrix.
+
+### Reading the four books — fixed before the run, so it cannot drift
+
+| observation | conclusion, and the next step it buys |
+|---|---|
+| keys ≈ strength | reweighing the old information changes nothing; rocket−strength is the kernels' — rewriting MultiRocket/Hydra is justified |
+| keys < strength, keys+ recovers most of it | the tier structure was load-bearing; the interaction columns go into every fitted arm from now on |
+| keys ≈ rocket | the kernels are decoration at this target; the transform question CLOSES for this data, and the next lever is new information in the ledger, not new geometry over the same windows |
+| keys > strength | the fixed priorities were mis-weighted all along; whatever is built next starts from keys, and rocket must beat IT, not strength |
+
+### Acceptance
+
+1. The control reproduces, as always, before any fitted row is read.
+2. The banner names each arm with its feature count (`features=6`,
+   `features=8`).
+3. All fitted arms report the same fitted years; a run where they
+   differ is invalid and no book from it may be quoted.
+4. Fold lines and book rows print in the shared format, so the four
+   arms read side by side in one console.
