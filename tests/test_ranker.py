@@ -22,9 +22,11 @@ import numpy as np
 import pytest
 from sklearn.linear_model import Ridge
 
-from bets_common import EMBARGO_DAYS, T_FLOOR, rate_target
-from rankers import (inner_split, loo_ridge, strength_matrix,
-                     ycv_ridge)
+from bets_common import (EMBARGO_DAYS, T_FLOOR, rate_target,
+                         rent_legs)
+from filter_backtest import blend_matrix, keys_plus
+from rankers import (RentRanker, derive_rent, inner_split,
+                     loo_ridge, strength_matrix, ycv_ridge)
 from test_bet_multiples import DIV, ENTRY_I, PATH, _cfg, _ledger_y, _panel
 
 
@@ -277,3 +279,159 @@ def test_a_window_with_too_few_purged_years_fits_nothing():
     rng = np.random.default_rng(12)
     when, X, y = _twins(2, 8, 30, 40, rng)      # two years, 400d purge
     assert ycv_ridge(X, y, when, embargo=400, inner_min=200) is None
+
+
+# ------------------------------------- the keys arms (Amendment 2)
+
+def test_keys_plus_adds_the_two_tier_interactions_and_nothing_else():
+    keys = np.array([[1., 1., 0., 0., 0.7, 1.],
+                     [0., 1., 0., 0., 0.4, 1.],
+                     [1., 1., 0., 0., 0.0, 0.]], np.float32)
+    kp = keys_plus(keys)
+    assert kp.shape == (3, 8)
+    assert (kp[:, :6] == keys).all()
+    # rs only reaches the extra columns through the rsl_hi tier
+    assert list(kp[:, 6]) == [0.7, 0.0, 0.0]
+    assert list(kp[:, 7]) == [1.0, 0.0, 0.0]
+
+
+def test_a_linear_blend_of_the_keys_can_reproduce_the_binary_tier_order():
+    """Why `keys+` is worth measuring: the old sort is lexicographic and a
+    linear score cannot be that in general -- but with a BINARY first key
+    it can. `C*rsl_hi + rs` with C past rs's range is the same order."""
+    rng = np.random.default_rng(5)
+    rsl = rng.integers(0, 2, 200).astype(float)
+    rs = rng.random(200)
+    tick = np.array([f'T{k:03d}' for k in range(200)])
+    lex = sorted(range(200), key=lambda j: (-rsl[j], -rs[j], tick[j]))
+    lin = 2.0 * rsl + rs                      # C = 2 > max(rs)
+    assert sorted(range(200),
+                  key=lambda j: (-lin[j], tick[j])) == lex
+
+
+# ------------------------------------------ the blend (Amendment 3.1)
+
+def _blend_case():
+    """One day, four scored names, deliberately disagreeing orderings."""
+    S = np.full((2, 4), -np.inf)
+    S[1] = [40.0, 10.0, 30.0, 20.0]           # strength: 0 > 2 > 3 > 1
+    score = np.array([0.001, 0.004, 0.002, 0.003])   # rocket:   1 > 3 > 2 > 0
+    ei = np.ones(4, np.int64)
+    tj = np.arange(4, dtype=np.int64)
+    return S, score, ei, tj
+
+
+def test_the_blend_at_w0_is_the_control_order_and_at_w1_the_rockets():
+    S, score, ei, tj = _blend_case()
+    a0 = blend_matrix(S, score, ei, tj, 0.0)[1]
+    a1 = blend_matrix(S, score, ei, tj, 1.0)[1]
+    assert list(np.argsort(-a0)) == [0, 2, 3, 1]
+    assert list(np.argsort(-a1)) == [1, 3, 2, 0]
+
+
+def test_the_blend_at_w_half_is_a_tie_when_the_members_exactly_disagree():
+    # the two orderings here are exact reverses, so every name has the
+    # same average rank and the day falls through to the ticker tie
+    S, score, ei, tj = _blend_case()
+    a = blend_matrix(S, score, ei, tj, 0.5)[1]
+    assert a == pytest.approx(np.full(4, 0.5))
+
+
+def test_the_blend_ranks_inside_the_day_never_across_days():
+    S = np.full((3, 2), -np.inf)
+    S[1] = [10.0, 20.0]
+    S[2] = [30.0, 40.0]
+    score = np.array([0.001, 0.002, 0.009, 0.008])
+    ei = np.array([1, 1, 2, 2], np.int64)
+    tj = np.array([0, 1, 0, 1], np.int64)
+    a = blend_matrix(S, score, ei, tj, 1.0)
+    # day 2's much larger raw scores must not swamp day 1: each day's
+    # ranks run 0..1 on their own
+    assert sorted(a[1]) == [0.0, 1.0]
+    assert sorted(a[2]) == [0.0, 1.0]
+
+
+def test_a_year_the_model_never_reached_keeps_the_control_matrix():
+    S = np.full((2, 3), -np.inf)
+    S[0] = [7.0, 5.0, 6.0]                    # unscored day
+    S[1] = [1.0, 2.0, 3.0]
+    score = np.array([np.nan, 0.5, 0.6])
+    ei = np.array([1, 1, 1], np.int64)
+    tj = np.array([0, 1, 2], np.int64)
+    a = blend_matrix(S, score, ei, tj, 0.5)
+    assert list(a[0]) == [7.0, 5.0, 6.0]      # untouched
+    assert a[1, 0] == 1.0                     # no score: strength kept
+
+
+# ------------------------------------- the rent target (Amendment 4)
+
+def test_the_rent_heads_are_profit_and_slot_days_with_no_floor():
+    profit, days = rent_legs([1.20], [30])
+    assert profit[0] == pytest.approx(np.log(1.20))
+    assert days[0] == 30.0
+    # no floor anywhere: a one-day stop is one day, not three
+    p2, d2 = rent_legs([0.92], [1])
+    assert d2[0] == 1.0 and p2[0] == pytest.approx(np.log(0.92))
+
+
+def test_a_split_bet_decomposes_into_capital_weighted_profit_and_days():
+    # the hand-built bet of test_bet_multiples.py, as rent heads
+    panel, _ = _panel(PATH, DIV)
+    row = _ledger_y(panel, _cfg())
+    profit, days = rent_legs([row['y']], [row['days_held']],
+                             [row['half_frac']], [row['y_half']],
+                             [row['half_days_held']])
+    assert profit[0] == pytest.approx(0.5 * np.log(1.32)
+                                      + 0.5 * np.log(0.93))
+    assert days[0] == pytest.approx(0.5 * 15 + 0.5 * 17)
+    # and the rent rate is the two of them, at any c
+    for c in (0.0, 1e-4, 5e-3):
+        r = profit[0] - c * days[0]
+        assert r == pytest.approx(0.5 * (np.log(1.32) - c * 15)
+                                  + 0.5 * (np.log(0.93) - c * 17))
+
+
+def test_the_two_heads_at_one_alpha_are_a_single_ridge_on_the_rent():
+    """The linearity claim the whole design rests on: ridge is linear in
+    its target and the target is linear in c, so ONE fit pair serves the
+    whole rent grid. Pinned at a fixed shared alpha, which is where the
+    claim is exact -- per-head alphas are a deliberate departure."""
+    rng = np.random.default_rng(7)
+    n, p = 500, 30
+    X = rng.normal(size=(n, p)).astype(np.float32)
+    # standardised here, so the ranker's own standardisation is a no-op
+    # and the comparison is against the same design matrix. Ridge is not
+    # scale invariant: without this the two differ by the penalty each
+    # column ends up carrying, not by anything about linearity.
+    X = ((X - X.mean(0)) / X.std(0)).astype(np.float32)
+    profit = X[:, 0] * 0.2 + rng.normal(scale=0.1, size=n)
+    days = 20.0 + X[:, 1] * 5.0 + rng.normal(scale=3.0, size=n)
+    rk = RentRanker(alpha=50.0).fit(X, np.stack([profit, days], 1))
+    for c in (0.0, 1e-3, 2e-2):
+        direct = loo_ridge(X, profit - c * days, alphas=[50.0])[3]
+        assert rk.score(X, c) == pytest.approx(direct, abs=1e-5)
+
+
+def test_the_rent_derivation_finds_the_top_slice_ratio():
+    # a population whose best decile really does earn more per slot-day:
+    # the iteration must land near that slice's own sum(profit)/sum(days)
+    rng = np.random.default_rng(8)
+    n = 4000
+    days = rng.uniform(5, 120, n)
+    edge = rng.normal(size=n)
+    profit = 0.0004 * days + 0.02 * edge
+    pred = np.stack([profit, days], 1)          # a perfect model
+    c, rounds = derive_rent(profit, days, pred, selectivity=0.10)
+    top = np.argsort(-(profit - c * days))[:400]
+    assert c == pytest.approx(profit[top].sum() / days[top].sum(), rel=0.10)
+    assert 1 <= rounds <= 3
+
+
+def test_the_rent_starts_from_the_windows_own_ratio_of_sums():
+    profit = np.array([0.10, 0.20, -0.05])
+    days = np.array([10.0, 40.0, 5.0])
+    pred = np.stack([profit, days], 1)
+    # selectivity 1.0 takes everything, so the first update IS the
+    # window's ratio of sums and it is a fixed point
+    c, _ = derive_rent(profit, days, pred, selectivity=1.0)
+    assert c == pytest.approx(profit.sum() / days.sum())

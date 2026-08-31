@@ -183,6 +183,56 @@ def rate_target(y, days_held, half_frac=None, y_half=None,
     return r
 
 
+def rent_legs(y, days_held, half_frac=None, y_half=None,
+              half_days_held=None):
+    """The TWO HEADS of the rent target (RANKER_SPEC Amendment 4).
+
+        profit = ln(y)          the log-profit a bet returned
+        days   = t              the trading days it blocked a slot
+        r      = profit - c * days
+
+    A slot's long-run growth is total log-profit over total days across
+    the bets that occupy it -- a ratio of SUMS. The old target averaged
+    each bet's OWN ratio, which is a different quantity and disagrees
+    exactly where the money is: it ranked a +10% in 20 days above a +40%
+    in 180, and let a -8% stop-out in three days dominate the loss.
+    Renting the slot by the day fixes the shape: a bet pays its profit
+    and owes rent for every day it blocks the slot, and ranking by
+    expected `r` is the greedy-optimal slot decision for the
+    ratio-of-sums objective.
+
+    NO FLOOR. Nothing divides by days any more, so nothing explodes when
+    a bet closes in one.
+
+    A split bet decomposes exactly as before -- multiples arithmetically
+    by capital share -- and each stream owes rent for its own days:
+
+        r = f*(ln(y_half) - c*t_half) + (1-f)*(ln(y_rest) - c*t)
+
+    so the heads are the capital-weighted profit and the capital-weighted
+    holding time. The second is the same quantity the trades table gives
+    as sum(weight * days_held) over a position's rows.
+
+    Returns (profit, days); `c` never appears here, which is what lets
+    one fit pair serve the whole rent grid.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    t = np.asarray(days_held, dtype=np.float64)
+    if half_frac is None:
+        return np.log(np.maximum(y, 1e-9)), t
+    f = np.asarray(half_frac, dtype=np.float64)
+    yh = np.asarray(y_half, dtype=np.float64)
+    th = np.asarray(half_days_held, dtype=np.float64)
+    split = (f > 0) & np.isfinite(yh)
+    f = np.where(split, f, 0.0)
+    yh = np.where(split, yh, 1.0)
+    th = np.where(split, th, 0.0)
+    y_rest = np.where(split, (y - f * yh) / np.maximum(1.0 - f, 1e-12), y)
+    profit = ((1.0 - f) * np.log(np.maximum(y_rest, 1e-9))
+              + f * np.log(np.maximum(yh, 1e-9)))
+    return profit, (1.0 - f) * t + f * th
+
+
 def warmup_rows(dates: np.ndarray, n: int, rng) -> np.ndarray:
     """Rows for fitting the MiniRocket bias quantiles: a sample of the
     EARLIEST bets in the record.

@@ -289,51 +289,62 @@ def ycv_ridge(X: np.ndarray, y: np.ndarray, when: np.ndarray,
     """
     X = np.asarray(X, dtype=np.float32)
     n, p = X.shape
-    y = np.asarray(y, dtype=np.float64)
+    Y = np.asarray(y, dtype=np.float64)
+    single = Y.ndim == 1
+    Y = Y[:, None] if single else Y
+    k = Y.shape[1]
     A = np.asarray(alphas, dtype=np.float64).ravel()
     when = np.asarray(when).astype('datetime64[D]')
 
     G = np.asarray(X.T @ X, dtype=np.float64)
-    b = np.asarray(X.T @ y.astype(np.float32), dtype=np.float64)
+    b = np.asarray(X.T @ Y.astype(np.float32), dtype=np.float64)
     s = np.asarray(X.sum(0), dtype=np.float64)
-    ysum = float(y.sum())
+    ysum = Y.sum(0)
 
-    pooled = np.zeros(len(A))
+    pooled = np.zeros((k, len(A)))
     graded, used = 0, []
-    for Y in sorted({int(v) for v in when.astype('datetime64[Y]').astype(int)
-                     + 1970}):
-        out, held = inner_split(when, Y, embargo)
+    for Yr in sorted({int(v) for v in when.astype('datetime64[Y]').astype(int)
+                      + 1970}):
+        out, held = inner_split(when, Yr, embargo)
         n_held = int(held.sum())
         n_in = n - int(out.sum())
         if n_held == 0 or n_in < inner_min:
             continue
         Xo = X[out]
         Gi = G - np.asarray(Xo.T @ Xo, dtype=np.float64)
-        bi = b - np.asarray(Xo.T @ y[out].astype(np.float32), dtype=np.float64)
+        bi = b - np.asarray(Xo.T @ Y[out].astype(np.float32), dtype=np.float64)
         si = s - np.asarray(Xo.sum(0), dtype=np.float64)
-        ybar = (ysum - float(y[out].sum())) / n_in
+        ybar = (ysum - Y[out].sum(0)) / n_in
         del Xo
         L, V = np.linalg.eigh(Gi)
         del Gi
         L = np.clip(L, 0.0, None)
-        c = V.T @ (bi - ybar * si)
+        # EVERY HEAD SHARES THIS DECOMPOSITION. It depends on X alone, so
+        # a second target costs one back-substitution, not a second eigh
+        # (RANKER_SPEC Amendment 4). Each head still picks its own alpha.
+        C = V.T @ (bi - si[:, None] * ybar[None, :])
         Z = np.asarray(X[held] @ V.astype(np.float32), dtype=np.float64)
         del V
-        yh = y[held]
-        for k, a in enumerate(A):
-            pooled[k] += float(np.sum((Z @ (c / (L + a)) + ybar - yh) ** 2))
+        yh = Y[held]
+        for j, a in enumerate(A):
+            pred = Z @ (C / (L[:, None] + a)) + ybar[None, :]
+            pooled[:, j] += ((pred - yh) ** 2).sum(0)
         del Z
         graded += n_held
-        used.append(Y)
+        used.append(Yr)
     if len(used) < 2:
         return None
-    alpha = float(A[int(np.argmin(pooled / max(graded, 1)))])
+    alpha = A[np.argmin(pooled, axis=1)]
 
     L, V = np.linalg.eigh(G)
     L = np.clip(L, 0.0, None)
     ym = ysum / n
-    coef = V @ ((V.T @ (b - ym * s)) / (L + alpha))
-    pred = np.asarray(X @ coef.astype(np.float32), dtype=np.float64) + ym
+    C = V.T @ (b - s[:, None] * ym[None, :])
+    coef = np.stack([V @ (C[:, i] / (L + alpha[i])) for i in range(k)], 1)
+    pred = (np.asarray(X @ coef.astype(np.float32), dtype=np.float64)
+            + ym[None, :])
+    if single:
+        return coef[:, 0], float(ym[0]), float(alpha[0]), pred[:, 0], used
     return coef, ym, alpha, pred, used
 
 
@@ -392,4 +403,117 @@ class RidgeRanker(Ranker):
                            dtype=np.float64) + self.intercept_)
 
 
-REGISTRY = {'strength': StrengthScore, 'rocket': RidgeRanker}
+
+def derive_rent(profit, days, pred, selectivity, rounds=3, tol=0.05):
+    """The slot rent `c`, DERIVED from the fold's own training window.
+
+    `c` is not a knob. The objective is a ratio of sums -- total
+    log-profit over total slot-days -- and the standard way to maximise
+    one is Dinkelbach's iteration: guess the ratio, rank by
+    `profit - c*days`, take the slice the book would actually take, and
+    read the ratio back off that slice.
+
+        c0     = mean(profit) / mean(days)        over the training bets
+        c_{k+1} = sum(profit) / sum(days)         over the top slice by
+                                                  score(c_k)
+        stop when the change is under `tol`, or after `rounds`
+
+    `selectivity` is the book's own: the fraction of the training
+    window's orderable signals the book actually took. It has to be the
+    book's, because `c` is the rent that the marginal slot-day is worth
+    AT THAT SELECTIVITY -- a book taking 2% of signals has a different
+    marginal bet from one taking 20%.
+
+    The iteration converges monotonically and never leaves the training
+    window. Returns (c, rounds actually taken).
+    """
+    profit = np.asarray(profit, dtype=np.float64)
+    days = np.asarray(days, dtype=np.float64)
+    md = float(days.mean())
+    c = float(profit.mean()) / md if md > 0 else 0.0
+    n_top = int(max(1, round(float(selectivity) * len(profit))))
+    for k in range(1, rounds + 1):
+        sc = pred[:, 0] - c * pred[:, 1]
+        top = np.argpartition(-sc, min(n_top, len(sc) - 1))[:n_top]
+        den = float(days[top].sum())
+        if den <= 0:
+            return c, k
+        nxt = float(profit[top].sum()) / den
+        moved = abs(nxt - c) > tol * max(abs(c), 1e-12)
+        c = nxt
+        if not moved:
+            return c, k
+    return c, rounds
+
+
+class RentRanker(Ranker):
+    """Two ridges, one rent, and the whole `c` grid for free.
+
+    Ridge is linear in its target and the rent target is linear in `c`,
+    so a fit on `profit` and a fit on `days` give the rent model for
+    EVERY `c` as their difference:
+
+        score(c) = predicted_profit - c * predicted_days
+
+    One fit pair per fold therefore serves the whole grid, and the heads
+    are diagnostics in their own right -- `predicted_days` says directly
+    whether the model is steering toward long holds.
+
+    Alpha is chosen PER HEAD by the Amendment 1 criterion. That is a
+    deliberate departure from a single ridge on `profit - c*days`:
+    profit and holding time are different quantities with different
+    noise, and forcing one shrinkage on both would let the noisier head
+    set the other's. The consequence, stated so it is not discovered
+    later: with different alphas the difference is no longer identical
+    to a single ridge on the combined target. It is identical when the
+    alphas agree, which is what the equivalence test pins.
+    """
+
+    def __init__(self, name: str = 'rocket', alpha='cv', alphas=YCV_ALPHAS,
+                 embargo: int = EMBARGO_DAYS, inner_min: int = INNER_MIN):
+        self.name = name
+        self.alpha, self.alphas = alpha, alphas
+        self.embargo, self.inner_min = embargo, inner_min
+
+    def fit(self, F: np.ndarray, pd_: np.ndarray,
+            when: np.ndarray | None = None) -> 'RentRanker':
+        X = np.asarray(F, dtype=np.float32)
+        self.mu = X.mean(0)
+        self.sd = X.std(0) + np.float32(1e-8)
+        X = X - self.mu
+        X /= self.sd
+        self.fitted_, self.years_ = True, []
+        pd_ = np.asarray(pd_, dtype=np.float64)
+        if self.alpha != 'cv':
+            a = float(self.alpha)
+            cols = [loo_ridge(X, pd_[:, i], [a]) for i in range(pd_.shape[1])]
+            self.coef_ = np.stack([c[0] for c in cols], 1)
+            self.intercept_ = np.array([c[1] for c in cols])
+            self.alpha_ = np.array([c[2] for c in cols])
+            self.train_heads_ = np.stack([c[3] for c in cols], 1)
+            return self
+        if when is None:
+            raise ValueError('the alpha criterion groups by entry year, so '
+                             'fit() needs the entry dates')
+        got = ycv_ridge(X, pd_, when, self.alphas, self.embargo,
+                        self.inner_min)
+        if got is None:
+            self.fitted_ = False
+            return self
+        (self.coef_, self.intercept_, self.alpha_,
+         self.train_heads_, self.years_) = got
+        return self
+
+    def heads(self, F: np.ndarray) -> np.ndarray:
+        X = np.asarray(F, dtype=np.float32)
+        X = X - self.mu
+        X /= self.sd
+        return (np.asarray(X @ self.coef_.astype(np.float32),
+                           dtype=np.float64) + self.intercept_[None, :])
+
+    def score(self, F: np.ndarray, c: float = 0.0) -> np.ndarray:
+        h = self.heads(F)
+        return h[:, 0] - float(c) * h[:, 1]
+
+
+REGISTRY = {'strength': StrengthScore, 'rocket': RentRanker}

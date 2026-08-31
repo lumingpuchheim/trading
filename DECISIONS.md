@@ -428,6 +428,120 @@ than doing nothing", recorded in the section above, was a statement
 about leave-one-bet-out.
 
 
+## Amendment 3 and the rent target, measured (2026-08-31)
+
+Three of Amendment 3's four runs, then Amendment 4. All on the fitted
+years 2012-01-03 .. 2026-08-27 unless stated, 10 slots unless stated,
+every arm on one schedule. **3.4 is still outstanding.**
+
+### 3.1 The blend — the two orderings compose
+
+Per-day rank-average of the control ordering and the fitted scores, no
+new fits. Under the RATIO target:
+
+| arm | total | maxDD | bets | geo/bet | G_day |
+|---|---|---|---|---|---|
+| strength (w=0) | +292.4% | -29.3% | 988 | +0.82% | -0.3152% |
+| blend0.25 | +195.0% | -30.0% | 987 | +0.65% | -0.2561% |
+| blend0.50 | +265.3% | -23.3% | 896 | +1.10% | -0.1741% |
+| **blend0.75** | +272.1% | **-17.6%** | 879 | **+1.23%** | **-0.1081%** |
+| rocket (w=1) | +251.6% | -18.5% | 876 | +1.18% | -0.1283% |
+
+blend0.75 is OUTSIDE both members on per-bet geo, `G_day` and maxDD --
+not between them, which was the other branch. But the sweep is not
+monotone (0.25 is worse than both its neighbours), which is a noise
+signature, and 3.3 explains why.
+
+### 3.2 Slot count — the ranker's edge is a ten-slot phenomenon
+
+Gross exposure held at 100%; compare WITHIN a config only.
+
+| slots | strength geo/bet | rocket geo/bet | strength total | rocket total |
+|---|---|---|---|---|
+| 10 x 10% | +0.82% | **+1.18%** | +292.4% | +251.6% |
+| 15 x 6.67% | **+1.08%** | +0.88% | +381.6% | +190.5% |
+| 20 x 5% | **+0.99%** | +0.72% | +338.9% | +161.9% |
+
+**The per-bet edge inverts.** Asked for ten names a day the ranker
+delivers; asked for twenty it must go deeper into its own ordering and
+its deeper picks are worse than the control's. It is good at the top of
+its ranking and nowhere else. Idle capital is not the explanation --
+the fitted arms are MORE invested in every config.
+
+### 3.3 The noise yardstick — total return is unreadable here
+
+200 books with the scores shuffled within each day (pool and score
+distribution preserved), same window and config:
+
+| | min | p5 | median | p95 | max |
+|---|---|---|---|---|---|
+| total | +48.4% | +81.9% | +204.5% | +357.6% | +525.3% |
+| maxDD | -35.2% | -32.8% | -25.1% | -20.5% | -18.5% |
+| geo/bet | +0.04% | +0.20% | +0.73% | +1.21% | +1.56% |
+
+**The 90% band on total return is 276 points wide.** strength (+292.4%)
+sits at the 86th percentile, rocket (+251.6%) at the 74th, blend0.75
+(+272.1%) at the 80th. Every total-return comparison in this register
+between these arms -- in BOTH directions -- is inside noise and decides
+nothing. The incumbent ordering is itself not distinguishable from
+shuffling the same day's candidates.
+
+What survives the yardstick: **maxDD**, where rocket lands on the best
+of 200 shuffled books (-18.5%) and blend0.75 goes past it (-17.6%); and
+**geo/bet**, marginally, at the 94th and 95.5th percentiles. The
+control is ordinary on both (median maxDD, 65th percentile geo/bet).
+
+### Amendment 4 — the rent target: correct shape, unlearnable half
+
+`r = ln(y) - c*t`, no floor, two ridge heads (log-profit, slot-days)
+and `c` derived per fold by Dinkelbach iteration at the book's own
+2.25% selectivity. Same window, same schedule:
+
+| arm | total | ann | maxDD | bets | geo/bet | G_day | G_rent |
+|---|---|---|---|---|---|---|---|
+| strength | +292.4% | +9.8% | -29.3% | 988 | +0.82% | -0.3152% | -1.0204% |
+| rocket (rent) | +302.8% | +10.0% | -34.1% | 1,028 | +0.70% | -0.3727% | -1.0474% |
+| **blend0.75** | **+428.2%** | **+12.1%** | -33.6% | 1,023 | +0.95% | -0.3559% | **-0.8178%** |
+
+**The profit head cannot be estimated.** Its alpha pinned at the grid
+ceiling 1e+08 in **all 15 folds**; the days head stopped at 1e+07 with
+`daysR2` +0.01 to +0.12. Out-of-fold R2 against the constant is
+**-0.000, better in 5 of 15 folds**, against the ratio target's +0.038
+in 13 of 15.
+
+**So the ranker collapsed into a holding-time predictor.** With
+`ln(y)` shrunk away the score is dominated by `-c * predicted_days`,
+i.e. it ranks by shortest predicted hold -- the opposite of the
+amendment's intent. Three signs agree: it takes MORE bets (1,028
+against 988, where the ratio arm took 876); holding time reversed to
+about 28.4 days/bet against the control's 29.6, where the ratio arm
+held 32.65; and the mandatory sensitivity band rises monotonically with
+rent (0.5c +241.5%, 1c +320.1%, 2c +413.5% on the whole record). A
+172-point swing across `c/2..2c` is the fragility flag firing.
+
+The amendment's REASONING stands -- the ratio target is anti-right-tail
+and the rent shape is the right one. What the data adds is that with
+these features the profit half is not estimable at all, so the
+correct-shaped target degenerates to its second term. **A better target
+cannot rescue a feature set that does not predict profit.**
+
+**The one book outside the noise band.** blend0.75 of the rent arm with
+the control reaches +428.2% with the best per-bet figure of any arm
+measured (+0.95%) on essentially the control's bet count. Against
+3.3's band (p95 +357.6%, max +525.3%) that is roughly the 97th-98th
+percentile -- the first total-return figure in this sequence that is
+not obviously noise. Not settled: the band was measured against the
+ratio-era scores and re-permuting against these would make it exact.
+
+### Where this leaves the transforms
+
+Amendment 3.1 said build them; 3.2 and 3.3 say the evidence for that was
+a ten-slot, inside-the-noise reading; Amendment 4 says the missing
+ingredient is not the target. MultiRocket and Hydra remain frozen, and
+the open question is whether new geometry over the same windows can
+predict profit when 4,200 kernels and two targets could not.
+
+
 ## PROPOSED — not built
 
 | idea | what it would need |
