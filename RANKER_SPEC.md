@@ -1,0 +1,149 @@
+# Ranker spec — four arms, one loss, no downstream picks
+
+Specifies the replacement architecture decided in `DECISIONS.md` ("The
+filter architecture is wrong", 2026-08-31). This file is the
+implementation contract; the decision register holds the why.
+
+## The shape
+
+A **ranker** is a pure scoring function: candidate in, one number out —
+the predicted growth rate of a euro spent on that candidate, in
+ln-per-trading-day. Rankers never trade. The one component that trades
+is `simulate()`, which fills each day's free slots from the top of the
+scores it was handed:
+
+    take = top free-slots of the day's usable pool,
+           by score descending, ticker ascending as the only tie
+
+No veto, no threshold, no `--keeps`, no strength keys in the sort, and
+no trading code inside any ranker — the portfolio mechanics exist once,
+above all of them.
+
+    class Ranker:
+        def fit(self, F, r): ...      # features, realised rates
+        def score(self, F): ...       # -> one float per row
+
+`filter_backtest.py` owns the walk-forward loop: it fits each fold,
+assembles the (days x tickers) score matrix over the ledger's
+orderable signals, and calls `simulate(scores=...)`. Rankers see
+matrices, never the calendar.
+
+## The four arms
+
+    REGISTRY = {'strength': StrengthScore,      # the do-nothing arm
+                'rocket':      MiniRocket  + ridge regression,
+                'multirocket': MultiRocket + ridge regression,
+                'hydra':       Hydra       + ridge regression}
+
+Ensembles are the agreed next step, not this one. The interface already
+admits them (a ranker over rankers), so nothing here forecloses it.
+
+### StrengthScore — the do-nothing arm
+
+Fits nothing. It encodes exactly the ordering the book uses today —
+`rsl_hi` desc, then `weak` desc (NaN last), then `rs` desc (NaN last),
+then ticker — so that "run the new architecture and change nothing"
+reproduces today's AllPass book.
+
+Encoding, so the lexicographic sort survives as one float: per day,
+rank `weak` and `rs` over that day's signals (equal values share a
+rank, so ties still fall through to the next key), then compose
+
+    score = (rsl_hi * B + rank_weak) * B + rank_rs      B = max
+                                                        signals/day + 1
+
+Integer-valued float64, exact far beyond any B here.
+
+**This arm is the control, and it must reproduce today's AllPass run
+EXACTLY: the same trades file row for row, and +291.5% over
+2007-01-03 .. 2026-08-27.** Not approximately — the encoding above has
+no freedom, so any difference is a bug in the score path. No fitted
+arm's row may be read from a run whose StrengthScore arm has not
+reproduced. This subsumes HANDOVER trap 1.
+
+### The fitted arms
+
+The transforms are exactly today's — same kernels, same dilations, same
+cached features (`results/.fitcache/feats_*`; the transform keys do not
+change, so nothing re-runs). Behind each transform:
+
+- **Features**: the transform's output, plus the three keys the old
+  picker spent — `rsl_hi`, `weak`, `rs` — each NaN-heavy column carried
+  as (value filled with 0, finite-indicator) pairs. This is what makes
+  the design safe: a fit that puts weight on the keys and nothing else
+  IS today's ordering, so the baseline is inside the hypothesis space.
+- **Fit**: `RidgeCV` regression, closed form, on the target below.
+  Standardisation from the fold's own training rows, as always.
+- **Schedule**: the walk-forward of `bets_common.year_blocks` —
+  expanding window, 400-day embargo, no calendar constant. Unchanged.
+
+## The target
+
+Defined in `DECISIONS.md` ("The target, carefully") and restated here
+as the contract: `r = ln(y)/t`, one vote per bet, `t` in trading days
+floored at `t_floor`. A split bet sums both wins, each stream at its
+own rate, each at its capital share `f` (0.5 under the +20% half-sale):
+
+    r = f·ln(y_half)/t_half + (1-f)·ln(y_rest)/t
+    y_rest = (y - f·y_half) / (1-f)
+
+The ledger must carry `y`, `days_held`, `half_frac`, `y_half`,
+`half_days_held` per signal (`minervini_bets.py`). Equal weight per
+bet everywhere; the euro-day weighting was rejected, do not re-propose.
+
+## What every run shows
+
+These fits are closed form — there are no epochs, so there is no loss
+curve. The training record is **one live line per fold**, printed as
+the fold completes, train and out-of-fold side by side:
+
+    2013  train 11,204   mse 4.31e-4 / 4.62e-4   spear +0.08 / +0.05   auc 0.61 / 0.55
+
+- **mse** — the loss itself, on the rate.
+- **spear** — Spearman rank correlation of predicted vs realised rate:
+  the quantity the slot decision actually uses.
+- **auc** — score vs the binary label "r in the top 20% of this fold's
+  TRAINING rates"; the same training-window cut grades the fold's own
+  block. Diagnostic only; nothing trains on it.
+
+Before any number, the run prints its configuration on one line, in
+the same words from every script:
+
+    RANKER  embargo=400d  window=expanding  target=ln(y)/t  floor=3d
+            estimator=ridge-cv  arm=rocket  features=4,203
+
+and each arm ends with its book: total return, ann, maxDD, trades and
+bets, and
+
+    G_day = exp( mean of r over the bets taken )
+
+reported beside `geo_per_bet` and next to the same two numbers for the
+whole candidate pool. Everything goes to the console; no report files.
+
+## What retires
+
+- `Filter.decide`, `threshold`, `keep`, `--keeps`, and the quantile
+  veto. Selectivity is slot capacity and nothing else.
+- The binary `aux` label as a training target, and the jackpot
+  precision/recall machinery.
+- `simulate()`'s `key()` sort for scored runs (it survives only for the
+  legacy no-score path), and the boolean `gate`.
+
+## Caches
+
+Feature caches survive untouched — the transform keys are unchanged.
+Ridge fits are new entries (a regression is a different estimator);
+that refit is the price of the architecture and is paid once.
+
+## Acceptance
+
+1. StrengthScore reproduces today's AllPass trades file row for row and
+   +291.5% over 2007-01-03 .. 2026-08-27, on every run, before any
+   fitted row is read.
+2. Every year of the record is scored, and no fold's model trained
+   within 400 days of its block (the `test_walk_forward.py` pattern).
+3. Every arm prints the config line, one metrics line per fold with the
+   six numbers, and the closing book with `G_day`.
+4. A split bet's target reproduces the leg blend above bit for bit on a
+   hand-built example (unit test).
+5. `grep -n keeps filter_backtest.py` finds nothing but history.

@@ -265,6 +265,11 @@ candidate's predicted rate is negative — read off the predicted
 quantity itself, not a tuned threshold. Off by default; the market
 light already does the regime version of this.
 
+**Specified 2026-08-31 in `RANKER_SPEC.md`**: four arms (StrengthScore
+— the do-nothing control that must reproduce today's AllPass book
+exactly — MiniRocket, MultiRocket, Hydra), per-fold loss/Spearman/AUC
+lines, and the acceptance list. Ensembles agreed as the next step.
+
 ### What changes, by file
 
 | | change |
