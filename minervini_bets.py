@@ -174,20 +174,32 @@ def price_bet(i0: int, j: int, arr: dict, p: dict) -> dict | None:
         frac, px_half = 0.0, np.nan
         cash = cash_between(i0 + 1, exit_day + 1)
         y = (px_exit + cash) / entry_px
+        y_half, half_held = np.nan, 0
     else:
         # half banked into strength, the rest runs to its own exit. Written
         # as separate terms so a missing half price can never silently NaN
         # the whole bet.
         frac, px_half = p['strength_sell_frac'], fill_after(half_day)
-        cash = (cash_between(i0 + 1, half_day + 1)
-                + (1.0 - frac) * cash_between(half_day + 2, exit_day + 1))
+        cash_pre = cash_between(i0 + 1, half_day + 1)
+        cash_post = cash_between(half_day + 2, exit_day + 1)
+        cash = cash_pre + (1.0 - frac) * cash_post
         y = (frac * px_half + (1.0 - frac) * px_exit + cash) / entry_px
+        # THE BANKED LEG, as its own capital stream (RANKER_SPEC.md, "The
+        # target"). Dividends collected before the sale were earned by the
+        # WHOLE position, so both streams carry them at their capital
+        # share; the identity that matters is
+        #     frac*y_half + (1-frac)*y_rest == y
+        # which is what lets the ranker recover y_rest from y and y_half
+        # without a second price column.
+        y_half = (px_half + cash_pre) / entry_px
+        half_held = int(half_day - i0)
 
     return {'ticker': arr['tickers'][j], 'entry_i': i0, 'ticker_j': j,
             'entry_date': arr['calendar'][i0],
             'exit_date': arr['calendar'][min(exit_day + 1, n - 1)],
             'entry_px': float(entry_px), 'exit_px': px_exit,
             'half_px': px_half, 'half_frac': frac,
+            'y_half': float(y_half), 'half_days_held': half_held,
             'days_held': int(exit_day - i0),
             'exit_reason': reason, 'y': float(y), 'r': float(np.log(y)),
             'div_cash': float(cash), 'div_pct': float(cash / entry_px),

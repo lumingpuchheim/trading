@@ -43,6 +43,13 @@ LEGACY_EMBARGO = EMBARGO_DAYS         # only if it was ENTERED this long
                                       # stay comparable with everything
                                       # recorded before 2026-08-29.
 MIN_TRAIN = 2000         # a block with less history than this is not scored
+T_FLOOR = 3              # trading days: the shortest hold a rate is
+                         # allowed to be divided by. 1.8% of bets close
+                         # inside three days and carry ~14% of the total
+                         # |rate| mass -- overwhelmingly fast stop-outs
+                         # whose rates reach -0.11/day against a best of
+                         # +0.012. Without the floor the target is a
+                         # stop-out detector (RANKER_SPEC.md).
 
 # There is NO development period and no test period -- EVALUATION_SPEC.md.
 # A model may only see data from before the block it scores, and that is
@@ -125,6 +132,49 @@ def label_from(y: np.ndarray, train: np.ndarray) -> np.ndarray:
     Cutting it once on a fixed slice of history -- what `DEV_END` used to
     do -- measures a 2026 fold against a yardstick made in 2018."""
     return (y >= float(np.quantile(y[train], AUX_Q))).astype(np.int8)
+
+
+def rate_target(y, days_held, half_frac=None, y_half=None,
+                half_days_held=None, t_floor=T_FLOOR) -> np.ndarray:
+    """THE ranker target: ln(y)/t, one vote per bet (RANKER_SPEC.md).
+
+    `y` is euros returned per euro committed (dividends in,
+    `geostats.bet_multiples` convention) and `t` is TRADING days held --
+    calendar days have a minimum of zero and would divide by zero --
+    floored at `t_floor`.
+
+    A split bet is two capital streams of the one bet. The banked half
+    earned `ln(y_half)` over its own `t_half` days and then stopped
+    consuming a slot; the rest earned `ln(y_rest)` over the full `t`. Sum
+    both wins, each stream at its own rate and its own capital share `f`:
+
+        r = f*ln(y_half)/t_half + (1-f)*ln(y_rest)/t
+        y_rest = (y - f*y_half) / (1-f)
+
+    Multiples decompose ARITHMETICALLY by capital share (never logs); the
+    streams' rates then combine by those same shares. Ending the first
+    stream's clock at the half-sale is the point -- banked capital is
+    free capital, and this target credits it.
+
+    Equal weight per bet everywhere: every bet is a flat tenth of equity,
+    so size is a constant and never weights anything. A euro-day weight
+    was proposed and rejected on 2026-08-31; do not re-propose it.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    t = np.maximum(np.asarray(days_held, dtype=np.float64), float(t_floor))
+    if half_frac is None:
+        return np.log(np.maximum(y, 1e-9)) / t
+    f = np.asarray(half_frac, dtype=np.float64)
+    yh = np.asarray(y_half, dtype=np.float64)
+    th = np.maximum(np.asarray(half_days_held, dtype=np.float64),
+                    float(t_floor))
+    split = (f > 0) & np.isfinite(yh)
+    f = np.where(split, f, 0.0)
+    yh = np.where(split, yh, 1.0)
+    y_rest = np.where(split, (y - f * yh) / np.maximum(1.0 - f, 1e-12), y)
+    r = ((1.0 - f) * np.log(np.maximum(y_rest, 1e-9)) / t
+         + f * np.log(np.maximum(yh, 1e-9)) / th)
+    return r
 
 
 def warmup_rows(dates: np.ndarray, n: int, rng) -> np.ndarray:

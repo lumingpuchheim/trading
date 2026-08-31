@@ -280,20 +280,88 @@ lines, and the acceptance list. Ensembles agreed as the next step.
 | caches | feature caches are keyed on the transform and survive untouched; block and model caches refit — a regression is a different estimator, so this is a real refit of the ridge stages, not a key-field accident |
 | `EVALUATION_SPEC.md` | Rule 3's baseline definition becomes StrengthScore; every run prints its target and estimator (`target=ln(y)/t estimator=ridge-reg`) beside the embargo and window it already reports; `G_day` joins the reported figures |
 
-**State of the tree, 2026-08-31.** This section is a design to be
-built, not a description of code that exists. The working tree was
-reverted to `56ead0c` on the operator's instruction, which removed an
-uncommitted day of work: the rate target and its leg blend in
-`filter_backtest.py`, the one-fit-configuration rules and banner, the
-model store, and the Hydra / MultiRocket filters. So the rate target
-described above has to be written again from this definition, and the
-tree today has only the binary top-20% label. `minervini_hydra.py`,
-`minervini_multirocket.py` and four test files survive untracked in the
-working directory but nothing imports them.
+**State of the tree, 2026-08-31 (later the same day): BUILT.** This
+section was a design; it is now code -- `rankers.py`, a rewritten
+`filter_backtest.py`, `simulate(scores=...)`, `bets_common.rate_target`
+and the `y_half` / `half_days_held` ledger columns. Two arms, not four:
+`strength` and `rocket`, on the operator's instruction. The revert to
+`56ead0c` had taken `minervini_hydra.py` and `minervini_multirocket.py`
+with it, so those two arms have no transform to sit behind and
+`filter_backtest.py` refuses them by name rather than guessing; their
+cached features are orphans in `results/.fitcache` until the modules are
+written again. See "The ranker, measured" below, and `RANKER_SPEC.md`'s
+"As built" section for the six decisions taken at the keyboard -- one of
+which, the surviving watchlist cap, is an amendment to the spec rather
+than a detail.
 
 Headline evaluation is unchanged: one continuous path through
 `simulate()`, per-bet figures through `geostats.py`, the control arm
 reproduced before any fitted row is read.
+
+## The ranker, measured — MiniRocket against do-nothing (2026-08-31)
+
+**Verdict: the architecture stands, the arm does not.** One record,
+2007-01-03 .. 2026-08-27, one continuous path, embargo 400d, expanding
+window, `target=ln(y)/t` floored at 3 trading days,
+`estimator=ridge-loocv`, 4,206 features (4,200 MiniRocket plus the three
+old keys as value/finite pairs). Both arms share one schedule, built
+once and handed to each in turn.
+
+| arm | total | ann | maxDD | rows | bets | geo/bet | G_day | invested |
+|---|---|---|---|---|---|---|---|---|
+| **strength** (the do-nothing control) | **+291.5%** | +7.2% | -30.2% | 1,477 | 1,252 | **+0.57%** | -0.3561% | 73.4% |
+| **rocket** (MiniRocket + ridge) | +136.3% | +4.5% | **-21.6%** | 1,368 | 1,196 | +0.35% | **-0.2655%** | 74.4% |
+| the whole candidate pool | — | — | — | — | 55,737 | +0.52% | -0.2380% | — |
+
+**The control reproduced exactly** — the same trades row for row and
++291.5%, checked in-process before any fitted number was printed. The
+encoding has no freedom, so that check is a real one, and it passed.
+
+**The arm loses the book and wins the drawdown.** Less than half the
+total return, a third off the maximum drawdown, 56 fewer bets at
+essentially the same time invested. Read the two per-bet columns
+together: the ranker is BETTER on the quantity it was trained on
+(`G_day` -0.2655% against the control's -0.3561%) and WORSE on the
+quantity the book compounds (`geo/bet` +0.35% against +0.57%).
+
+**But it did NOT do what the loss asked, and the loss is where to look
+first.** Against the honest causal null -- predict the fold's own
+training mean -- the out-of-fold mse is worse than that constant in
+**all 18 folds**, by 2x to 8x, row-weighted R2 **-2.33** over 53,489
+scored bets, while in sample it explains +0.57. The fit's level is
+wrong: it overshoots, and `alpha=100` chosen by leave-one-out on the
+training rows is nowhere near the shrinkage the out-of-fold loss wants.
+What survives is the rank alone (Spearman +0.064), and the slot decision
+uses nothing but rank, which is the only reason the book functions
+rather than collapses. So this row is a bad regression that is a
+slightly-better-than-nothing ranker -- NOT evidence about the target,
+which has not yet been given a fit that minimises it out of fold. The
+next measurement is a shrinkage sweep judged on out-of-fold loss instead
+of on training LOO.
+
+**Both books sit below the pool on `G_day`** (-0.36% and -0.27% against
+-0.24%), which is less strange than it looks. A per-day rate with one
+vote per bet is dominated by the bets that close fastest, and those are
+stop-outs; and the book is not a random draw from the pool, since it can
+only buy when a slot is free. The pool row is a level to read against,
+not a counterfactual portfolio.
+
+**The signal is weak and it is not zero.** Eighteen folds, out-of-fold
+Spearman mean **+0.064**, median +0.070, positive in 13 of 18, range
+-0.15 to +0.24. Out-of-fold AUC averages **0.500** on the diagnostic
+top-20% cut: the rate target ranks slightly and does not classify at
+all. Training Spearman falls from +0.87 to +0.52 as the window expands
+from 2,174 to 49,334 rows while out-of-fold Spearman does not move,
+which is what 4,206 features on a few thousand rows looks like — the fit
+is 8.5x better in sample than out of it (mse 2.1e-05 against 1.8e-04).
+Alpha lands on 100 in 17 of 18 folds and 316 once, which is where the
+retired classifier landed too.
+
+What this does NOT say: no row of the voided verdicts table is
+reinstated or refuted by it. This is one transform, one estimator and
+one target measured under the new architecture, and it is the first such
+row.
+
 
 ## PROPOSED — not built
 

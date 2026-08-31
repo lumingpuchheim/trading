@@ -2,19 +2,30 @@
 
 ## The goal
 
-**Find an ensembled investment strategy out of weak filters.**
+**Find an ensembled investment strategy out of weak rankers.**
 
-No single filter here beats holding the index, and none is expected to.
-Every arm measured so far picks jackpots at the base rate (x0.95 to
-x1.08 across four model families) and earns what it earns by declining
-bad trades, not by finding good ones. So the target is not a better
-filter. It is a **combination** of filters that are individually weak and
-disagree with each other — MiniRocket and the shapelet already have rank
-correlation -0.116, which is the raw material.
+No single arm here beats holding the index, and none is expected to. The
+unit is a **ranker**: candidate in, one predicted growth rate out, and
+the slot decision reads that number directly (`RANKER_SPEC.md`). It used
+to be a filter, and this paragraph used to say the arms "earn what they
+earn by declining bad trades, not by finding good ones", at the base
+rate, across four model families. That described the veto architecture
+retired on 2026-08-31, and those verdicts were voided with it: the
+pipeline that measured them could not turn a better model into a better
+book, so it could not rule anything out either. Nothing about the
+transforms is currently ruled in or out. Re-measure under the ranker
+first.
+
+The target is still a **combination** of arms that are individually weak
+and disagree with each other — MiniRocket and the shapelet had rank
+correlation -0.116, which is the raw material. Under the ranker a
+combination needs no combiner, no vote and no threshold: it is both
+transforms' features in the same regression, or a ranker over rankers.
 
 Judge work against that goal: a new transform is interesting because it
-adds a *different* mistake to the ensemble, not because its solo row is
-the highest.
+adds a *different* mistake, not because its solo row is the highest —
+and every arm is read against `StrengthScore`, the do-nothing control
+that reproduces today's book exactly or the run stops.
 
 ## Principle: fail fast, iterate fast — starting from scratch is not allowed
 
@@ -55,11 +66,16 @@ Rules that follow from the table:
 
 ## Every result carries its configuration
 
-See `EVALUATION_SPEC.md` Rule 4. Short version: the fit configuration
-lives in `bets_common` (`ALPHA`, `USE_MODEL_STORE`, `SOLVER`,
-`EMBARGO_DAYS`, `LOOKBACK_YEARS`, `AUX_Q`, `MIN_TRAIN`), no script may
-re-default it, every run prints `FIT CONFIG` before any number, and every
-transactions file carries that line as its first row.
+The fit configuration lives in `bets_common` (`EMBARGO_DAYS`,
+`LOOKBACK_YEARS`, `AUX_Q`, `MIN_TRAIN`, `T_FLOOR`) and every run prints
+it before any number: `filter_backtest.py` opens with the `RANKER` line
+carrying the embargo, the window, the target, the floor, the estimator,
+the arms and the feature count.
+
+(This section used to cite an `EVALUATION_SPEC.md` Rule 4 and constants
+`ALPHA` / `USE_MODEL_STORE` / `SOLVER`. Neither survived the revert to
+`56ework`; the spec has three rules and `bets_common` has no such
+constants. Corrected 2026-08-31 rather than left pointing at nothing.)
 
 A number quoted without its configuration is not a result. Two scripts
 once reported the same nominal arm as +291% and +530% because they
@@ -67,14 +83,17 @@ disagreed about two unprinted defaults.
 
 ## Held fixed across arms, unless the run says otherwise
 
-`embargo=400d`, `window=expanding`, `label=top 20%`, dilations
-`1,2,4,8,16`. Arms differ by the transform and nothing else. The AllPass
-control must reproduce **+291.5%** over 2007-01-03 .. 2026-08-27 on any
-run before a filtered row from that run is read.
+`embargo=400d`, `window=expanding`, `target=ln(y)/t` with a 3-day
+floor, dilations `1,2,4,8,16`. Arms differ by the transform and nothing
+else. The `strength` control must reproduce today's book row for row and
+**+291.5%** over 2007-01-03 .. 2026-08-27 before a fitted row from that
+run is read — `filter_backtest.py` checks it in-process and exits if it
+does not. (`label=top 20%` was the retired architecture's training
+target; it survives only as the diagnostic AUC cut.)
 
 ## Tunable
 
-`--keeps` (decision threshold), the transform's own size knob
-(`--mr-biases`, `--groups`/`--kernels`), and `--alpha`. Nothing else is a
-knob; if something else needs changing, it is a decision, and it belongs
-in `DECISIONS.md`.
+`--arms`, the transform's own size knob (`--mr-biases`,
+`--groups`/`--kernels`), `--alpha` and `--floor`. `--keeps` is gone with
+the veto. Nothing else is a knob; if something else needs changing, it is
+a decision, and it belongs in `DECISIONS.md`.

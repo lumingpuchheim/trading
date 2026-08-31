@@ -470,7 +470,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
              entry_rate: float = 0.0,
              pool_days: list | None = None, moc: bool = False,
              record: dict | None = None,
-             gate: np.ndarray | None = None):
+             gate: np.ndarray | None = None,
+             scores: np.ndarray | None = None,
+             watch_cap: int = 100,
+             min_score: float | None = None):
     """One portfolio path. rng=None runs the strategy; with an rng the run
     is a control (random names, next-open fills).
 
@@ -484,6 +487,12 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     Pass `record` (a dict) to get the day-by-day detail back: it is
     filled with 'invested', the fraction of equity held in stock on each
     day of the period -- 1 minus the cash fraction.
+
+    `scores` is the ranker's (days x tickers) predicted growth rate: with
+    it, the day's fillable candidates are offered the free slots in score
+    order (ticker as the only tie) instead of in the order the strength
+    keys put them in. `min_score` leaves a slot empty rather than fill it
+    below that rate; None (the default) never declines a slot.
 
     Returns (trades, equity, avg invested, slot-days)."""
     tr = cfg['minervini_trading']
@@ -528,13 +537,23 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         fill_px, trigger = panel['fill_moc'], panel['trigger_moc']
     else:
         fill_px, trigger = panel['fill_px'], panel['trigger']
-    # A trade FILTER (filters.py) plugs in here and nowhere else: a
-    # (days x tickers) boolean that suppresses triggers it rejects. Slots,
-    # cooldown, exits, the market light and the controls are untouched, so
-    # a filtered run and an unfiltered one differ by exactly one thing.
-    # None = take every trigger, which is the standing behaviour.
+    # LEGACY. A trade filter (filters.py) plugs in here and nowhere else:
+    # a (days x tickers) boolean that suppresses triggers it rejects. The
+    # veto architecture it belongs to was retired on 2026-08-31
+    # (DECISIONS.md, "The filter architecture is wrong"); the argument
+    # survives for `equity_vs_spy.py` and the other scripts that still
+    # reproduce the retired chain. Nothing new should use it.
     if gate is not None:
         trigger = trigger & gate
+    # THE RANKER (rankers.py) plugs in here instead: a (days x tickers)
+    # float, one predicted growth rate per orderable signal, read at the
+    # day the order FILLS. It changes exactly one thing -- the order in
+    # which the day's fillable candidates are offered the free slots --
+    # and nothing else about the portfolio. -inf means "no score"; such a
+    # name is offered last and, in practice, cannot fill anyway (it never
+    # reached the ledger, so it never triggers).
+    if scores is not None and gate is not None:
+        raise ValueError('scores and gate are two architectures; pass one')
     vol_ok = panel['vol_ok']
     # Prices are NOT dividend adjusted since 2026-08-29, so a holder's
     # dividends are cash that has to be credited here or it disappears
@@ -790,6 +809,12 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
         #     confirmed, both read at this close, bought at this close
         if moc and not is_control:
             due = [j for j, day in orders.items() if day == i]
+            if scores is not None:
+                # The slot decision, and the only one: highest predicted
+                # rate first, ticker as the sole determinism tie. No veto,
+                # no threshold, no strength keys -- selectivity is slot
+                # capacity and nothing else (RANKER_SPEC.md).
+                due.sort(key=lambda j: (-scores[i, j], tickers[j]))
             adaptive_frac = None
             if tr.get('adaptive'):
                 # v8 (user method): split the free budget under the 80%
@@ -813,6 +838,11 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 if (not trigger[i, j] or j in positions
                         or not np.isfinite(px)
                         or len(positions) >= tr['max_positions']):
+                    continue
+                if min_score is not None and scores is not None                         and not scores[i, j] >= min_score:
+                    # the natural zero: cash grows at 0.0/day, so a slot
+                    # may stay empty rather than buy a negative predicted
+                    # rate. Off unless min_score is passed.
                     continue
                 if tr.get('adaptive'):
                     if adaptive_frac is None:
@@ -924,8 +954,18 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                         base += [-(rsv[i, j] if np.isfinite(rsv[i, j])
                                    else -np.inf), tickers[j]]
                         return tuple(base)
+                    # `watch_cap` is a WATCHLIST size, not a decision: an
+                    # order costs nothing until it fills, so v5 arms every
+                    # name it can and lets max_positions bind at entry. It
+                    # is ordered by the strength keys because on 1,993 of
+                    # 4,944 days the pool is larger than the cap and
+                    # something has to choose -- and at this point in the
+                    # day the ranker's score, which belongs to tomorrow's
+                    # close, does not exist yet. Under a scored run the
+                    # cap is the ONLY place those keys are still read, and
+                    # the slot decision itself (step 3b) never sees them.
                     take = [j for j in sorted(day_pool, key=key)
-                            if usable(j)][:100]
+                            if usable(j)][:watch_cap]
                 elif rank_sel:
                     # v4 (spec 10.2): fill slots by strength, not alphabet —
                     # RS-line at a high first, then holds-up-when-weak,

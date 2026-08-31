@@ -147,3 +147,76 @@ that refit is the price of the architecture and is paid once.
 4. A split bet's target reproduces the leg blend above bit for bit on a
    hand-built example (unit test).
 5. `grep -n keeps filter_backtest.py` finds nothing but history.
+
+---
+
+## As built — 2026-08-31
+
+The architecture above stands. Six things were decided at the keyboard
+that the spec did not settle, and one of them is a real amendment.
+
+**Two arms, not four.** `strength` and `rocket` only, on the operator's
+instruction ("implement MiniRocket only and compare with the baseline
+do_nothing"). `minervini_multirocket.py` and `minervini_hydra.py` did
+not survive the revert to `56ework`, so those two arms have no
+transform to sit behind; their cached features are still in
+`results/.fitcache` and are orphans until the modules are rewritten.
+`filter_backtest.py` names them and refuses rather than guessing.
+
+**THE STRENGTH KEYS SURVIVE IN ONE PLACE, AND IT IS NOT THE SLOT
+DECISION.** `simulate()` step 4 arms a watchlist of at most 100 names
+per day and lets `max_positions` bind at the fill; the pool is larger
+than 100 on **1,993 of 4,944 days**, so something has to choose which
+100 get armed. The ranker's score cannot: it belongs to tomorrow's
+close, and this is tonight. Dropping the cap instead is not free —
+measured, the control book moves **+291.5% -> +304.4%**, so the cap is
+part of what "today's book" means and cannot be removed inside a change
+that has to reproduce it. So the keys order the WATCHLIST, and the slot
+decision (step 3b) never sees them. Removing that last use is its own
+change, with its own control.
+
+**The slot decision moved to the fill, not the order.** `simulate()`
+sorts the day's *fillable* candidates by score at the close they fill
+at, which is the only place a score built from a window ending that day
+is causal. The control encodes keys read the day the order was placed —
+one day earlier, which is where `simulate()` reads them today — so it
+is causal by a day's margin and reproduces the incumbent permutation
+exactly.
+
+**Alpha by exact leave-one-out, not GCV.** GCV replaces the hat
+diagonal by its mean, and that fails precisely here: three of the first
+four folds have fewer rows than the 4,206 features (2,174 in 2009), the
+fit interpolates, `df -> n`, and the criterion becomes 0/0. It chose
+alpha=0.001 for 2012 and left an out-of-fold mse of **0.78** against a
+training mse of 1.9e-05. The exact denominator does not degenerate;
+with it the same folds choose 100 and 316, which is what the retired
+classifier chose in 134 of 136 fits. `rankers.loo_ridge` computes it in
+one eigendecomposition per fold plus one chunked pass over the rows, so
+peak memory stays at the p x p Gram (142 MB) rather than sklearn's
+n x p SVD (~4 GB). Printed as `estimator=ridge-loocv`.
+
+**Years with no model keep the control ordering, in every arm.** The
+first fittable block is 2009; 2007 and 2008 have too little history
+behind them. Those years therefore run on `StrengthScore` in the fitted
+arms too, so the arms differ exactly where the model exists and nowhere
+else. The alternative — leaving them unscored — would have made them
+alphabetical, which is neither arm.
+
+**`gate` and `filters.py` are not deleted.** `equity_vs_spy.py`,
+`filter_agreement.py` and `rocket_ev.py` still reproduce numbers from
+the retired chain and would break. Both carry a header saying what they
+are. Nothing new may use them, and `filter_backtest.py` refuses to take
+`scores` and `gate` in the same call.
+
+### One property of the target worth knowing before reading `G_day`
+
+`G_day` is negative for the book AND for the whole candidate pool
+(-0.33%/day against -0.24%/day on the short window), while the same
+bets are +0.52% per bet geometrically. Both are correct. One vote per
+bet on a PER-DAY rate is dominated by the bets that close fastest, and
+those are stop-outs: a -8% stop that fills on day three is -0.028/day,
+where a +40% winner held nine months is +0.0015/day. The floor caps how
+far that goes but does not reverse it. So `G_day` is a ranking-quality
+number, not a statement about what a euro did — `geo/bet` is that — and
+the two are printed side by side, each beside the pool, for exactly
+that reason.
