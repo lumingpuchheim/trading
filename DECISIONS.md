@@ -975,6 +975,58 @@ the top" did not survive contact: the crash term moved the top, and
 moved it the wrong way.
 
 
+## Amendment 11 — the jackpot gate CLEARS (2026-09-01)
+
+The exact mirror of Amendment 10's crash model, one label flipped:
+binary `y >= the fold's own training top decile`, ridge on all training
+rows, 5-year window, grouped-CV alpha, same features, same calibration.
+A gate, not a book: one training run, no composition, no simulation.
+
+**Bar: out-of-fold AUC above 0.55 in at least 8 of 15 folds.**
+
+    2012 0.558   2015 0.746   2018 0.663   2021 0.610   2024 0.536
+    2013 0.549   2016 0.588   2019 0.588   2022 0.551   2025 0.672
+    2014 0.662   2017 0.533   2020 0.584   2023 0.519   2026 0.549
+
+    GATE: 10 of 15, mean 0.594, diagnostic-era ceiling 0.49
+
+**CLEARS -- and it is the first gate in this whole sequence to clear on
+its merits rather than at its bar.** Every one of the fifteen folds beats
+the 0.49 ceiling that every jackpot number in the diagnostic era sat
+under; the weakest fold, 0.519, is above all of them.
+
+Three things make it more credible than the crash result:
+
+- **No fold collapses.** The crash model fell to 0.525 in 2020 and 0.523
+  in 2022 -- coin flips in the two crash years, which is exactly where a
+  crash model has to work. The jackpot model's floor is 0.519, and in
+  those same two years it reads 0.584 and 0.551, HIGHER than the crash
+  model managed.
+- **Calibration never strained**: `clip` in all fifteen folds, 0-3%
+  saturation. The decile fallback never fired, so the raw ridge output is
+  already probability-shaped.
+- **The label cuts are era-stable**, 1.147 to 1.179 across fifteen
+  windows, so the training-window quantile is doing its job and no decade
+  is privileged.
+
+**And unlike crash knowledge it acts where the money is.** Amendment 10
+passed its ranking gate and failed its book gate precisely because crash
+discrimination improves the ordering everywhere the book never looks;
+the book only ever buys the top ~2.25% of a day. Jackpot knowledge lives
+at that top.
+
+The three-part expectation is now AUTHORISED and not yet built:
+
+    score = p_crash*L_crash + p_jack*J_hat
+            + (1 - p_crash - p_jack) * v_mid
+
+It needs one more training run: the Amendment 10 cache stores only the
+composed score, not `p_crash`, and `v_mid` -- a value model on the
+training rows that are neither crash nor jackpot -- does not exist. The
+book will be judged on ONE column, per-bet geometric mean against the
+value-5y arm's +0.67%, drawdown reported and never judged.
+
+
 ## PROPOSED — not built
 
 | idea | what it would need |

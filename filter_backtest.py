@@ -556,6 +556,92 @@ RENT_MULTS = (0.5, 1.0, 2.0)
 AT_C = RENT_MULTS.index(1.0)
 
 
+JACK_Q = 0.90             # the jackpot label: the training window's own
+                          # top decile. A fixed multiple like 1.4 would
+                          # privilege an era; a training quantile cannot.
+JACK_BAR = 0.55           # the gate: out-of-fold AUC above this
+JACK_DIAG = 0.49          # the ceiling of the diagnostic era -- every
+                          # jackpot AUC ever seen here, on models trained
+                          # for other things, sat at 0.43-0.49
+
+
+def jackpot_cut(y_train) -> float:
+    """The fold's own jackpot line: the top decile of ITS training
+    window, like every other derived quantity in this repo."""
+    return float(np.quantile(np.asarray(y_train, dtype=np.float64), JACK_Q))
+
+
+def jackpot_walk_forward(build, feat_id, y, date, blocks, alpha, src,
+                         embargo, cached_only=False):
+    """The jackpot's fair shot -- a GATE, not a score (Amendment 11).
+
+    The exact mirror of Amendment 10's crash model with one label
+    flipped: binary `y >= the fold's own training top decile`, ridge on
+    all training rows, same window, same grouped-CV alpha, same features,
+    same calibration.
+
+    Why it deserves the run at all: the four jackpot-hunting losses on
+    record belong to the voided veto era, and every jackpot number since
+    (out-of-fold AUC 0.43-0.49) was a DIAGNOSTIC of a model trained on
+    something else. Crashes got a dedicated shot and measured their
+    ceiling; jackpots never did. And unlike crash knowledge, jackpot
+    knowledge would act at the TOP of the ranking -- the only place the
+    book buys.
+
+    Returns (aucs, fitted years). No score is composed here: the
+    three-part expectation is built only if this gate clears.
+    """
+    aucs, fitted = [], []
+    for Y, tr, ev in blocks:
+        ck = fitcache.key('ridge-jackpot', src, alpha, feat_id,
+                          tuple(YCV_ALPHAS), embargo, INNER_MIN, JACK_Q,
+                          tr, ev)
+        hit = fitcache.load('block', ck)
+        if hit is not None:
+            auc, cut = float(hit['auc']), float(hit['cut'])
+            mode, yrs = str(hit['mode']), int(hit['years'])
+            cached = True
+        else:
+            if purged_years(date[tr], embargo) < 2:
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   fewer than two '
+                      f'purged years in the window: no fit', flush=True)
+                continue
+            if cached_only:
+                sys.exit(f'--cached-only: the {Y} fold of ridge-jackpot is '
+                         f'not cached and this run may not fit it.')
+            cut = jackpot_cut(y[tr])
+            lab_tr = (y[tr] >= cut).astype(np.float64)
+            xt = np.asarray(build(tr), np.float32)
+            jm = MultiRidge(alpha=alpha, embargo=embargo).fit(xt, lab_tr,
+                                                              date[tr])
+            del xt
+            if not jm.fitted_:
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   no fit',
+                      flush=True)
+                continue
+            xe = np.asarray(build(ev), np.float32)
+            raw = jm.score(xe)
+            del xe
+            _, mode = calibrate(jm.train_pred_[:, 0], lab_tr, raw)
+            # the block is graded against the TRAINING window's cut, never
+            # its own -- the same rule as every label in this repo
+            lab_ev = (y[ev] >= cut).astype(np.int8)
+            auc = (float(roc_auc_score(lab_ev, raw))
+                   if 0 < lab_ev.sum() < len(lab_ev) else float('nan'))
+            yrs = len(jm.years_)
+            fitcache.save('block', ck, auc=np.float64(auc),
+                          cut=np.float64(cut), mode=np.array(mode),
+                          years=np.int64(yrs))
+            cached = False
+        aucs.append(auc)
+        fitted.append(Y)
+        print(f'  {Y}  train {int(tr.sum()):>7,d}   '
+              f'jackAUC {auc:.3f} vs {JACK_DIAG:.2f} diagnostic, bar '
+              f'{JACK_BAR:.2f}   cut y>={cut:.4f}   {mode:12s} ({yrs}y)'
+              f'{"  (cached)" if cached else ""}', flush=True)
+    return aucs, fitted
+
+
 def crashvalue_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
                             src, embargo, cached_only=False):
     """Two models per fold, one formula (RANKER_SPEC Amendment 10).
@@ -941,9 +1027,10 @@ def main() -> None:
     # Amendment 6; `rent` = ln(y) - c*t, kept runnable so its recorded
     # negative can be reproduced, never as a default again.
     target = opt('--target', 'value')
-    if target not in ('value', 'rent', 'daymean', 'crashvalue'):
-        sys.exit(f'--target must be value, rent, daymean or '
-                 f'crashvalue, not {target!r}')
+    if target not in ('value', 'rent', 'daymean', 'crashvalue',
+                      'jackpot'):
+        sys.exit(f'--target must be value, rent, daymean, '
+                 f'crashvalue or jackpot, not {target!r}')
     if min_score is not None and target == 'daymean':
         sys.exit('--min-score is refused with target=daymean: the score '
                  'is relative to an unknown day level, so "predicted rate '
@@ -1084,7 +1171,8 @@ def main() -> None:
           f'{f"{lookback:g}y" if lookback else "expanding"}  '
           f'target={ {"value": "ln(y)", "rent": "ln(y)-c*t",
                        "daymean": "ln(y)-daymean",
-                       "crashvalue": "p*L+(1-p)*v"}[target] }'
+                       "crashvalue": "p*L+(1-p)*v",
+                       "jackpot": "1[y>=top decile]"}[target] }'
           + (f'  max_hold={hold}d' if hold else '')
           + ('  rent derived per fold' if target == 'rent' else ''))
     print(f'        estimator=ridge-{"ycv" if alpha == "cv" else alpha}  '
@@ -1148,6 +1236,36 @@ def main() -> None:
         print()
         print(f'walk-forward {arm} fits, features={n_f:,} '
               f'(train / out-of-fold, one line per fold):')
+        if target == 'jackpot':
+            # A GATE, NOT A BOOK. Amendment 11 spends one training run on
+            # the question and nothing else: a failed gate produces no
+            # composition, no simulation and one register row.
+            aucs, _ = jackpot_walk_forward(
+                build, feat_id, m['y'].to_numpy(np.float64), date, blocks,
+                alpha, src, embargo, cached_only)
+            win = int(sum(a > JACK_BAR for a in aucs if np.isfinite(a)))
+            n = int(sum(np.isfinite(a) for a in aucs))
+            print()
+            print(f'GATE  jackpot AUC above {JACK_BAR:.2f}: {win} of {n} '
+                  f'folds (bar 8), mean {np.nanmean(aucs):.3f}, '
+                  f'diagnostic-era ceiling {JACK_DIAG:.2f}')
+            if n < 15:
+                # the bar is 8 of 15 in absolute folds, so a narrowed
+                # window cannot pronounce on it either way
+                print(f'this window has {n} fitted folds, not 15: the gate '
+                      f'is not decided here. Run without --until.')
+                return
+            if win >= 8:
+                print('the gate CLEARS: the three-part expectation of '
+                      'Amendment 11 is now authorised and is not built '
+                      'yet. No book is simulated from this run.')
+            else:
+                print('the gate FAILS. Four purpose-built losses in the '
+                      'voided era, the standing diagnostic, and a '
+                      'dedicated fair shot under the honest machinery all '
+                      'agree: jackpots are not predictable from these '
+                      'windows. No book is simulated.')
+            return
         if target == 'crashvalue':
             sc, fitted = crashvalue_walk_forward(
                 build, feat_id, rv, m['y'].to_numpy(np.float64), date,

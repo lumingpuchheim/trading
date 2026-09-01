@@ -24,8 +24,8 @@ from sklearn.linear_model import Ridge
 
 from bets_common import (EMBARGO_DAYS, T_FLOOR, demean_by_day,
                          rate_target, rent_legs)
-from filter_backtest import (blend_matrix, calibrate, keys_plus,
-                             total_expectation,
+from filter_backtest import (blend_matrix, calibrate, jackpot_cut,
+                             keys_plus, total_expectation,
                              within_day_spearman)
 from rankers import (MultiRidge, derive_rent, inner_split,
                      loo_ridge, strength_matrix, ycv_ridge)
@@ -540,3 +540,26 @@ def test_calibration_clips_while_little_saturates_and_maps_when_much_does():
     assert mode2.startswith('decile')
     assert (q >= 0).all() and (q <= 1).all()
     assert list(q) == sorted(q)            # monotone by construction
+
+
+# ------------------------------------ the jackpot label (Amendment 11)
+
+def test_the_jackpot_cut_is_the_training_windows_own_top_decile():
+    y = np.arange(1, 1001, dtype=float)          # 1..1000
+    assert jackpot_cut(y) == pytest.approx(np.quantile(y, 0.90))
+    assert jackpot_cut(y) == pytest.approx(900.1, abs=0.5)
+    # and it is a QUANTILE, not a fixed multiple: a decade twice as rich
+    # moves the line with it instead of calling every bet a jackpot
+    assert jackpot_cut(y * 2) == pytest.approx(2 * jackpot_cut(y))
+
+
+def test_a_block_is_graded_against_the_training_cut_not_its_own():
+    """The rule every label in this repo obeys: a fold's yardstick comes
+    from its own training window, never from the block being scored."""
+    train = np.array([1.0, 1.0, 1.0, 1.0, 2.0])          # cut at 1.6
+    block = np.array([1.5, 1.7, 3.0])
+    cut = jackpot_cut(train)
+    assert list((block >= cut).astype(int)) == [0, 1, 1]
+    # graded against its OWN top decile the block would call only the 3.0
+    # a jackpot, which is a different and inadmissible question
+    assert list((block >= jackpot_cut(block)).astype(int)) == [0, 0, 1]
