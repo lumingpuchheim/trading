@@ -675,6 +675,97 @@ The total-return gaps are NOT called: the capped book needs its own
 book (Amendment 6 step 5, not yet run). Steps 4-6 are outstanding.
 
 
+## Amendment 7 — group_pct joins the model: the sign is real, the loss is not (2026-09-01)
+
+The one survivor of Amendment 6's gates, tested uncapped (the day-42
+forced sell is a measured no-go: step 2 priced it at 77 points on the
+incumbent) on the value target `ln(y)`. `group_pct` enters as an
+ordinary (value, finite) pair and the regression learns its weight per
+fold -- nobody flips a sign by hand.
+
+**The sign gate passes emphatically.** The learned standardised weight
+is **negative in 15 of 15 folds**, median -5.96e-04, never wobbling:
+
+    2012 -5.96e-04  2013 -1.96e-03  2014 -1.36e-03  2015 -3.84e-04
+    2016 -1.34e-04  2017 -4.49e-04  2018 -8.84e-04  2019 -4.45e-05
+    2020 -5.90e-04  2021 -5.63e-04  2022 -3.71e-04  2023 -6.12e-04
+    2024 -6.61e-04  2025 -6.32e-04  2026 -9.59e-04
+
+It agrees with the screen's 12-of-15 and confirms the plumbing. Among
+candidates that already passed the strength screen, **a stock from a
+hotter industry group makes a worse bet** -- the retired §16 gate held a
+real signal by the wrong end. That verdict stands for the gate; the
+column is new evidence and the sign is the finding.
+
+**The fold gate is a tie at best.**
+
+| arm | target | R2 oof | folds over the constant |
+|---|---|---|---|
+| keys | rent | -1.155 | 7/15 |
+| keys | value, uncapped | -0.052 | 6/15 |
+| keys+group | value, uncapped | **-0.052** | 7/15 |
+
+Like for like it is 7 against 6 -- one fold in fifteen. Against what the
+keys alone have EVER managed (7/15) it does not improve at all, and the
+row-weighted R2 is identical to three decimals with and without the
+column. **Adding it changed the loss by nothing measurable.**
+
+**The book got worse**, fitted years, uncapped:
+
+| arm | total | maxDD | bets | geo/bet |
+|---|---|---|---|---|
+| strength | +292.4% | -29.3% | 988 | +0.82% |
+| keys | +201.0% | -29.3% | 965 | +0.74% |
+| keys+group | +92.8% | -30.7% | 996 | +0.31% |
+
+Not a contradiction with the stable sign, and the same lesson as
+Amendment 5: the model is already at the noise floor, a shrunk ridge
+still emits a full ordering, and a weak-but-real column reorders the
+book without improving the loss. **Reordering at the noise floor costs
+money.**
+
+Verdict, by the amendment's own pre-registered wording: no movement, one
+recorded line, **the last gated feature is spent.** `rocket+group` was
+not run -- a column that adds nothing to six features will not be found
+by a model with 4,208, and the gate exists precisely so the book is not
+paid for.
+
+### G_day is withdrawn as a reported column (2026-09-01)
+
+Raised by the operator and correct: `G_day` is a **mean of ratios whose
+denominator is correlated with its numerator**, and its sign is an
+artefact. On the same 55,737 bets:
+
+    geo/bet   geometric mean of multiples        +0.5161% per bet
+    G_day     mean of per-bet daily ratios       -0.2380% per day
+              exp( sum ln(y) / sum t )           +0.0177% per day
+
+    mean hold of a WINNER (y>1):  46.3 days   n = 20,676
+    mean hold of a LOSER  (y<1):  16.3 days   n = 34,957
+
+Winners are held 2.8x longer than losers, so dividing each bet's log by
+its own holding time hands every loser ~2.8x the weight of every winner
+-- enough on its own to flip the sign. `G_day` cannot be compounded or
+annualised (-0.36%/day over 4,940 trading days would wipe the account
+that in fact multiplied by 3.9), and it systematically flatters whichever
+arm holds its bets for less time.
+
+**Consequences for what is already recorded.** Every reading in this
+register that leaned on `G_day` -- in particular "the fitted arm is
+better on G_day" in the ratio, rent and capped-value rows -- is
+UNSUPPORTED. The rent-era arm had degenerated into ranking by shortest
+predicted hold, which is exactly what this metric rewards, so its best-
+in-class `G_day` was the metric applauding the degeneracy. The surviving
+evidence in every one of those rows is `geo/bet`, `maxDD` and the
+loss-versus-constant fold count.
+
+Amendment 4 said "`G_day` remains a REPORTED column with its existing
+definition"; that instruction predates the pathology being visible and
+is overridden. The replacement, where a per-slot-day figure is wanted at
+all, is the ratio of sums `exp(sum ln(y) / sum t)` -- the quantity
+Amendment 4 itself named when it retired the ratio target.
+
+
 ## PROPOSED — not built
 
 | idea | what it would need |

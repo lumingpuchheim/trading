@@ -54,6 +54,7 @@ from bets_common import (AUX_Q, EMBARGO_DAYS, INNER_MIN, LOOKBACK_YEARS,
                          value_target, warmup_rows, year_blocks)
 from geostats import bet_multiples, geo_mean_per_euro
 from lppl_backtest import ROOT, load_config, metrics
+from minervini import group_strength
 from minervini_backtest import apply_v5, build_panel, pool_by_day, simulate
 from minervini_rocket import fit_biases, kernels, transform
 from rankers import (YCV_ALPHAS, MultiRidge, derive_rent,
@@ -92,6 +93,40 @@ def key_columns(panel: dict, ei: np.ndarray, tj: np.ndarray) -> np.ndarray:
         ok = np.isfinite(v)
         out += [np.where(ok, v, 0.0), ok.astype(np.float64)]
     return np.stack(out, axis=1).astype(np.float32)
+
+
+def group_pct_matrix(panel: dict, cfg: dict) -> np.ndarray:
+    """Industry-group strength, (days x tickers), from the panel's own
+    `rs` matrix and `industries.csv`.
+
+    Built here rather than in `build_panel` because that would rebuild
+    the 250 MB panel cache under a new name for a column this computes
+    in seconds from a matrix already in memory. Same function, same
+    config, so the column is the one the screener would have seen.
+
+    THE §16 GATE'S REJECTION DOES NOT TRANSFER. That gate demanded the
+    top 30% of groups and was rejected; the gates of Amendment 6 then
+    found the column's sign is NEGATIVE in 12 of 15 years -- among
+    candidates that already passed the strength screen, a stock from a
+    hotter industry made a worse bet. The gate held a real signal by the
+    wrong end. As a feature the model learns the sign per fold, and can
+    walk it back if it fades.
+    """
+    tab = pd.read_csv(ROOT / 'data' / 'industries.csv')
+    gmap = dict(zip(tab['ticker'], tab['industry']))
+    gid = {g: i for i, g in enumerate(sorted(set(gmap.values())))}
+    tickers = list(panel['tickers'])
+    groups = np.array([gid.get(gmap.get(t, None), -1) for t in tickers])
+    return group_strength(panel['rs'], groups, cfg)
+
+
+def pair(mat, ei, tj) -> np.ndarray:
+    """One panel column as the (value filled with 0, finite) pair the
+    model sees, read on the day the ORDER is placed."""
+    v = np.asarray(mat[np.maximum(ei - 1, 0), tj], dtype=np.float64)
+    ok = np.isfinite(v)
+    return np.stack([np.where(ok, v, 0.0), ok.astype(np.float64)],
+                    1).astype(np.float32)
 
 
 def keys_plus(keys: np.ndarray) -> np.ndarray:
@@ -155,7 +190,7 @@ def blend_matrix(S, score, ei, tj, w):
     return A
 
 
-def arm_builder(arm: str, keys: np.ndarray, x, date, alpha_src):
+def arm_builder(arm: str, keys: np.ndarray, x, date, alpha_src, grp=None):
     """(build, feature identity, feature count) for one fitted arm.
 
     `build(mask)` returns that arm's feature rows. The rocket arm
@@ -177,15 +212,26 @@ def arm_builder(arm: str, keys: np.ndarray, x, date, alpha_src):
     if arm == 'keys+':
         kp = keys_plus(keys)
         return (lambda m: kp[m]), 'keys8', kp.shape[1]
+    if arm == 'keys+group':
+        kg = np.concatenate([keys, grp], 1)
+        return (lambda m: kg[m]), 'keys6+grp', kg.shape[1]
     if arm == 'rocket':
         feats = rocket_features(x, date, alpha_src)
         return ((lambda m: np.concatenate(
                     [np.asarray(feats[m], np.float32), keys[m]], 1)),
                 keys.shape[1],
                 feats.shape[1] + keys.shape[1])
-    sys.exit(f'unknown arm {arm!r}: strength, keys, keys+ and rocket are '
-             f'built. RANKER_SPEC.md also lists multirocket and hydra; '
-             f'their transforms are not in the tree.')
+    if arm == 'rocket+group':
+        feats = rocket_features(x, date, alpha_src)
+        kg = np.concatenate([keys, grp], 1)
+        return ((lambda m: np.concatenate(
+                    [np.asarray(feats[m], np.float32), kg[m]], 1)),
+                'rocket+grp',
+                feats.shape[1] + kg.shape[1])
+    sys.exit(f'unknown arm {arm!r}: strength, keys, keys+, keys+group, '
+             f'rocket and rocket+group are built. RANKER_SPEC.md also '
+             f'lists multirocket and hydra; their transforms are not in '
+             f'the tree.')
 
 
 def rocket_features(x: np.ndarray, date: np.ndarray, src: str):
@@ -240,16 +286,22 @@ def fold_line(Y, n_train, m, alpha, cached, r2, years, c, rounds,
             f'({years}y){"  (cached)" if cached else ""}')
 
 
-def value_fold_line(Y, n_train, m, alpha, cached, r2, years) -> str:
+def value_fold_line(Y, n_train, m, alpha, cached, r2, years, grp) -> str:
+    # `grp` is the LEARNED, standardised weight on group_pct, printed so
+    # the sign flip stays visible: the retired gate demanded the top 30%
+    # of groups, the screen says the relationship runs the other way, and
+    # nobody sets that by hand -- the fold's own window does, and can
+    # walk it back if it fades (Amendment 7).
     return (f'  {Y}  train {n_train:>7,d}   '
             f'mse {m["mse_tr"]:.2e} / {m["mse_ev"]:.2e}  R2oof {r2:+6.2f}   '
             f'spear {m["sp_tr"]:+.2f} / {m["sp_ev"]:+.2f}   '
-            f'alpha {alpha:.3g} ({years}y)'
-            f'{"  (cached)" if cached else ""}')
+            f'alpha {alpha:.3g}'
+            + (f'  group {grp:+.2e}' if grp is not None else '')
+            + f' ({years}y){"  (cached)" if cached else ""}')
 
 
 def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
-                       embargo, hold):
+                       embargo, hold, grp_at=None):
     """The capped-label walk-forward: ONE ridge per fold on `ln(y)`.
 
     No rent, no ratio, no floor and no second head. With the hold capped
@@ -266,7 +318,7 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
     Returns ({1.0: scores}, fitted years).
     """
     score = np.full(len(rv), np.nan)
-    r2s, n_ev, fitted = [], [], []
+    r2s, n_ev, fitted, gws = [], [], [], []
     for Y, tr, ev in blocks:
         ck = fitcache.key('ridge-value', src, alpha, feat_id, hold,
                           tuple(YCV_ALPHAS), embargo, INNER_MIN, tr, ev)
@@ -276,6 +328,7 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
             m = {k: float(hit[k]) for k in ('mse_tr', 'mse_ev', 'sp_tr',
                                             'sp_ev')}
             al, yrs = float(hit['alpha']), int(hit['years'])
+            gw = float(hit['group']) if 'group' in hit else None
         else:
             xt = np.asarray(build(tr), np.float32)
             rk = MultiRidge(alpha=alpha, embargo=embargo).fit(xt, rv[tr],
@@ -297,8 +350,12 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
                      'sp_tr': float(spearmanr(p_tr, rv[tr]).statistic),
                      'sp_ev': float(spearmanr(p_ev, rv[ev]).statistic)}
             al, yrs = float(np.asarray(rk.alpha_).ravel()[0]), len(rk.years_)
+            gw = (float(rk.coef_[grp_at, 0]) if grp_at is not None
+                  else None)
+            extra = {} if gw is None else {'group': np.float64(gw)}
             fitcache.save('block', ck, score=p_ev.astype(np.float64),
                           alpha=np.float64(al), years=np.int64(yrs),
+                          **extra,
                           **{k: np.float64(v) for k, v in m.items()})
         score[ev] = p_ev
         null = float(np.mean((rv[ev] - rv[tr].mean()) ** 2))
@@ -307,7 +364,9 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
         n_ev.append(int(ev.sum()))
         fitted.append(Y)
         print(value_fold_line(Y, int(tr.sum()), m, al, hit is not None, r2,
-                              yrs), flush=True)
+                              yrs, gw), flush=True)
+        if gw is not None:
+            gws.append(gw)
     if r2s:
         w = np.asarray(n_ev, float)
         print(f'  loss against the null (predict the training mean): '
@@ -315,6 +374,10 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
               f'{float(np.average(r2s, weights=w)):+.3f}, better than a '
               f'constant in {int(sum(v > 0 for v in r2s))} of {len(r2s)} '
               f'folds', flush=True)
+    if gws:
+        neg = int(sum(v < 0 for v in gws))
+        print(f'  learned group_pct weight: negative in {neg} of '
+              f'{len(gws)} folds, median {np.median(gws):+.2e}', flush=True)
     return {1.0: score}, fitted
 
 
@@ -527,6 +590,12 @@ def main() -> None:
     # The ledger is keyed on H because the cap moves every outcome; the
     # windows and every feature cache are shared across all H.
     hold = opt('--max-hold', 0, int)
+    # THE TRAINED TARGET. `value` = ln(y), the standing one since
+    # Amendment 6; `rent` = ln(y) - c*t, kept runnable so its recorded
+    # negative can be reproduced, never as a default again.
+    target = opt('--target', 'value')
+    if target not in ('value', 'rent'):
+        sys.exit(f'--target must be value or rent, not {target!r}')
     # --permute N: N books in which the fitted scores are shuffled
     # WITHIN each day, so the day's candidate set and the score
     # distribution are untouched and only the ranker's information
@@ -638,8 +707,17 @@ def main() -> None:
     blocks = [b for b in blocks if lo <= b[0] <= hi]
     keys = key_columns(panel, ei, tj)
     n_rocket = 84 * len(DILATIONS) * N_BIAS * x.shape[1] + keys.shape[1]
+    grp = None
+    if any(a.endswith('+group') for a in arms):
+        grp = pair(group_pct_matrix(panel, cfg), ei, tj)
+        cov = pd.Series(grp[:, 1], index=m['entry_date'].dt.year).groupby(
+            level=0).mean()
+        print('group_pct coverage by entry year (finite share of the '
+              'ledger rows):')
+        print('  ' + '  '.join(f'{int(Y)} {v:.0%}' for Y, v in cov.items()))
     width = {'strength': 0, 'keys': keys.shape[1], 'keys+': keys.shape[1] + 2,
-             'rocket': n_rocket}
+             'keys+group': keys.shape[1] + 2, 'rocket': n_rocket,
+             'rocket+group': n_rocket + 2}
     # blend<w> arms fit nothing: they rank-average the rocket scores with
     # the control ordering, per day (Amendment 3.1)
     blends = [a for a in arms if a.startswith('blend')]
@@ -651,8 +729,9 @@ def main() -> None:
 
     print(f'\nRANKER  embargo={embargo}d  window='
           f'{f"{lookback:g}y" if lookback else "expanding"}  '
-          f'target={"ln(y)" if hold else "ln(y)-c*t"}'
-          + (f'  max_hold={hold}d' if hold else '  rent derived per fold'))
+          f'target={"ln(y)" if target == "value" else "ln(y)-c*t"}'
+          + (f'  max_hold={hold}d' if hold else '')
+          + ('  rent derived per fold' if target == 'rent' else ''))
     print(f'        estimator=ridge-{"ycv" if alpha == "cv" else alpha}  '
           f'blocks={len(blocks)} ({blocks[0][0]}-{blocks[-1][0]})  '
           f'arms: {shown}')
@@ -709,14 +788,16 @@ def main() -> None:
     books, years_of, sens, rent_c = {'strength': (S, st)}, {}, {}, None
     for arm in [a for a in arms if a != 'strength'
                 and not a.startswith('blend')]:
-        build, feat_id, n_f = arm_builder(arm, keys, x, date, src)
+        build, feat_id, n_f = arm_builder(arm, keys, x, date, src,
+                                          grp)
         print()
         print(f'walk-forward {arm} fits, features={n_f:,} '
               f'(train / out-of-fold, one line per fold):')
-        if hold:
-            sc, fitted = value_walk_forward(build, feat_id, rv, date,
-                                            blocks, alpha, src, embargo,
-                                            hold)
+        if target == 'value':
+            sc, fitted = value_walk_forward(
+                build, feat_id, rv, date, blocks, alpha, src, embargo,
+                hold, grp_at=(n_f - 2 if arm.endswith('+group')
+                              else None))
             crow = None
         else:
             sc, fitted, crow = score_walk_forward(build, feat_id, PD, taken,
@@ -736,7 +817,7 @@ def main() -> None:
         # ranking should move slowly with c; a book that swings across
         # this band is fragile and the run has to say so.
         row = {}
-        for mu in (sc if hold else RENT_MULTS):
+        for mu in (sc if target == 'value' else RENT_MULTS):
             A = S.copy()
             A[ei[ok], tj[ok]] = sc[mu][ok]
             t_, eq_, inv_, _ = simulate(panel, cfg, (j0, j1), moc=True,
