@@ -1078,3 +1078,69 @@ authorised for the dedicated crash question; nothing else trains.
 5. The verdict lands in DECISIONS.md as one row either way; if gate
    1 fails, the row says the 0.653 byproduct stands as the final
    characterisation of crash knowledge in this data.
+
+---
+
+## Amendment 11 — the jackpot's fair shot (2026-09-01)
+
+The last symmetric gap in the record. Crashes got a dedicated model
+under the honest machinery and it measured the ceiling (0.655, one
+run, question closed from both ends). Jackpots never did: the four
+jackpot-hunting losses belong to the voided veto era, and every
+jackpot number since (out-of-fold AUC 0.43-0.49 on the top-quantile
+label, below coin flip in every fold of every arm) came as a
+DIAGNOSTIC of models trained on other targets. One run makes the
+record symmetric — and unlike crash knowledge, jackpot knowledge
+would act at the TOP of the ranking, the only place the book buys.
+This is the one remaining experiment whose success would directly
+serve the operator's goal.
+
+### The model
+
+The exact mirror of Amendment 10's crash model, one label flipped:
+
+- **Label**: binary, `y >= the fold's own training-window top-decile
+  cut` — per fold, from training rows only, like every derived
+  quantity. (A fixed multiple like 1.4 privileges an era; a
+  training-window quantile does not.)
+- **Fit**: ridge on all training rows, 5-year window, grouped-CV
+  alpha, features as today. Calibration exactly as the crash model:
+  clip, decile-lookup fallback, mode printed.
+- **Fold line**: out-of-fold jackpot AUC beside the 0.49 ceiling of
+  the diagnostic era, the label cut, calibration mode.
+
+### Gate — pre-registered, and it decides everything
+
+**Out-of-fold jackpot AUC above 0.55 in at least 8 of 15 folds.**
+
+- Fails → the question closes PERMANENTLY and from both ends: four
+  purpose-built losses (voided era), the standing diagnostic, and a
+  dedicated fair shot under honest machinery all agree. The register
+  records: jackpots are not predictable from these windows, and no
+  future construction on these features may reopen the claim. This
+  outcome is the likely one and it is a result, not a failure.
+- Clears → the Amendment 10 formula extends to the three-part
+  expectation before any book is run:
+
+      score = p_crash * L_crash + p_jack * J_hat
+              + (1 - p_crash - p_jack) * v_mid
+
+  with `J_hat` the training window's mean jackpot value, `v_mid` a
+  value model fitted on the training rows that are neither crash nor
+  jackpot, and the two probabilities calibrated as in Amendment 10.
+  Book judged on ONE column, per-bet geometric mean against the
+  value-5y arm's +0.67%, drawdown reported never judged, totals
+  inside the band decide nothing.
+
+### Acceptance
+
+1. Control reproduces before any fitted row is read.
+2. The label cut is printed per fold and comes from that fold's
+   training window only (test-pinned, like the demeaning).
+3. The gate number prints before any composition or book exists;
+   a failed gate produces no book and one DECISIONS row.
+4. Cost: one training run for the gate; the three-part composition
+   only if the gate clears. Nothing else trains.
+5. Whatever the outcome, this amendment plus Amendment 10 closes the
+   tail-prediction question for these features — both tails, both
+   directions, dedicated shots, one register row each.
