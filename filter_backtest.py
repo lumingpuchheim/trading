@@ -672,6 +672,236 @@ def jackpot_walk_forward(build, feat_id, y, date, blocks, alpha, src,
     return aucs, fitted
 
 
+CORNER_X = (10, 20, 30)   # the up-tail line: the top-X% of the fold's own
+                          # training p_jack
+CORNER_Y = (30, 50)       # the down-tail line: the bottom-Y% of its own
+                          # training p_crash
+CORNER_FOLDS = 10         # the money gate: this many folds of the fifteen
+CORNER_BLOCKS = 15        # and it is fifteen the bar was registered
+                          # against, so a narrower window decides nothing
+
+
+def corner_cuts(pj_tr, pc_tr):
+    """The six cells' two lines each, both from the fold's OWN training
+    probabilities -- the same test-pinning rule every other derived
+    quantity here obeys.
+
+    Returns (jack cuts, crash cuts), in the order of `CORNER_X` and
+    `CORNER_Y`.
+    """
+    j = np.array([np.quantile(np.asarray(pj_tr, np.float64), 1.0 - x / 100.0)
+                  for x in CORNER_X])
+    c = np.array([np.quantile(np.asarray(pc_tr, np.float64), y / 100.0)
+                  for y in CORNER_Y])
+    return j, c
+
+
+def corner_members(pj, pc, jcut, ccut):
+    """The corner: the up-tail elevated WITHOUT the down-tail.
+
+    The three-part score is a SUM, and a sum permits substitution -- with
+    `J` near +0.22 against `L` near -0.10 a large `p_jack` buys its way
+    past a bad `p_crash`, so the composed top ADMITS names whose two
+    tails are both elevated. A conjunction refuses them, which is a
+    different claim: identifiable ASYMMETRY (Amendment 12), and the
+    Minervini thesis itself -- tight base, limited downside, open upside.
+    """
+    return ((np.asarray(pj, np.float64) >= jcut)
+            & (np.asarray(pc, np.float64) <= ccut))
+
+
+def corner_first(score, member):
+    """Corner members ahead of non-members, each group ordered by the
+    composed score -- a lexicographic pair carried in one float, the
+    StrengthScore trick.
+
+    The preference is in the RANKING, not in the score path: nothing is
+    dropped, no threshold is compared against a level, and the composed
+    score still decides everything inside each group. The shift is one
+    more than the finite scores' whole span, so the weakest member
+    outranks the strongest non-member and no arithmetic accident can put
+    them the other way round.
+    """
+    s = np.asarray(score, np.float64)
+    fin = np.isfinite(s)
+    span = float(s[fin].max() - s[fin].min()) if fin.any() else 0.0
+    return s + np.asarray(member, bool).astype(np.float64) * (span + 1.0)
+
+
+def corner_cell(per_fold, selectivity, min_folds=CORNER_FOLDS):
+    """One cell's two gates, from its per-fold measurements.
+
+    A row is `(n_corner, n_rows, n_days, geo_corner, geo_pool)`.
+
+    GATE A, occupancy: the two probabilities correlate positively, so the
+    corner is thin by construction, and a book that cannot fill its slots
+    starves -- measured, and starvation loses to doing nothing. A cell
+    offering less than the book's own selectivity is dead on arrival.
+
+    GATE B, the money gate: the corner's realised per-bet geometric mean
+    against the whole pool's, fold by fold, out of fold. Pre-registered
+    at `min_folds` of the fifteen. Signal level, no simulation, no path
+    noise -- exactly the question, are asymmetric-tail names better bets?
+    """
+    n_c = sum(r[0] for r in per_fold)
+    n_r = sum(r[1] for r in per_fold)
+    n_d = sum(r[2] for r in per_fold)
+    ok = [r for r in per_fold if np.isfinite(r[3]) and np.isfinite(r[4])]
+    wins = int(sum(r[3] > r[4] for r in ok))
+    share = n_c / n_r if n_r else float('nan')
+    # THE OPERATOR'S COLUMN (2026-09-01). The pre-registered gate counts
+    # strict wins over the folds it can decide; the operator judges the
+    # cell on how much it wins BY, and scores a fold it cannot decide as
+    # half rather than dropping it. A fold is a SPLIT when the two geo
+    # means are equal, or when the corner is empty there and the fold has
+    # no opinion -- both are worth 0.5 of the fifteen.
+    ties = int(sum(r[3] == r[4] for r in ok))
+    empty = len(per_fold) - len(ok)
+    score = wins + 0.5 * (ties + empty)   # `wins` is strict, ties are not in it
+    # the average geometric win: the per-fold ratio of the corner's
+    # per-euro growth to the pool's, averaged the way growth compounds
+    lg = [np.log((1.0 + r[3]) / (1.0 + r[4])) for r in ok
+          if 1.0 + r[3] > 0 and 1.0 + r[4] > 0]
+    avg = float(np.exp(np.mean(lg)) - 1.0) if lg else float('nan')
+    return {'n': int(n_c), 'share': share,
+            'per_day': n_c / n_d if n_d else float('nan'),
+            'wins': wins, 'folds': len(ok), 'splits': ties + empty,
+            'score': score, 'of': len(per_fold), 'avg_win': avg,
+            'alive': bool(np.isfinite(share) and share >= selectivity),
+            'money': bool(wins >= min_folds)}
+
+
+def corner_grid(comps, y, ei, selectivity):
+    """The six cells, printed before any book exists (Amendment 12).
+
+    Every number here is free arithmetic over components the fits already
+    stored: no cell costs a fit, and the grid is read once.
+
+    Returns `(cell, membership)` for the single best cell that clears
+    BOTH gates -- most money-gate folds, ties to the fatter corner -- or
+    None, which is the amendment's other outcome and a result.
+    """
+    y = np.asarray(y, np.float64)
+    ev_all = np.concatenate([np.flatnonzero(c['ev']) for c in comps])
+    pool_geo = geo_mean_per_euro(y[ev_all]) - 1.0
+    print()
+    print('the corner grid -- six cells, all from the stored p_crash and '
+          'p_jack:')
+    print(f'  gate A occupancy: at least the book\'s own '
+          f'{selectivity:.2%} selectivity, or the book starves')
+    print(f'  gate B money: the corner\'s per-bet geo mean over the '
+          f'pool\'s in {CORNER_FOLDS} of {CORNER_BLOCKS} folds, out of '
+          f'fold ({len(comps)} fitted here)')
+    out = {}
+    for xi, x in enumerate(CORNER_X):
+        for yi, yy in enumerate(CORNER_Y):
+            rows, mem_all = [], np.zeros(len(y), bool)
+            for c in comps:
+                mem = corner_members(c['pj'], c['pc'],
+                                     float(c['jcuts'][xi]),
+                                     float(c['ccuts'][yi]))
+                mem_all[np.flatnonzero(c['ev'])[mem]] = True
+                yv = y[c['ev']]
+                rows.append((int(mem.sum()), int(mem.size),
+                             len(np.unique(ei[c['ev']])),
+                             geo_mean_per_euro(yv[mem]) - 1.0,
+                             geo_mean_per_euro(yv) - 1.0))
+            d = corner_cell(rows, selectivity)
+            d['geo'] = geo_mean_per_euro(y[mem_all]) - 1.0
+            d['pool'] = pool_geo
+            out[(x, yy)] = (d, mem_all)
+            print(f'  X{x:<3d}Y{yy:<3d} {d["n"]:>7,d} corner signals  '
+                  f'{d["per_day"]:5.2f}/day  share {d["share"]:6.2%} '
+                  f'{"LIVE" if d["alive"] else "DEAD"}   '
+                  f'geo/bet {d["geo"]:+.2%} vs pool {d["pool"]:+.2%}   '
+                  f'money {d["wins"]:>2d}/{d["folds"]} '
+                  f'{"CLEARS" if d["money"] else "fails "}  '
+                  f'|  avg geo win {d["avg_win"]:+.3%}  '
+                  f'score {d["score"]:>4.1f}/{d["of"]} '
+                  f'({d["splits"]} split)')
+    if len(comps) < CORNER_BLOCKS:
+        # the money gate is pre-registered in absolute folds, so a
+        # narrowed window cannot pronounce on it either way
+        print(f'  this window has {len(comps)} fitted folds, not '
+              f'{CORNER_BLOCKS}: the money gate is not decided here and no '
+              f'book runs. Run without --until.')
+        return None
+    live = [(k, v) for k, v in out.items() if v[0]['alive'] and v[0]['money']]
+    if not live:
+        print('  no cell clears both PRE-REGISTERED gates: at 10 of 15 '
+              'strict money folds the two tails cannot be told apart in '
+              'these features at any of the six operating points.')
+        # THE OPERATOR'S OVERRIDE (2026-09-01). The registered verdict
+        # above stands and is printed either way; but the question asked
+        # of this run is whether the corner PERFORMS better, scored as
+        # the average geometric win with a split worth half a fold. So a
+        # book still runs -- for the best cell that can at least fill its
+        # slots (gate A), because a starved book measures the starving,
+        # not the corner.
+        fill = [(k, v) for k, v in out.items() if v[0]['alive']]
+        if not fill:
+            print("  and no cell offers even the book's own "
+                  "selectivity: "
+                  'nothing to run a book on.')
+            return None
+        best = max(fill, key=lambda kv: (kv[1][0]['score'],
+                                         kv[1][0]['avg_win']))
+        d = best[1][0]
+        print(f"  the operator's pick, gate B set aside: X{best[0][0]} "
+              f'Y{best[0][1]} -- score {d["score"]:.1f}/{d["of"]}, avg '
+              f'geo win {d["avg_win"]:+.3%}. One book, and only this one.')
+        return best[0], best[1][1]
+    best = max(live, key=lambda kv: (kv[1][0]['score'], kv[1][0]['avg_win']))
+    d = best[1][0]
+    print(f'  the single best cell: X{best[0][0]} Y{best[0][1]} '
+          f'({d["wins"]}/{d["folds"]} money folds, score '
+          f'{d["score"]:.1f}/{d["of"]}, avg geo win {d["avg_win"]:+.3%}, '
+          f'geo/bet {d["geo"]:+.2%}). One book, and only this one.')
+    return best[0], best[1][1]
+
+
+def tail_auc_check(comps, blocks, src, alpha, feat_id, embargo):
+    """Acceptance 2: the re-run is the SAME fits with the components now
+    kept -- so every fold's crash AUC must be the one Amendment 10
+    recorded, and every jackpot AUC the one Amendment 11 did.
+
+    Both live in their own caches under their own keys, untouched by the
+    change that made this run refit, so the check is a lookup rather than
+    a memory.
+    """
+    at = {Y: (tr, ev) for Y, tr, ev in blocks}
+    same = seen = 0
+    print()
+    print('the consistency check -- the same fits as Amendments 10 and 11:')
+    for c in comps:
+        tr, ev = at[c['Y']]
+        pc = fitcache.load('block', fitcache.key(
+            'ridge-crashvalue', src, alpha, feat_id, tuple(YCV_ALPHAS),
+            embargo, INNER_MIN, CRASH_CUT, tr, ev))
+        pj = fitcache.load('block', fitcache.key(
+            'ridge-jackpot', src, alpha, feat_id, tuple(YCV_ALPHAS),
+            embargo, INNER_MIN, JACK_Q, tr, ev))
+        old_c = float(pc['auc']) if pc is not None else float('nan')
+        old_j = float(pj['auc']) if pj is not None else float('nan')
+        # a fold the earlier amendments never fitted is NOT a mismatch --
+        # it is a fold with nothing to check against, and it says so
+        bad = [np.isfinite(o) and not np.isclose(n, o, atol=1e-12, rtol=0.0)
+               for n, o in ((c['auc_c'], old_c), (c['auc_j'], old_j))]
+        seen += int(np.isfinite(old_c)) + int(np.isfinite(old_j))
+        same += int(np.isfinite(old_c) and not bad[0])
+        same += int(np.isfinite(old_j) and not bad[1])
+
+        def against(v):
+            return f'{v:.3f}' if np.isfinite(v) else 'not cached'
+
+        print(f'  {c["Y"]}  crash {c["auc_c"]:.3f} vs A10 {against(old_c)}'
+              f'   jack {c["auc_j"]:.3f} vs A11 {against(old_j)}'
+              + ('   <- DIFFERS' if any(bad) else ''))
+    print(f'  {same} of {seen} cached fold AUCs reproduce exactly'
+          + ('' if same == seen else
+             '   <- the components are NOT from the recorded fits'))
+
+
 def threepart_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
                            src, embargo, cached_only=False):
     """Crash, jackpot, and the middle -- one formula (Amendment 11).
@@ -689,20 +919,35 @@ def threepart_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
     `L_crash` and `J_hat` are the fold's own training means over its
     crashes and its jackpots: constants per fold, never knobs.
 
-    Returns ({1.0: scores}, fitted years).
+    THE COMPONENTS ARE KEPT (Amendment 12). Amendment 11 cached the
+    composed score alone, so the corner question -- up-tail elevated
+    WITHOUT the down-tail -- had nothing to ask and would have paid for
+    these fits a second time. A fold now stores `p_crash` and `p_jack`
+    per scored signal, and the six corner cuts read off ITS OWN TRAINING
+    probabilities. The fits are unchanged; an entry written before this
+    change carries no components and is refitted once, which is the one
+    training run Amendment 12 costs and the last time any question pays
+    it.
+
+    Returns ({1.0: scores}, fitted years, the per-fold components).
     """
     score = np.full(len(rv), np.nan)
-    fitted = []
+    fitted, comps = [], []
     crash = y < CRASH_CUT
     for Y, tr, ev in blocks:
         ck = fitcache.key('ridge-threepart', src, alpha, feat_id,
                           tuple(YCV_ALPHAS), embargo, INNER_MIN,
                           CRASH_CUT, JACK_Q, tr, ev)
         hit = fitcache.load('block', ck)
+        if hit is not None and 'pc' not in hit:
+            hit = None            # written before the components were kept
         if hit is not None:
             score[ev] = hit['score']
             line = str(hit['line'])
             yrs = int(hit['years'])
+            pc, pj = hit['pc'], hit['pj']
+            jcuts, ccuts = hit['jcuts'], hit['ccuts']
+            ac, aj = float(hit['auc_c']), float(hit['auc_j'])
             cached = True
         else:
             if purged_years(date[tr], embargo) < 2:
@@ -740,6 +985,13 @@ def threepart_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
             del xe
             pc, mc = calibrate(tails.train_pred_[:, 0], lab[:, 0], raw[:, 0])
             pj, mj = calibrate(tails.train_pred_[:, 1], lab[:, 1], raw[:, 1])
+            # the corner's lines, from the TRAINING rows' own probabilities
+            # -- the same calibration, applied to the rows it was built on
+            pc_tr, _ = calibrate(tails.train_pred_[:, 0], lab[:, 0],
+                                 tails.train_pred_[:, 0])
+            pj_tr, _ = calibrate(tails.train_pred_[:, 1], lab[:, 1],
+                                 tails.train_pred_[:, 1])
+            jcuts, ccuts = corner_cuts(pj_tr, pc_tr)
             lhat = float(rv[tr & crash].mean())
             jhat = float(rv[tr & jack].mean())
             score[ev] = expectation([pc, pj], [lhat, jhat], v_mid)
@@ -754,12 +1006,20 @@ def threepart_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
                     f'p {pc.mean():.3f}/{pj.mean():.3f}   '
                     f'L {lhat:+.4f} J {jhat:+.4f}   {mc}|{mj}')
             fitcache.save('block', ck, score=score[ev].astype(np.float64),
-                          line=np.array(line), years=np.int64(yrs))
+                          line=np.array(line), years=np.int64(yrs),
+                          pc=np.asarray(pc, np.float64),
+                          pj=np.asarray(pj, np.float64),
+                          jcuts=np.asarray(jcuts, np.float64),
+                          ccuts=np.asarray(ccuts, np.float64),
+                          auc_c=np.float64(ac), auc_j=np.float64(aj))
             cached = False
         fitted.append(Y)
+        comps.append({'Y': Y, 'ev': ev, 'pc': pc, 'pj': pj,
+                      'jcuts': jcuts, 'ccuts': ccuts,
+                      'auc_c': ac, 'auc_j': aj})
         print(f'  {Y}  train {int(tr.sum()):>7,d}   {line}   ({yrs}y)'
               f'{"  (cached)" if cached else ""}', flush=True)
-    return {1.0: score}, fitted
+    return {1.0: score}, fitted, comps
 
 
 def crashvalue_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
@@ -1148,10 +1408,15 @@ def main() -> None:
     # negative can be reproduced, never as a default again.
     target = opt('--target', 'value')
     if target not in ('value', 'rent', 'daymean', 'crashvalue',
-                      'jackpot', 'threepart'):
+                      'jackpot', 'threepart', 'corner'):
         sys.exit(f'--target must be value, rent, daymean, '
-                 f'crashvalue, jackpot or threepart, '
+                 f'crashvalue, jackpot, threepart or corner, '
                  f'not {target!r}')
+    if min_score is not None and target == 'corner':
+        sys.exit('--min-score is refused with target=corner: corner '
+                 'members are lifted by a constant so they rank first, '
+                 'so the number the threshold would read is no longer a '
+                 'predicted rate (RANKER_SPEC Amendment 12).')
     if min_score is not None and target == 'daymean':
         sys.exit('--min-score is refused with target=daymean: the score '
                  'is relative to an unknown day level, so "predicted rate '
@@ -1294,7 +1559,9 @@ def main() -> None:
                        "daymean": "ln(y)-daymean",
                        "crashvalue": "p*L+(1-p)*v",
                        "jackpot": "1[y>=top decile]",
-                       "threepart": "pc*L+pj*J+(1-pc-pj)*v"}[target] }'
+                       "threepart": "pc*L+pj*J+(1-pc-pj)*v",
+                       "corner": "pc*L+pj*J+(1-pc-pj)*v, corner first"
+                       }[target] }'
           + (f'  max_hold={hold}d' if hold else '')
           + ('  rent derived per fold' if target == 'rent' else ''))
     print(f'        estimator=ridge-{"ycv" if alpha == "cv" else alpha}  '
@@ -1351,6 +1618,7 @@ def main() -> None:
     # ---- the fitted arms --------------------------------------------
     src = fitcache.file_key(WINDOWS)
     books, years_of, sens, rent_c = {'strength': (S, st)}, {}, {}, None
+    corner_books = {}
     for arm in [a for a in arms if a != 'strength'
                 and not a.startswith('blend')]:
         build, feat_id, n_f = arm_builder(arm, keys, x, date, src,
@@ -1358,11 +1626,21 @@ def main() -> None:
         print()
         print(f'walk-forward {arm} fits, features={n_f:,} '
               f'(train / out-of-fold, one line per fold):')
-        if target == 'threepart':
-            sc, fitted = threepart_walk_forward(
+        if target in ('threepart', 'corner'):
+            sc, fitted, comps = threepart_walk_forward(
                 build, feat_id, rv, m['y'].to_numpy(np.float64), date,
                 blocks, alpha, src, embargo, cached_only)
             crow = None
+            if target == 'corner':
+                # THE GRID FIRST, AND A BOOK ONLY AFTER IT. Both gates are
+                # signal level and read the stored components, so the six
+                # cells cost arithmetic and the amendment's answer exists
+                # before any simulation is run (Amendment 12).
+                tail_auc_check(comps, blocks, src, alpha, feat_id, embargo)
+                pick = corner_grid(comps, m['y'].to_numpy(np.float64), ei,
+                                   float(taken.mean()))
+                if pick is not None:
+                    corner_books[arm] = (pick[0], pick[1], sc[1.0])
         elif target == 'jackpot':
             # A GATE, NOT A BOOK. Amendment 11 spends one training run on
             # the question and nothing else: a failed gate produces no
@@ -1439,6 +1717,28 @@ def main() -> None:
             row[mu] = (A, d_, eq_, inv_)
         sens[arm] = row
         books[arm] = row[1.0][:2]
+
+    # ---- the corner book (Amendment 12) -----------------------------
+    # At most one book, for the single best cell, and the preference is
+    # expressed as a re-ranking rather than as a filter: corner members
+    # first among themselves, everyone else after, both groups ordered by
+    # the composed three-part score. Nothing is dropped and no threshold
+    # sits in the score path.
+    for arm, (cell, member, cscore) in corner_books.items():
+        nm = f'{arm}+corner'
+        ok = np.isfinite(cscore)
+        A = S.copy()
+        A[ei[ok], tj[ok]] = corner_first(cscore, member)[ok]
+        t_, eq_, inv_, _ = simulate(panel, cfg, (j0, j1), moc=True,
+                                    pool_days=pool, scores=A)
+        print()
+        print(f'the corner book: cell X{cell[0]} Y{cell[1]}, '
+              f'{int(member[ok].sum()):,} of {int(ok.sum()):,} scored '
+              f'signals ranked ahead of the rest, judged on geo/bet '
+              f'against the value-5y arm\'s +0.67%')
+        books[nm] = (A, pd.DataFrame(t_))
+        sens[nm] = {1.0: (A, pd.DataFrame(t_), eq_, inv_)}
+        arms.append(nm)
 
     # ---- the crash-guard composition (Amendment 9.2) ----------------
     if compose:

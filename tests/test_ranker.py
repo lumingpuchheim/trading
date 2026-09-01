@@ -24,7 +24,9 @@ from sklearn.linear_model import Ridge
 
 from bets_common import (EMBARGO_DAYS, T_FLOOR, demean_by_day,
                          rate_target, rent_legs)
-from filter_backtest import (blend_matrix, calibrate, jackpot_cut,
+from filter_backtest import (CORNER_FOLDS, blend_matrix, calibrate,
+                             corner_cell, corner_cuts, corner_first,
+                             corner_members, expectation, jackpot_cut,
                              keys_plus, total_expectation,
                              within_day_spearman)
 from rankers import (MultiRidge, derive_rent, inner_split,
@@ -563,3 +565,120 @@ def test_a_block_is_graded_against_the_training_cut_not_its_own():
     # graded against its OWN top decile the block would call only the 3.0
     # a jackpot, which is a different and inadmissible question
     assert list((block >= jackpot_cut(block)).astype(int)) == [0, 0, 1]
+
+
+# ------------------------------------------ the corner (Amendment 12)
+
+def _cell(n_corner, n_rows, geo_corner, geo_pool, folds=15, days=250):
+    """`folds` identical per-fold rows, so a test says one thing."""
+    return [(n_corner, n_rows, days, geo_corner, geo_pool)] * folds
+
+
+def test_the_corner_cuts_come_from_the_training_probabilities_only():
+    """Both lines are quantiles of the fold's OWN training window, like
+    every other derived quantity here -- the up-tail cut is the top-X% of
+    `p_jack`, the down-tail cut the bottom-Y% of `p_crash`."""
+    pj = np.linspace(0.0, 1.0, 1001)
+    pc = np.linspace(0.0, 1.0, 1001)
+    j, c = corner_cuts(pj, pc)
+    assert list(j) == pytest.approx([0.90, 0.80, 0.70])       # X 10/20/30
+    assert list(c) == pytest.approx([0.30, 0.50])             # Y 30/50
+
+    # a block whose probabilities run higher than the training window's
+    # does NOT get its own, harder lines: graded against the training
+    # cuts it is simply richer in corner names, which IS the measurement
+    block_pj = np.array([0.75, 0.91, 0.93, 0.95, 0.99])
+    block_pc = np.full(5, 0.20)
+    assert int(corner_members(block_pj, block_pc, j[0], c[0]).sum()) == 4
+
+    # graded against its OWN top decile only one name survives, and that
+    # is a different and inadmissible question: it asks which names led
+    # the block being scored, which is knowable only afterwards
+    own_j, own_c = corner_cuts(block_pj, block_pc)
+    assert int(corner_members(block_pj, block_pc, own_j[0],
+                              own_c[0]).sum()) == 1
+
+
+def test_the_sum_admits_what_the_corner_refuses():
+    """The reason the amendment exists. The three-part score is a SUM, so
+    a large `p_jack` buys its way past a bad `p_crash`: the both-tails
+    name outranks the clean asymmetric one. The corner is a conjunction
+    and refuses exactly that substitution."""
+    L, J, v = np.log(0.898), 0.22, 0.02
+    both = expectation([0.45, 0.55], [L, J], v)      # crashy AND jackpotty
+    asym = expectation([0.05, 0.25], [L, J], v)      # the corner's name
+    assert both > asym                               # the sum prefers it
+
+    jcut, ccut = 0.20, 0.10
+    pj, pc = np.array([0.55, 0.25]), np.array([0.45, 0.05])
+    assert list(corner_members(pj, pc, jcut, ccut)) == [False, True]
+
+
+def test_the_corner_puts_every_member_ahead_and_keeps_the_inside_order():
+    """The lexicographic pair, in one float: members first among
+    themselves, non-members after, both groups ordered by the composed
+    score. The weakest member outranks the strongest non-member however
+    wide the gap between them."""
+    score = np.array([0.30, -0.20, 0.05, -0.05])
+    member = np.array([False, True, False, True])
+    enc = corner_first(score, member)
+    order = list(np.argsort(-enc))
+    assert order == [3, 1, 0, 2]           # -0.05, -0.20 | 0.30, 0.05
+    # inside each group the composed score still decides, undiluted
+    assert enc[3] > enc[1] and enc[0] > enc[2]
+
+
+def test_the_corner_ranking_drops_nothing_and_invents_nothing():
+    """A re-ranking, not a filter: every scored signal keeps a finite
+    score, and a run with no corner member is the composed ranking
+    itself."""
+    rng = np.random.default_rng(12)
+    score = rng.normal(0.0, 0.1, 500)
+    member = rng.random(500) < 0.2
+    enc = corner_first(score, member)
+    assert np.isfinite(enc).all()
+    assert len(np.unique(enc)) == len(np.unique(score))
+    none = corner_first(score, np.zeros(500, bool))
+    assert none == pytest.approx(score)
+    # and a NaN score (a year the model never reached) stays NaN
+    score[7] = np.nan
+    assert np.isnan(corner_first(score, member)[7])
+
+
+def test_a_thin_cell_is_dead_on_arrival_however_good_its_money():
+    """Gate A. The two probabilities correlate positively, so the corner
+    is thin by construction -- and a book that cannot fill its slots
+    starves, which is measured to lose to doing nothing. Occupancy is
+    judged against the book's own selectivity, never against zero."""
+    rich = corner_cell(_cell(30, 1000, 0.03, 0.005), selectivity=0.02)
+    thin = corner_cell(_cell(5, 1000, 0.09, 0.005), selectivity=0.02)
+    assert rich['alive'] and rich['money']
+    assert not thin['alive']            # 0.5% of the pool against 2%
+    assert thin['money']                # its money is the better of the
+    assert thin['share'] == pytest.approx(0.005)   # two, and it does not
+    assert rich['per_day'] == pytest.approx(30 / 250)   # rescue the cell
+
+
+def test_the_money_gate_counts_folds_not_the_pooled_mean():
+    """Gate B is fold by fold, pre-registered at 10 of 15, so one
+    spectacular year cannot carry a cell that loses in most of them."""
+    one_good = ([(20, 1000, 250, 5.0, 0.005)]
+                + [(20, 1000, 250, -0.01, 0.005)] * 14)
+    assert corner_cell(one_good, selectivity=0.02)['wins'] == 1
+    assert not corner_cell(one_good, selectivity=0.02)['money']
+
+    steady = _cell(20, 1000, 0.006, 0.005, folds=10) + _cell(
+        20, 1000, 0.004, 0.005, folds=5)
+    got = corner_cell(steady, selectivity=0.02)
+    assert got['wins'] == CORNER_FOLDS == 10
+    assert got['money']                        # exactly at the bar counts
+    assert corner_cell(_cell(20, 1000, 0.006, 0.005, folds=9)
+                       + _cell(20, 1000, 0.004, 0.005, folds=6),
+                       selectivity=0.02)['money'] is False
+
+    # a fold with no corner name at all is not a loss, it is not a fold:
+    # geo of an empty set is NaN and drops out of the count
+    empty = _cell(0, 1000, float('nan'), 0.005, folds=3) + _cell(
+        20, 1000, 0.006, 0.005, folds=12)
+    assert corner_cell(empty, selectivity=0.001)['folds'] == 12
+    assert corner_cell(empty, selectivity=0.001)['money']
