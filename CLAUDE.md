@@ -83,13 +83,82 @@ disagreed about two unprinted defaults.
 
 ## Held fixed across arms, unless the run says otherwise
 
-`embargo=400d`, `window=expanding`, `target=ln(y)/t` with a 3-day
-floor, dilations `1,2,4,8,16`. Arms differ by the transform and nothing
-else. The `strength` control must reproduce today's book row for row and
-**+291.5%** over 2007-01-03 .. 2026-08-27 before a fitted row from that
-run is read — `filter_backtest.py` checks it in-process and exits if it
-does not. (`label=top 20%` was the retired architecture's training
-target; it survives only as the diagnostic AUC cut.)
+`embargo=400d`, `window=5y rolling` (`--lookback 5` — the measured
+best schedule, worth more than any target rewrite; expanding dilutes
+late folds and is kept only for comparisons), `target=ln(y)` (the
+value target; the ratio target `ln(y)/t` and its floor are retired,
+RANKER_SPEC Amendments 4-5), dilations `1,2,4,8,16`. Arms differ by
+the transform and nothing else. The `strength` control must reproduce
+today's book row for row and **+291.5%** over 2007-01-03 .. 2026-08-27
+before a fitted row from that run is read — `filter_backtest.py`
+checks it in-process and exits if it does not.
+
+## How to test performance
+
+The canonical run:
+
+    python filter_backtest.py --target value --arms strength,rocket --lookback 5
+
+Read the output in this order, and stop at the first failure:
+
+1. **The control line.** It must say `IDENTICAL, +291.5%`. If it does
+   not, the run is broken and NOTHING below it may be read.
+2. **The fold lines** (train / out-of-fold, one per year). The gate
+   for any fitted arm is fold-level: does it beat the constant
+   (predict the training mean) out of fold, and in how many of 15
+   folds? An arm that cannot beat a constant has no business in a
+   book; simulate no book for it.
+3. **The book table**, judged on ONE column: **geo/bet** — per-bet
+   geometric mean — against the baselines below (operator decision,
+   2026-09-01: growth objective; drawdown is reported, never judged;
+   a smoother ride buys nothing because bet-size conversion is
+   measured shut).
+4. **Total return decides nothing between arms.** The 90% band of
+   200 within-day score shuffles is **276 points wide** on total
+   return, and the incumbent itself sits at the 86th percentile of
+   random reorderings. Every total in this file's history, both
+   directions, sat inside that band. Differences in `total` are
+   path noise unless they clear a freshly measured permutation band.
+
+### How expected value is calculated
+
+One bet = one POSITION (not one trade row — a split winner writes two
+rows). Its multiple `y` = euros returned per euro committed:
+
+    y = sum over the position's rows of  weight x (1 + ret_net)
+        + dividends collected / cost          (geostats.bet_multiples)
+
+**Expected value per bet = the geometric mean, one vote per bet:**
+
+    EV = exp( mean( ln y ) ) - 1              (geostats.geo_per_bet)
+
+Never an arithmetic mean, never an average over rows. For a TRAINING
+target the same quantity per signal: `ln(y)`, and a split bet counts
+each leg at 0.5 — `0.5*ln(y_half) + 0.5*ln(y_rest)` (operator rule).
+Per slot-day the book prints `per_day = exp(sum ln y / sum t)`, a
+ratio of sums.
+
+### The baselines every test must print and compare against
+
+Whole record, 2007-01-03 .. 2026-08-27, fees on, 10 x 10% slots:
+
+| baseline | total | ann/yr | maxDD | bets | geo/bet | per_day |
+|---|---|---|---|---|---|---|
+| `strength` (do-nothing control) | +291.5% | +7.2% | -30.2% | 1,252 | +0.57% | +0.0337% |
+| `rocket` value, 5y window — best fitted arm | +294.5% | +7.3% | -27.8% | 1,238 | **+0.67%** | +0.0373% |
+| the whole candidate pool | — | — | — | 55,737 | +0.52% | +0.0177% |
+| SPY total return, 2009-2026 one path | — | **+14.81%** | -33.7% | 1 | — | — |
+
+Fitted years only (2012-01-03 .. 2026-08-27), for arms that keep the
+control ordering before 2012: `strength` +292.4%, +9.8%/yr, geo/bet
++0.82%.
+
+The number a new arm must beat is the rocket row's **geo/bet +0.67%**
+(whole record). Beating `strength`'s total is NOT a meaningful claim
+(see the noise band above); beating SPY has never been achieved by
+any configuration and is the honest external bar. The forward paper
+ledger is the only judge of totals; one historical path cannot
+resolve them.
 
 ## Tunable
 
