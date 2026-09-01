@@ -1027,6 +1027,63 @@ book will be judged on ONE column, per-bet geometric mean against the
 value-5y arm's +0.67%, drawdown reported and never judged.
 
 
+## Amendment 11, part two — the three-part expectation (2026-09-01)
+
+The composition the gate authorised, built:
+
+    score = p_crash*L_crash + p_jack*J_hat
+            + (1 - p_crash - p_jack) * v_mid
+
+Both tail heads fit TOGETHER on the same training rows, so the pair
+costs one eigendecomposition; `v_mid` is fitted on the rows that are
+NEITHER crash nor jackpot, which stops either tail being counted twice
+-- the discipline Amendment 10 applied at one end, applied at both.
+`L_hat` held at -0.10 and `J_hat` at +0.21 to +0.23 across all fifteen
+folds, and the crash AUCs reproduce Amendment 10's exactly (0.649,
+0.722, 0.747, ...), which is the consistency check that the shared
+decomposition changed nothing.
+
+**The book, on the one judged column -- per-bet geometric mean, whole
+record, against the value-5y arm's +0.67%:**
+
+| | geo/bet |
+|---|---|
+| value-5y arm (the number to beat) | **+0.67%** |
+| three-part expectation | **+0.55%** |
+| two-part expectation (Amendment 10) | +0.51% |
+| strength | +0.57% |
+| the pool | +0.52% |
+
+**FAILS**, in the same direction and by nearly the same margin as the
+two-part version. Adding demonstrably real jackpot knowledge -- a model
+that cleared its gate on merit, never collapsed, and predicts at the top
+of the ranking where the book actually buys -- moved the judged column
+by **+0.04pp** and left it below both the target and the control.
+
+Fitted years, for completeness: +0.88%/bet against strength's +0.82%,
+the only slice where it leads; total +212.5% against +292.4%; maxDD
+-18.2% against -29.3% (reported, never judged).
+
+### The pattern this closes
+
+**Three independent compositions, each built on components that pass
+their own gates, all landing at or below the plain value arm:**
+
+| construction | per-bet geo | its components |
+|---|---|---|
+| 9.2 rank average, w=0.5 | +1.04% (fitted yrs) | passed, then its neighbour weight collapsed |
+| 10 two-part expectation | +0.51% | gates 1 and 2 passed |
+| 11 three-part expectation | +0.55% | gate cleared on merit |
+| the plain value-5y arm | **+0.67%** | one model, one target |
+
+The components are real -- crash AUC 0.655, jackpot AUC 0.594 with every
+fold above the old 0.49 ceiling -- and no way of combining them has
+beaten simply predicting value with one model. **What has moved the
+number in this whole sequence is the training SCHEDULE (the 5-year
+window, +0.57% -> +0.67%), not any target, composition or extra
+feature.**
+
+
 ## PROPOSED — not built
 
 | idea | what it would need |

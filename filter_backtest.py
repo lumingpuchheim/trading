@@ -383,8 +383,39 @@ SATURATE = 0.05           # clip saturation above which calibration
                           # switches to the training-window decile map
 
 
-def total_expectation(p, L, v):
+def expectation(probs, values, v_rest):
     """THE SCORE, and the only function in the decision path.
+
+        score = sum_i p_i * value_i + (1 - sum_i p_i) * v_rest
+
+    The law of total expectation over named outcomes, nothing else: no
+    rank average (9.2 measured that harmful), no second-stage fit, no
+    threshold. Two outcomes for Amendment 10 (crash, survive), three for
+    Amendment 11 (crash, jackpot, the middle).
+
+    The probabilities are clipped to a simplex -- each into [0, 1] and
+    their sum to at most 1 -- because two independently calibrated
+    models can claim more than all of the mass between them, and a
+    negative weight on the middle would let a confident model score a
+    candidate ABOVE its own best outcome. Scaling both down in
+    proportion keeps their ratio, which is the only thing the ranking
+    reads.
+    """
+    P = np.clip(np.stack([np.asarray(p, dtype=np.float64) for p in probs]),
+                0.0, 1.0)
+    tot = P.sum(0)
+    over = tot > 1.0
+    if over.any():
+        P[:, over] /= tot[over]
+        tot = np.minimum(tot, 1.0)
+    out = (1.0 - tot) * np.asarray(v_rest, dtype=np.float64)
+    for p, v in zip(P, values):
+        out = out + p * float(v)
+    return out
+
+
+def total_expectation(p, L, v):
+    """The two-outcome case, kept as the name Amendment 10 pinned.
 
         score = p*L + (1-p)*v
 
@@ -401,8 +432,7 @@ def total_expectation(p, L, v):
     sentence: expected value is the chance of a crash times what a crash
     costs, plus the chance of surviving times what survival pays.
     """
-    p = np.asarray(p, dtype=np.float64)
-    return p * float(L) + (1.0 - p) * np.asarray(v, dtype=np.float64)
+    return expectation([p], [L], v)
 
 
 def calibrate(raw_tr, crash_tr, raw_ev):
@@ -640,6 +670,96 @@ def jackpot_walk_forward(build, feat_id, y, date, blocks, alpha, src,
               f'{JACK_BAR:.2f}   cut y>={cut:.4f}   {mode:12s} ({yrs}y)'
               f'{"  (cached)" if cached else ""}', flush=True)
     return aucs, fitted
+
+
+def threepart_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
+                           src, embargo, cached_only=False):
+    """Crash, jackpot, and the middle -- one formula (Amendment 11).
+
+        score = p_crash*L_crash + p_jack*J_hat
+                + (1 - p_crash - p_jack) * v_mid
+
+    The crash and jackpot heads are fitted TOGETHER, on the same training
+    rows, so they share one eigendecomposition and the pair costs what a
+    single head costs. `v_mid` cannot join them: it is fitted on the rows
+    that are NEITHER crash nor jackpot, which is what stops either tail
+    being counted twice -- the same discipline that put the survivor
+    model on `y >= 0.93` rows in Amendment 10, applied at both ends.
+
+    `L_crash` and `J_hat` are the fold's own training means over its
+    crashes and its jackpots: constants per fold, never knobs.
+
+    Returns ({1.0: scores}, fitted years).
+    """
+    score = np.full(len(rv), np.nan)
+    fitted = []
+    crash = y < CRASH_CUT
+    for Y, tr, ev in blocks:
+        ck = fitcache.key('ridge-threepart', src, alpha, feat_id,
+                          tuple(YCV_ALPHAS), embargo, INNER_MIN,
+                          CRASH_CUT, JACK_Q, tr, ev)
+        hit = fitcache.load('block', ck)
+        if hit is not None:
+            score[ev] = hit['score']
+            line = str(hit['line'])
+            yrs = int(hit['years'])
+            cached = True
+        else:
+            if purged_years(date[tr], embargo) < 2:
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   fewer than two '
+                      f'purged years in the window: no fit', flush=True)
+                continue
+            if cached_only:
+                sys.exit(f'--cached-only: the {Y} fold of ridge-threepart '
+                         f'is not cached and this run may not fit it.')
+            cut = jackpot_cut(y[tr])
+            jack = y >= cut
+            mid = tr & ~crash & ~jack
+            if purged_years(date[mid], embargo) < 2:
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   the middle '
+                      f'subset cannot supply two purged years: no fit',
+                      flush=True)
+                continue
+            lab = np.stack([crash[tr].astype(np.float64),
+                            jack[tr].astype(np.float64)], 1)
+            xt = np.asarray(build(tr), np.float32)
+            tails = MultiRidge(alpha=alpha, embargo=embargo).fit(xt, lab,
+                                                                 date[tr])
+            del xt
+            xm = np.asarray(build(mid), np.float32)
+            vm = MultiRidge(alpha=alpha, embargo=embargo).fit(xm, rv[mid],
+                                                              date[mid])
+            del xm
+            if not (tails.fitted_ and vm.fitted_):
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   a head did not '
+                      f'fit: no fit', flush=True)
+                continue
+            xe = np.asarray(build(ev), np.float32)
+            raw = tails.predict(xe)
+            v_mid = vm.score(xe)
+            del xe
+            pc, mc = calibrate(tails.train_pred_[:, 0], lab[:, 0], raw[:, 0])
+            pj, mj = calibrate(tails.train_pred_[:, 1], lab[:, 1], raw[:, 1])
+            lhat = float(rv[tr & crash].mean())
+            jhat = float(rv[tr & jack].mean())
+            score[ev] = expectation([pc, pj], [lhat, jhat], v_mid)
+            ac = (float(roc_auc_score(crash[ev].astype(np.int8), raw[:, 0]))
+                  if 0 < crash[ev].sum() < int(ev.sum()) else float('nan'))
+            aj = (float(roc_auc_score((y[ev] >= cut).astype(np.int8),
+                                      raw[:, 1]))
+                  if 0 < (y[ev] >= cut).sum() < int(ev.sum())
+                  else float('nan'))
+            yrs = len(vm.years_)
+            line = (f'AUC crash {ac:.3f} jack {aj:.3f}   '
+                    f'p {pc.mean():.3f}/{pj.mean():.3f}   '
+                    f'L {lhat:+.4f} J {jhat:+.4f}   {mc}|{mj}')
+            fitcache.save('block', ck, score=score[ev].astype(np.float64),
+                          line=np.array(line), years=np.int64(yrs))
+            cached = False
+        fitted.append(Y)
+        print(f'  {Y}  train {int(tr.sum()):>7,d}   {line}   ({yrs}y)'
+              f'{"  (cached)" if cached else ""}', flush=True)
+    return {1.0: score}, fitted
 
 
 def crashvalue_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
@@ -1028,9 +1148,10 @@ def main() -> None:
     # negative can be reproduced, never as a default again.
     target = opt('--target', 'value')
     if target not in ('value', 'rent', 'daymean', 'crashvalue',
-                      'jackpot'):
+                      'jackpot', 'threepart'):
         sys.exit(f'--target must be value, rent, daymean, '
-                 f'crashvalue or jackpot, not {target!r}')
+                 f'crashvalue, jackpot or threepart, '
+                 f'not {target!r}')
     if min_score is not None and target == 'daymean':
         sys.exit('--min-score is refused with target=daymean: the score '
                  'is relative to an unknown day level, so "predicted rate '
@@ -1172,7 +1293,8 @@ def main() -> None:
           f'target={ {"value": "ln(y)", "rent": "ln(y)-c*t",
                        "daymean": "ln(y)-daymean",
                        "crashvalue": "p*L+(1-p)*v",
-                       "jackpot": "1[y>=top decile]"}[target] }'
+                       "jackpot": "1[y>=top decile]",
+                       "threepart": "pc*L+pj*J+(1-pc-pj)*v"}[target] }'
           + (f'  max_hold={hold}d' if hold else '')
           + ('  rent derived per fold' if target == 'rent' else ''))
     print(f'        estimator=ridge-{"ycv" if alpha == "cv" else alpha}  '
@@ -1236,7 +1358,12 @@ def main() -> None:
         print()
         print(f'walk-forward {arm} fits, features={n_f:,} '
               f'(train / out-of-fold, one line per fold):')
-        if target == 'jackpot':
+        if target == 'threepart':
+            sc, fitted = threepart_walk_forward(
+                build, feat_id, rv, m['y'].to_numpy(np.float64), date,
+                blocks, alpha, src, embargo, cached_only)
+            crow = None
+        elif target == 'jackpot':
             # A GATE, NOT A BOOK. Amendment 11 spends one training run on
             # the question and nothing else: a failed gate produces no
             # composition, no simulation and one register row.
@@ -1266,7 +1393,7 @@ def main() -> None:
                       'agree: jackpots are not predictable from these '
                       'windows. No book is simulated.')
             return
-        if target == 'crashvalue':
+        elif target == 'crashvalue':
             sc, fitted = crashvalue_walk_forward(
                 build, feat_id, rv, m['y'].to_numpy(np.float64), date,
                 blocks, alpha, src, embargo, cached_only)
