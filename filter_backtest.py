@@ -58,7 +58,7 @@ from minervini import group_strength
 from minervini_backtest import apply_v5, build_panel, pool_by_day, simulate
 from minervini_rocket import fit_biases, kernels, transform
 from rankers import (YCV_ALPHAS, MultiRidge, derive_rent,
-                     strength_matrix)
+                     purged_years, strength_matrix)
 
 LEDGER = ROOT / 'results' / 'minervini_bets_v5r.csv'
 WINDOWS = ROOT / 'results' / 'minervini_bets_v5r_windows.npz'
@@ -146,6 +146,72 @@ def keys_plus(keys: np.ndarray) -> np.ndarray:
     rsl = keys[:, 0:1]                       # rsl_hi, the binary tier
     return np.concatenate([keys, rsl * keys[:, 4:5], rsl * keys[:, 5:6]],
                           axis=1)
+
+
+def cached_ratio_scores(src, date, exits, embargo, alpha='cv',
+                        floor=3, feat_id=6):
+    """The Amendment 1 RATIO-ERA out-of-fold scores, from cache only.
+
+    Used by Amendment 9.2 as a CRASH-PROPENSITY RANKING, which is what it
+    accidentally is: trained on `ln(y)/t`, where a three-day stop-out
+    weighs -0.028/day against a best winner's +0.012/day, so most of its
+    learnable variation was the left tail -- and the audit found all its
+    discrimination there (coin-flip on winners, the only outside-noise
+    drawdown in the register). Rank averaging needs order, not
+    probabilities, so nothing is retrained and no P(crash) is computed.
+
+    The key is the one that era wrote, reconstructed exactly: the ratio
+    target's floor and the bare column count it hashed before arms had
+    names. If it has drifted, every fold misses and the run says so
+    rather than quietly scoring nothing.
+    """
+    blocks = year_blocks(date, exits, lookback_years=None,
+                         embargo_days=embargo)
+    score = np.full(len(date), np.nan)
+    got = 0
+    for Y, tr, ev in blocks:
+        hit = fitcache.load('block', fitcache.key(
+            'ridge-ycv', src, alpha, floor, feat_id, tuple(YCV_ALPHAS),
+            embargo, INNER_MIN, tr, ev))
+        if hit is None:
+            if purged_years(date[tr], embargo) < 2:
+                continue
+            sys.exit(f'--compose: the {Y} fold of the ratio-era scores is '
+                     f'not in the cache. Create it with:  python '
+                     f'filter_backtest.py --target rent --arms rocket   '
+                     f'(the Amendment 1 run), or drop --compose.')
+        score[ev] = hit['score']
+        got += 1
+    print(f'  ratio-era crash ranking: {got} folds from cache, '
+          f'{int(np.isfinite(score).sum()):,} signals ranked')
+    return score
+
+
+def blend_two(S, a, b, ei, tj, w):
+    """Rank-average two cached rankings, per day (Amendment 9.2).
+
+        score = w * pctile(a) + (1-w) * pctile(b)
+
+    Per-day percentiles for the same reason as `blend_matrix`: the two
+    scores are on incommensurable scales, and the slot decision only
+    compares candidates that arrived together. A row missing either
+    score keeps its strength value and cannot fill.
+    """
+    A = S.copy()
+    ok = np.isfinite(a) & np.isfinite(b)
+    order = np.argsort(ei[ok], kind='stable')
+    e, t = ei[ok][order], tj[ok][order]
+    av, bv = a[ok][order], b[ok][order]
+    cuts = np.r_[0, np.flatnonzero(np.diff(e)) + 1, len(e)]
+    for lo, hi in zip(cuts[:-1], cuts[1:]):
+        n = hi - lo
+        if n == 1:
+            A[e[lo], t[lo]] = 0.5
+            continue
+        pa = (rankdata(av[lo:hi]) - 1.0) / (n - 1.0)
+        pb = (rankdata(bv[lo:hi]) - 1.0) / (n - 1.0)
+        A[e[lo:hi], t[lo:hi]] = w * pa + (1.0 - w) * pb
+    return A
 
 
 def blend_matrix(S, score, ei, tj, w):
@@ -309,6 +375,61 @@ def within_day_spearman(score, label, day, min_n=5) -> float:
     return float(np.mean(out)) if out else float('nan')
 
 
+CRASH_CUT = 0.93          # a bet that loses 7%+ of the euro
+BYPRODUCT_AUC = 0.653     # what the ratio era's accidental crash ranking
+                          # already achieved, free. A dedicated model has
+                          # to beat this or it has not earned existing.
+SATURATE = 0.05           # clip saturation above which calibration
+                          # switches to the training-window decile map
+
+
+def total_expectation(p, L, v):
+    """THE SCORE, and the only function in the decision path.
+
+        score = p*L + (1-p)*v
+
+    The law of total expectation, nothing else: no rank average (9.2
+    measured that harmful), no second-stage fit, no threshold. `p` is
+    the crash model's calibrated probability, `L` the fold's own crash
+    cost, `v` the survivor model's predicted gain GIVEN no crash.
+
+    It is surgical by construction. At an ordinary `p` the score IS the
+    survivor value, so the value model decides undiluted at the top of
+    the ranking where all its skill lives; the crash opinion enters in
+    proportion to its own confidence, so a false alarm costs millimetres
+    of score rather than a whole rank vote. And it says itself in one
+    sentence: expected value is the chance of a crash times what a crash
+    costs, plus the chance of surviving times what survival pays.
+    """
+    p = np.asarray(p, dtype=np.float64)
+    return p * float(L) + (1.0 - p) * np.asarray(v, dtype=np.float64)
+
+
+def calibrate(raw_tr, crash_tr, raw_ev):
+    """Turn a ridge output into a probability, and say which way.
+
+    A ridge on a 0/1 label is not a probability -- it runs past both
+    ends. Clipping is the honest first choice and costs nothing while
+    little is clipped. When a lot is, the clip is throwing away ordering
+    at exactly the end that matters, so a monotone decile-to-frequency
+    map built FROM THE TRAINING ROWS ONLY replaces it: each training
+    decile contributes its own observed crash frequency, and an
+    evaluation row takes the frequency of the decile it falls in.
+
+    Returns (probabilities, mode).
+    """
+    sat = float(np.mean((raw_ev < 0.0) | (raw_ev > 1.0)))
+    if sat <= SATURATE:
+        return np.clip(raw_ev, 0.0, 1.0), f'clip({sat:.0%})'
+    edges = np.quantile(raw_tr, np.linspace(0.0, 1.0, 11)[1:-1])
+    freq = np.array([crash_tr[np.searchsorted(edges, raw_tr, 'right') == d]
+                     .mean() if (np.searchsorted(edges, raw_tr, 'right')
+                                 == d).any() else crash_tr.mean()
+                     for d in range(10)])
+    freq = np.maximum.accumulate(freq)            # monotone by construction
+    return freq[np.searchsorted(edges, raw_ev, 'right')], f'decile({sat:.0%})'
+
+
 def value_fold_line(Y, n_train, m, alpha, cached, r2, years, grp) -> str:
     # `grp` is the LEARNED, standardised weight on group_pct, printed so
     # the sign flip stays visible: the retired gate demanded the top 30%
@@ -325,7 +446,8 @@ def value_fold_line(Y, n_train, m, alpha, cached, r2, years, grp) -> str:
 
 
 def value_walk_forward(build, feat_id, rv, day, blocks, alpha, src,
-                       embargo, hold, date, grp_at=None, name='ridge-value'):
+                       embargo, hold, date, grp_at=None, name='ridge-value',
+                       cached_only=False):
     """The capped-label walk-forward: ONE ridge per fold on `ln(y)`.
 
     No rent, no ratio, no floor and no second head. With the hold capped
@@ -352,19 +474,33 @@ def value_walk_forward(build, feat_id, rv, day, blocks, alpha, src,
         hit = fitcache.load('block', ck)
         if hit is not None:
             p_ev = hit['score']
-            m = {k: float(hit[k]) for k in ('mse_tr', 'mse_ev', 'sp_tr',
-                                            'sp_ev', 'wd_tr', 'wd_ev')}
+            # entries written before Amendment 8 have no within-day
+            # columns; they stay loadable and report the metric as
+            # missing rather than being thrown away and refitted
+            m = {k: (float(hit[k]) if k in hit else float('nan'))
+                 for k in ('mse_tr', 'mse_ev', 'sp_tr', 'sp_ev',
+                           'wd_tr', 'wd_ev')}
             al, yrs = float(hit['alpha']), int(hit['years'])
             gw = float(hit['group']) if 'group' in hit else None
         else:
+            # the fittability test is dates only, so ask it BEFORE the
+            # cache verdict: a fold that can never be fitted has no cache
+            # entry by design, and --cached-only must not mistake that
+            # for a missing run
+            if purged_years(date[tr], embargo) < 2:
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   fewer than two '
+                      f'purged years in the window: no fit, block keeps '
+                      f'the control ordering', flush=True)
+                continue
+            if cached_only:
+                sys.exit(f'--cached-only: the {Y} fold of {name} is not in '
+                         f'the cache and this run may not fit it. Create it '
+                         f'with the same command without --cached-only.')
             xt = np.asarray(build(tr), np.float32)
             rk = MultiRidge(alpha=alpha, embargo=embargo).fit(xt, rv[tr],
                                                               date[tr])
             if not rk.fitted_:
                 del xt
-                print(f'  {Y}  train {int(tr.sum()):>7,d}   fewer than two '
-                      f'purged years in the window: no fit, block keeps '
-                      f'the control ordering', flush=True)
                 continue
             p_tr = rk.train_pred_[:, 0]
             del xt
@@ -418,6 +554,110 @@ def value_walk_forward(build, feat_id, rv, day, blocks, alpha, src,
 
 RENT_MULTS = (0.5, 1.0, 2.0)
 AT_C = RENT_MULTS.index(1.0)
+
+
+def crashvalue_walk_forward(build, feat_id, rv, y, date, blocks, alpha,
+                            src, embargo, cached_only=False):
+    """Two models per fold, one formula (RANKER_SPEC Amendment 10).
+
+    CRASH: ridge on the binary `y < 0.93`, all training rows.
+    SURVIVOR VALUE: ridge on `ln(y)`, training rows with `y >= 0.93`
+    ONLY -- which is what makes the formula honest. The all-rows value
+    model already carries crash mass inside it, so composing it with a
+    crash probability would count the downside twice.
+    `L_hat`: the mean realised value over the fold's TRAINING crashes, a
+    constant per fold.
+
+    They cannot share an eigendecomposition -- different row sets -- so
+    this is two fits per fold, which is the training cost the amendment
+    named.
+
+    Returns ({1.0: composed scores}, fitted years).
+    """
+    score = np.full(len(rv), np.nan)
+    fitted, aucs, sps = [], [], []
+    crash = (y < CRASH_CUT)
+    for Y, tr, ev in blocks:
+        ck = fitcache.key('ridge-crashvalue', src, alpha, feat_id,
+                          tuple(YCV_ALPHAS), embargo, INNER_MIN,
+                          CRASH_CUT, tr, ev)
+        hit = fitcache.load('block', ck)
+        if hit is not None:
+            score[ev] = hit['score']
+            auc, mode = float(hit['auc']), str(hit['mode'])
+            lhat, sp = float(hit['lhat']), float(hit['sp_ev'])
+            yrs = int(hit['years'])
+            cached = True
+        else:
+            if purged_years(date[tr], embargo) < 2:
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   fewer than two '
+                      f'purged years in the window: no fit, block keeps '
+                      f'the control ordering', flush=True)
+                continue
+            if cached_only:
+                sys.exit(f'--cached-only: the {Y} fold of ridge-crashvalue '
+                         f'is not cached and this run may not fit it.')
+            surv = tr & ~crash
+            if purged_years(date[surv], embargo) < 2:
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   the survivor '
+                      f'subset cannot supply two purged years: no fit',
+                      flush=True)
+                continue
+            xt = np.asarray(build(tr), np.float32)
+            cm = MultiRidge(alpha=alpha, embargo=embargo).fit(
+                xt, crash[tr].astype(np.float64), date[tr])
+            del xt
+            xs = np.asarray(build(surv), np.float32)
+            vm = MultiRidge(alpha=alpha, embargo=embargo).fit(
+                xs, rv[surv], date[surv])
+            del xs
+            if not (cm.fitted_ and vm.fitted_):
+                print(f'  {Y}  train {int(tr.sum()):>7,d}   a head did not '
+                      f'fit: no fit, block keeps the control ordering',
+                      flush=True)
+                continue
+            xe = np.asarray(build(ev), np.float32)
+            raw = cm.score(xe)
+            v_hat = vm.score(xe)
+            del xe
+            p_hat, mode = calibrate(cm.train_pred_[:, 0],
+                                    crash[tr].astype(np.float64), raw)
+            lhat = float(rv[tr & crash].mean())
+            score[ev] = total_expectation(p_hat, lhat, v_hat)
+            lab = crash[ev].astype(np.int8)
+            auc = (float(roc_auc_score(lab, raw))
+                   if 0 < lab.sum() < len(lab) else float('nan'))
+            with np.errstate(invalid='ignore'):
+                sp = float(spearmanr(score[ev], rv[ev]).statistic)
+            yrs = len(vm.years_)
+            fitcache.save('block', ck, score=score[ev].astype(np.float64),
+                          auc=np.float64(auc), mode=np.array(mode),
+                          lhat=np.float64(lhat), sp_ev=np.float64(sp),
+                          years=np.int64(yrs))
+            cached = False
+        # the value arm this has to beat, read from ITS cache
+        prev = fitcache.load('block', fitcache.key(
+            'ridge-value', src, alpha, feat_id, 0, tuple(YCV_ALPHAS),
+            embargo, INNER_MIN, tr, ev))
+        base = float(prev['sp_ev']) if prev is not None else float('nan')
+        fitted.append(Y)
+        aucs.append(auc)
+        sps.append((sp, base))
+        print(f'  {Y}  train {int(tr.sum()):>7,d}   '
+              f'crashAUC {auc:.3f} vs {BYPRODUCT_AUC:.3f}   {mode:12s} '
+              f'L {lhat:+.4f}   spear {sp:+.2f} vs value '
+              f'{base:+.2f}   ({yrs}y)'
+              f'{"  (cached)" if cached else ""}', flush=True)
+    if aucs:
+        win = int(sum(a > BYPRODUCT_AUC for a in aucs))
+        print(f'  GATE 1 crash AUC over the {BYPRODUCT_AUC:.3f} byproduct: '
+              f'{win} of {len(aucs)} folds, mean {np.nanmean(aucs):.3f}',
+              flush=True)
+        ok = [(a, b) for a, b in sps if np.isfinite(b)]
+        keep = int(sum(a >= b for a, b in ok))
+        print(f'  GATE 2 composed Spearman at least the value arm: '
+              f'{keep} of {len(ok)} folds', flush=True)
+    return {1.0: score}, fitted
 
 
 def score_walk_forward(build, feat_id, PD, taken, date, blocks, alpha, src,
@@ -583,6 +823,39 @@ def per_slot_day(profit, days) -> float:
     return float(np.exp(np.sum(profit) / d)) - 1.0 if d > 0 else float('nan')
 
 
+def zero_split(score, y, yr) -> None:
+    """What the model's "don't buy" was worth, per year (Amendment 9.1).
+
+    The natural zero declines a candidate whose PREDICTED value is
+    negative. That does not need the model to rank well overall -- only
+    its worst predictions need to be bad bets, which is the one skill
+    this data has ever demonstrated. So the direct check is not the book
+    at all: it is whether the signals it would have declined actually
+    returned less than the ones it kept.
+
+    Printed over the scored ledger rows, not the taken ones, because the
+    slot constraint decides most of what is taken and would confound the
+    comparison.
+    """
+    ok = np.isfinite(score)
+    keep, drop = ok & (score >= 0), ok & (score < 0)
+    print('  year   kept     geo/bet   declined   geo/bet    gap')
+    for Y in sorted(set(yr[ok].tolist())):
+        a, b = keep & (yr == Y), drop & (yr == Y)
+        ga = geo_mean_per_euro(y[a]) - 1.0 if a.sum() else float('nan')
+        gb = geo_mean_per_euro(y[b]) - 1.0 if b.sum() else float('nan')
+        gap = ga - gb if np.isfinite(ga) and np.isfinite(gb) else float('nan')
+        print(f'  {Y}  {int(a.sum()):5,d}  {ga:+9.2%}   {int(b.sum()):7,d}  '
+              f'{gb:+9.2%}  ' + (f'{gap:+8.2%}' if np.isfinite(gap)
+                                 else f'{"-":>8s}'))
+    ga = geo_mean_per_euro(y[keep]) - 1.0
+    gb = geo_mean_per_euro(y[drop]) - 1.0 if drop.sum() else float('nan')
+    print(f'   all  {int(keep.sum()):5,d}  {ga:+9.2%}   '
+          f'{int(drop.sum()):7,d}  ' + (f'{gb:+9.2%}' if np.isfinite(gb)
+                                        else f'{"-":>9s}')
+          + f'  {ga - gb:+8.2%}' if np.isfinite(gb) else '')
+
+
 def report_book(name, tdf, eq, inv, pd_of, rent_of, pool_pd, pool_y,
                 p_rent) -> None:
     """One arm's book: the portfolio, the per-bet multiple, growth per
@@ -655,13 +928,22 @@ def main() -> None:
     # The ledger is keyed on H because the cap moves every outcome; the
     # windows and every feature cache are shared across all H.
     hold = opt('--max-hold', 0, int)
+    # --cached-only: refuse to compute a single fit. Amendment 9 is
+    # simulation only, and a run that silently refits would spend
+    # hours the operator did not authorise.
+    cached_only = '--cached-only' in av
+    # --compose: rank-average the cached 5-year value scores with
+    # the cached ratio-era ones, used as a crash-propensity
+    # ranking (Amendment 9.2). No fit anywhere.
+    compose = [float(v) for v in opt('--compose', '').split(',')
+               if v]
     # THE TRAINED TARGET. `value` = ln(y), the standing one since
     # Amendment 6; `rent` = ln(y) - c*t, kept runnable so its recorded
     # negative can be reproduced, never as a default again.
     target = opt('--target', 'value')
-    if target not in ('value', 'rent', 'daymean'):
-        sys.exit(f'--target must be value, rent or daymean, '
-                 f'not {target!r}')
+    if target not in ('value', 'rent', 'daymean', 'crashvalue'):
+        sys.exit(f'--target must be value, rent, daymean or '
+                 f'crashvalue, not {target!r}')
     if min_score is not None and target == 'daymean':
         sys.exit('--min-score is refused with target=daymean: the score '
                  'is relative to an unknown day level, so "predicted rate '
@@ -801,7 +1083,8 @@ def main() -> None:
     print(f'\nRANKER  embargo={embargo}d  window='
           f'{f"{lookback:g}y" if lookback else "expanding"}  '
           f'target={ {"value": "ln(y)", "rent": "ln(y)-c*t",
-                       "daymean": "ln(y)-daymean"}[target] }'
+                       "daymean": "ln(y)-daymean",
+                       "crashvalue": "p*L+(1-p)*v"}[target] }'
           + (f'  max_hold={hold}d' if hold else '')
           + ('  rent derived per fold' if target == 'rent' else ''))
     print(f'        estimator=ridge-{"ycv" if alpha == "cv" else alpha}  '
@@ -865,13 +1148,19 @@ def main() -> None:
         print()
         print(f'walk-forward {arm} fits, features={n_f:,} '
               f'(train / out-of-fold, one line per fold):')
-        if target in ('value', 'daymean'):
+        if target == 'crashvalue':
+            sc, fitted = crashvalue_walk_forward(
+                build, feat_id, rv, m['y'].to_numpy(np.float64), date,
+                blocks, alpha, src, embargo, cached_only)
+            crow = None
+        elif target in ('value', 'daymean'):
             sc, fitted = value_walk_forward(
                 build, feat_id, rv, ei, blocks, alpha, src, embargo,
                 hold, date,
                 grp_at=(n_f - 2 if arm.endswith('+group') else None),
                 name=('ridge-daymean' if target == 'daymean'
-                      else 'ridge-value'))
+                      else 'ridge-value'),
+                cached_only=cached_only)
             crow = None
         else:
             sc, fitted, crow = score_walk_forward(build, feat_id, PD, taken,
@@ -883,6 +1172,10 @@ def main() -> None:
         if arm == 'rocket':
             rocket_score = sc[1.0]
         ok = np.isfinite(sc[1.0])
+        if min_score is not None:
+            print(f'  the natural zero at {min_score:g}: what the model '
+                  f'would decline, and what those bets actually returned')
+            zero_split(sc[1.0], pool_y, m['entry_date'].dt.year.to_numpy())
         print(f'  {int(ok.sum()):,} of {len(PD):,} signals scored; the rest '
               f'sit in years with too little history to fit on and keep '
               f'the control ordering')
@@ -901,6 +1194,24 @@ def main() -> None:
             row[mu] = (A, d_, eq_, inv_)
         sens[arm] = row
         books[arm] = row[1.0][:2]
+
+    # ---- the crash-guard composition (Amendment 9.2) ----------------
+    if compose:
+        if 'rocket' not in arms:
+            sys.exit('--compose reads the rocket arm cached scores; '
+                     'add rocket to --arms')
+        print()
+        print(f'composition: w * pctile(value_{"5y" if lookback else "exp"})'
+              f' + (1-w) * pctile(ratio-era), per day')
+        guard = cached_ratio_scores(src, date, exits, embargo)
+        for w in compose:
+            A = blend_two(S, rocket_score, guard, ei, tj, w)
+            t_, eq_, inv_, _ = simulate(panel, cfg, (j0, j1), moc=True,
+                                        pool_days=pool, scores=A)
+            nm = f'guard w={w:g}'
+            books[nm] = (A, pd.DataFrame(t_))
+            sens[nm] = {1.0: (A, pd.DataFrame(t_), eq_, inv_)}
+            arms.append(nm)
 
     # ---- the blend arms (Amendment 3.1) -----------------------------
     for arm in blends:

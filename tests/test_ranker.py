@@ -24,7 +24,8 @@ from sklearn.linear_model import Ridge
 
 from bets_common import (EMBARGO_DAYS, T_FLOOR, demean_by_day,
                          rate_target, rent_legs)
-from filter_backtest import (blend_matrix, keys_plus,
+from filter_backtest import (blend_matrix, calibrate, keys_plus,
+                             total_expectation,
                              within_day_spearman)
 from rankers import (MultiRidge, derive_rent, inner_split,
                      loo_ridge, strength_matrix, ycv_ridge)
@@ -499,3 +500,43 @@ def test_within_day_spearman_ignores_days_below_the_minimum():
     # day 1 is perfect and day 2 is perfectly wrong, but day 2 has 3 rows
     assert within_day_spearman(score, label, day, min_n=5) == pytest.approx(1.0)
     assert within_day_spearman(score, label, day, min_n=3) == pytest.approx(0.0)
+
+
+# ------------------------------ the total-expectation score (Amendment 10)
+
+def test_the_score_is_the_law_of_total_expectation_and_nothing_else():
+    """Acceptance 3: a candidate at the fold's base rate scores exactly
+    `base*L + (1-base)*v`. The whole decision path is this one line --
+    no rank average, no second-stage fit, no threshold."""
+    base, L, v = 0.17, np.log(0.90), 0.05
+    assert total_expectation(base, L, v) == pytest.approx(
+        base * L + (1.0 - base) * v)
+    # certainty at either end returns that end, undiluted
+    assert total_expectation(0.0, L, v) == pytest.approx(v)
+    assert total_expectation(1.0, L, v) == pytest.approx(L)
+
+
+def test_an_ordinary_crash_probability_leaves_the_value_model_deciding():
+    # the surgical claim: at a typical p, two candidates are ordered by
+    # their survivor value, and the crash opinion only shades it
+    L = np.log(0.90)
+    a = total_expectation(0.17, L, 0.08)
+    b = total_expectation(0.17, L, 0.02)
+    assert a > b
+    # a strong crash call CAN overturn a small value edge, in proportion
+    assert total_expectation(0.60, L, 0.08) < total_expectation(0.10, L, 0.02)
+
+
+def test_calibration_clips_while_little_saturates_and_maps_when_much_does():
+    rng = np.random.default_rng(31)
+    raw_tr = rng.normal(0.17, 0.05, 4000)
+    crash_tr = (rng.random(4000) < np.clip(raw_tr, 0, 1)).astype(float)
+    p, mode = calibrate(raw_tr, crash_tr, np.array([0.1, 0.2, 0.3]))
+    assert mode.startswith('clip')
+    assert p == pytest.approx([0.1, 0.2, 0.3])
+    # a wildly out-of-range evaluation set switches to the decile map
+    wide = np.linspace(-3.0, 4.0, 200)
+    q, mode2 = calibrate(raw_tr, crash_tr, wide)
+    assert mode2.startswith('decile')
+    assert (q >= 0).all() and (q <= 1).all()
+    assert list(q) == sorted(q)            # monotone by construction

@@ -869,6 +869,112 @@ gate", and one of three configs is measured. Expanding and `--lookback
 can be closed.
 
 
+## Amendment 9 — the natural zero and the crash guard (2026-09-01)
+
+Both from cached fits, no training. `--cached-only` refuses to compute a
+single fold and names the run that would create it; a fold that can
+never be fitted (too few purged years) is not mistaken for a missing
+one.
+
+### 9.1 The natural zero — passes its test, fails its own diagnostic
+
+`--min-score 0` on the cached 5-year value scores. Per-bet geo rises
+**+0.82% -> +1.34%** on the fitted years, total +292.4% -> +474.4%,
+maxDD -29.3% -> -21.2%. By the pre-registered wording ("if per-bet geo
+does not rise, the natural zero is recorded dead") it is alive.
+
+**The check the amendment itself demanded says otherwise.** Declined
+against kept, over the scored ledger:
+
+    year     kept              declined
+    2013    2,015  +2.67%      2,422   +2.75%    -0.08%
+    2021    5,115  -0.53%          1  +20.53%   -21.06%
+    2025      948  +3.05%      1,956   -0.20%    +3.25%
+    all    44,221  +0.48%      4,379   +1.42%    -0.94%
+
+**Twelve of fifteen years decline nothing at all**, and pooled over the
+record the declined bets returned MORE than the kept ones. So the flag
+is not filtering candidates: it is switching two whole years off,
+because an absolute-value model's predictions carry a per-year level.
+That is the "weather, not race" defect of Amendment 8, reappearing as a
+threshold. Two year-calls, 2013 wrong and 2025 right.
+
+**Verdict: not established.** The letter passes; the mechanism named in
+the amendment's own acceptance list does not hold. The flag stays off.
+
+### 9.2 Crash guard plus value — one weight passes, its neighbour collapses
+
+Rank average of the cached 5-year value scores with the cached
+ratio-era scores used as a crash-propensity ranking. Fitted years:
+
+| arm | total | maxDD | bets | geo/bet |
+|---|---|---|---|---|
+| strength | +292.4% | -29.3% | 988 | +0.82% |
+| value 5y (w=1) | +233.3% | -21.0% | 993 | +0.77% |
+| **guard w=0.5** | +254.3% | **-17.4%** | 912 | **+1.04%** |
+| guard w=0.75 | +83.3% | -26.7% | 983 | +0.24% |
+
+w=0.5 passes exactly as pre-registered: better per-bet geo than the
+value arm without giving back drawdown. **And w=0.75 falls below BOTH
+its neighbours** -- pure value is +0.77%, w=0.5 is +1.04%, w=0.75 is
++0.24%. A smooth mixture cannot do that; it is the blend0.25 signature
+of 3.1 again, and it says the surface is noise-dominated. **Verdict: not
+a mechanism.** Intermediate weights (0.25, 0.6, 0.9) cost minutes from
+the same caches and were not run.
+
+## Amendment 10 — two models, one formula: sound, and worse (2026-09-01)
+
+    score = p_hat * L_hat + (1 - p_hat) * v_hat
+
+The law of total expectation and nothing else -- no rank average (9.2
+measured that harmful), no second-stage fit, no threshold. `p_hat` from
+a ridge on the binary `y < 0.93` over all training rows; `v_hat` from a
+ridge on `ln(y)` over training SURVIVORS ONLY, which is what stops the
+downside being counted twice; `L_hat` the mean realised value over the
+fold's own training crashes, stable at -0.10 throughout. Two fits per
+fold, the training the operator authorised.
+
+**Gate 1 -- the crash model must beat the 0.653 byproduct: PASSES AT
+EXACTLY THE BAR**, 8 of 15 folds, mean 0.655.
+
+    2012 0.642  2015 0.649  2018 0.650  2021 0.657  2024 0.707
+    2013 0.688  2016 0.722  2019 0.743  2022 0.523  2025 0.671
+    2014 0.659  2017 0.747  2020 0.525  2023 0.606  2026 0.633
+
+The shape matters more than the count: **2020 is 0.525 and 2022 is
+0.523**, the two most crash-heavy years in the record, while 2016, 2017
+and 2019 are 0.72-0.75. A model that is a coin flip in the crashes and
+strong in calm years is reading calm-market texture, not crash risk.
+Calibration held on `clip` in 13 of 15 folds; the decile map fired once
+(2022, 14% saturation).
+
+**Gate 2 -- the composition must not lose the top: PASSES 14 of 15.**
+
+**Gate 3 -- the book, on per-bet geo alone: FAILS.**
+
+| whole record | geo/bet |
+|---|---|
+| value-5y arm (the number to beat) | **+0.67%** |
+| crash+value composition | **+0.51%** |
+| strength | +0.57% |
+| the pool | +0.52% |
+
+Fitted years: +0.73% against strength's +0.82%; total +182.0% against
++292.4%; maxDD -22.6% against -29.3% (reported, not judged -- a smoother
+ride buys nothing under the growth objective, the size conversion having
+been measured shut).
+
+**The disagreement between gates 2 and 3 IS the finding.** The
+composition ranks better against `ln(y)` in 14 of 15 folds and still
+picks worse bets. Spearman is a whole-distribution statistic; the book
+only ever sees the top ~2.25% of each day. The crash model's
+discrimination lives at the crash end, so folding it in improves the
+ordering everywhere the book never looks -- and the amendment's claim
+that "at ordinary p_hat the score is the survivor value, which protects
+the top" did not survive contact: the crash term moved the top, and
+moved it the wrong way.
+
+
 ## PROPOSED — not built
 
 | idea | what it would need |
