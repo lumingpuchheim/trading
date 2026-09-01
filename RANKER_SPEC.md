@@ -1144,3 +1144,72 @@ The exact mirror of Amendment 10's crash model, one label flipped:
 5. Whatever the outcome, this amendment plus Amendment 10 closes the
    tail-prediction question for these features — both tails, both
    directions, dedicated shots, one register row each.
+
+---
+
+## Amendment 12 — the corner: jackpot AND not crash (2026-09-01)
+
+Operator's construction, and a genuinely new question. The three-part
+formula is a SUM, and a sum permits substitution: with `J ≈ +0.22`
+against `L ≈ -0.10` a large `p_jack` buys its way past a bad
+`p_crash`, so the composed top ADMITS the both-tails-elevated names a
+conjunction would refuse. The book has therefore never tested the
+corner: candidates whose up-tail is elevated WITHOUT the down-tail —
+identifiable ASYMMETRY, which is a different claim from anything
+measured. (It is also the Minervini thesis itself: tight base,
+limited downside, open upside.)
+
+### What must be rebuilt, honestly
+
+The component probabilities were never cached — only composed scores
+— so the two tail fits re-run once, WITH `p_crash` and `p_jack`
+stored per signal per fold. One training run's worth; the machinery
+exists; nothing else trains. This time the caches keep the
+components: no future question pays this bill again.
+
+### The corner, and its two gates — signal-level, before any book
+
+Per fold, cuts from the fold's own TRAINING distribution:
+
+    corner = (p_jack  >= training top-X% cut)
+           & (p_crash <= training bottom-Y% cut)
+    (X, Y) swept over {10, 20, 30} x {30, 50} -- printed as a grid,
+    six cells, all from the same stored components, free arithmetic
+
+**Gate A — occupancy.** Corner candidates per day, per cell. The two
+probabilities correlate positively, so the corner is thin by
+construction; a book needs roughly its selectivity (~2%) available
+on green days or it starves (measured: starvation loses to doing
+nothing). Cells below that line are dead on arrival and say so.
+
+**Gate B — the money gate, the one Amendment 11 lacked.** Realised
+per-bet geometric mean of corner candidates against the whole pool's,
+fold by fold, out of fold. Pre-registered: a cell counts only if the
+corner's geo mean beats the pool's in at least 10 of 15 folds. This
+is a SIGNAL-level test — no simulation, no path noise, per-bet money
+directly — and it is exactly the question: are asymmetric-tail names
+better bets?
+
+### Only then, a book
+
+If at least one cell clears both gates: one book, corner-preference
+expressed WITHOUT thresholds in the score path — the composed
+three-part score, re-ranked so corner members come first among
+themselves and non-members after (a lexicographic pair encoded as
+one float, the StrengthScore trick). Judged on the one column:
+per-bet geometric mean against the value-5y arm's +0.67%. Drawdown
+reported, never judged; totals inside the band decide nothing.
+
+If no cell clears: the register records that the two tails cannot be
+told apart in these features at any of six operating points — the
+asymmetry question closes, measured, beside its siblings.
+
+### Acceptance
+
+1. Control reproduces before any fitted row is read.
+2. The re-run reproduces Amendment 10/11's fold AUCs exactly (same
+   fits, now with components kept) — the consistency check.
+3. Corner cuts come from training folds only, test-pinned.
+4. The six-cell grid prints occupancy and money-gate counts before
+   any book exists; a book runs for at most the single best cell.
+5. Verdict lands in DECISIONS.md as one row either way.
