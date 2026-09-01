@@ -923,3 +923,83 @@ features.
    the target (`target=ln(y)-daymean`) and the window.
 5. Existing caches untouched; the six configs' fold caches key
    separately and completely.
+
+---
+
+## Amendment 9 — two simulations and a note; no training (2026-09-01)
+
+Operator constraint: no new training runs. Both items below run
+entirely from cached fits — simulation only, minutes each. The goal
+they serve is unchanged: a better expected value per bet, traded.
+
+### 9.1 The natural zero, at last (closes Amendment 3.4)
+
+`--min-score 0` on the cached ABSOLUTE-value scores (the 5-year value
+arm; the daymean scores are relative and refuse this flag): a free
+slot stays in cash rather than buy a candidate whose predicted value
+is negative. This is the one unrun lever aimed squarely at per-bet
+EV, and it does not need the model to rank well overall — only its
+WORST predictions need to be bad bets, which is the single skill this
+data has demonstrated (the discrimination lives at the crash end).
+
+Read: bets taken, invested, per-bet geo, maxDD, per-slot-day, against
+the same arm without the flag. Pre-registered: if per-bet geo does
+not rise, the natural zero is recorded dead and the flag stays off
+forever.
+
+### 9.2 The composition: crash guard plus value
+
+One score matrix from two cached rankings, per day, over the day's
+scored candidates:
+
+    score = w * pctile(value_5y) + (1-w) * pctile(ratio_era)
+    w in {0.5, 0.75}
+
+The ratio-era score is used AS A CRASH-PROPENSITY RANKING — an
+accidental one: it was trained on ln(y)/t, where a 3-day stop-out
+weighs -0.028/day against a best winner's +0.012/day, so ~90% of its
+learnable variation was the left tail, and the audit shows all its
+discrimination at the crash end (coin-flip on winners, positive rank
+overall, the only outside-noise drawdown in the register). Rank
+averaging needs order, not probabilities — no P(crash) is computed
+and nothing retrains.
+
+The sentence being tested, threshold-free: *prefer high predicted
+value among candidates the crash guard does not demote.* Read: per-bet
+geo and maxDD only (composition totals were measured to be noise).
+Pre-registered: it counts only if it beats the 5-year value arm on
+per-bet geo WITHOUT giving back the drawdown.
+
+**Conditional successor, not scheduled:** if 9.2 shows life, the
+accidental crash estimator earns a designed replacement — a binary
+"hit the stop within N days" label, one ridge per fold, same
+features, same schedule. It is the best-posed learning problem in
+this data (the one quantity ever demonstrably predicted) and the
+multi-target fitter already shares its eigendecompositions. It is a
+training run, so it happens only on the operator's word, only after
+9.2 earns it.
+
+### Note — the standing configuration question (not a TODO)
+
+The 5-year value arm (`rocket, 5y`) is the first fitted book that
+concedes nothing to the control: total at parity inside the band
+(+294.5% vs +291.5%), drawdown better (-27.8% vs -30.2%), per-bet
+better (+0.67% vs +0.57%), per-slot-day better (+0.0373% vs
++0.0337%), bet count level. Whether it replaces plain v5r as the
+standing configuration is an operator decision, not an experiment;
+if taken, it is one DECISIONS.md row, and the forward paper ledger —
+the register's only honest judge of totals — should start on
+whichever configuration stands. Recorded here so the question is not
+lost; nothing in this amendment depends on the answer.
+
+### Acceptance
+
+1. Control reproduces before any row is read, as always.
+2. No fit is computed anywhere: both items refuse to run if a needed
+   fold cache is missing, naming the run that would create it.
+3. 9.1 prints the taken/declined split per year; declined bets'
+   realised values are reported beside taken ones (the direct check
+   that the model's "don't buy" meant something).
+4. 9.2's banner names both cached sources and the weight; its books
+   print beside the 5-year value arm's cached row.
+5. Verdicts land in DECISIONS.md as one row each, whatever they are.
