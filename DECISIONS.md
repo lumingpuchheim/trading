@@ -766,6 +766,63 @@ all, is the ratio of sums `exp(sum ln(y) / sum t)` -- the quantity
 Amendment 4 itself named when it retired the ratio target.
 
 
+## The training window is the lever, not the target (2026-09-01)
+
+`python filter_backtest.py --lookback 5` -- an existing flag, no code
+change -- replaces the expanding window with a rolling five-year one, so
+every fold trains on roughly the same evidence (14,000-19,000 rows)
+instead of the 2026 model seeing nine times what the 2012 model saw.
+Value target, uncapped, everything else identical.
+
+**Whole record, 2007-01-03 .. 2026-08-27:**
+
+| arm | total | ann | maxDD | bets | geo/bet | per slot-day |
+|---|---|---|---|---|---|---|
+| strength | +291.5% | +7.2% | -30.2% | 1,252 | +0.57% | +0.0337% |
+| rocket, 5y window | **+294.5%** | +7.2% | **-27.8%** | 1,238 | **+0.67%** | **+0.0373%** |
+| the pool | — | — | — | 55,737 | +0.52% | +0.0177% |
+
+**Fitted years only, 2012-2026** (a cold start in 2012, so not a slice
+of the row above):
+
+| arm | total | ann | maxDD | bets | geo/bet |
+|---|---|---|---|---|---|
+| strength | +292.4% | +9.8% | -29.3% | 988 | +0.82% |
+| rocket, 5y window | +233.3% | +8.6% | **-21.0%** | 993 | +0.77% |
+
+**This is the largest single improvement to the fitted arm in the whole
+amendment sequence, and it came from the schedule rather than the loss.**
+On the whole record the arm draws level on total (+294.5% against
++291.5%, inside the permutation band and therefore not a win), beats the
+control per bet (+0.67% against +0.57%) and takes 2.4 points less
+drawdown. On the fitted years it takes **8.3 points less drawdown**
+(-21.0% against -29.3%) at per-bet parity, on the same bet count and the
+same time invested.
+
+**The fold record explains it.** The loss is unchanged -- R2 out of fold
+-0.002, better than a constant in 8 of 15, alpha at the ceiling in 14 of
+15, the same as the expanding window. What changes is that **training
+Spearman stays up**: +0.11 to +0.20 through the late folds, where the
+expanding window decayed to +0.04 as the window swelled. Holding every
+fold to the same evidence stops the fit being diluted by an ever-larger
+training set it cannot use. Four amendments rewrote the target; the
+schedule was worth more than any of them.
+
+Not a verdict on the ranker: the loss still does not beat a constant,
+and the totals are inside the 276-point band. It is a verdict on where
+to look next.
+
+### `G_day` is out of the table (2026-09-01)
+
+The withdrawal recorded above is now in the code. `report_book` prints
+**`per_day` = exp(sum ln(y) / sum t)**, a ratio of sums, in its place;
+`filter_backtest` no longer imports `rate_target` or `T_FLOOR`. The new
+column is positive and comparable, and it says the thing the old one
+could not: both books beat their own pool per slot-day (+0.0337% and
++0.0373% against +0.0177%). `rate_target` stays in `bets_common` --
+tests pin it, and it is the record of what the ratio era trained on.
+
+
 ## PROPOSED — not built
 
 | idea | what it would need |

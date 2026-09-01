@@ -50,8 +50,8 @@ from sklearn.metrics import roc_auc_score
 
 import fitcache
 from bets_common import (AUX_Q, EMBARGO_DAYS, INNER_MIN, LOOKBACK_YEARS,
-                         T_FLOOR, load, rate_target, rent_legs,
-                         value_target, warmup_rows, year_blocks)
+                         load, rent_legs, value_target, warmup_rows,
+                         year_blocks)
 from geostats import bet_multiples, geo_mean_per_euro
 from lppl_backtest import ROOT, load_config, metrics
 from minervini import group_strength
@@ -511,8 +511,8 @@ def score_walk_forward(build, feat_id, PD, taken, date, blocks, alpha, src,
 # ----------------------------------------------------------------------
 
 def pool_rent(PD, crow) -> float:
-    """`G_rent` for the whole candidate pool: the same shape as `G_day`,
-    on the rent target. NaN where no fold ever priced the row."""
+    """`G_rent` for the whole candidate pool. NaN where no fold ever
+    priced the row."""
     if crow is None:
         return float('nan')
     v = PD[:, 0] - crow * PD[:, 1]
@@ -520,39 +520,69 @@ def pool_rent(PD, crow) -> float:
     return float(np.exp(v.mean())) - 1.0 if len(v) else float('nan')
 
 
-def report_book(name, tdf, eq, inv, rate_of, rent_of, pool_r, pool_y,
+def per_slot_day(profit, days) -> float:
+    """Growth per slot-day, as a RATIO OF SUMS.
+
+        exp( sum(ln y) / sum(t) )
+
+    THE MEAN OF RATIOS THAT USED TO SIT HERE IS GONE. `G_day` averaged
+    each bet's own `ln(y)/t`, one vote per bet, and that statistic's sign
+    is an artefact: winners in this ledger are held 46.3 days and losers
+    16.3, so dividing every bet's log by its own holding time hands each
+    loser about 2.8x the weight of each winner. On the same 55,737 bets
+    `geo/bet` reads +0.5161% and this ratio of sums +0.0177%, both
+    positive, while `G_day` read -0.2380% -- and -0.36%/day compounded
+    over 4,940 trading days would have wiped an account that in fact
+    multiplied by 3.9. It could not be compounded or annualised, and it
+    flattered whichever arm held its bets for less time, which is exactly
+    what the rent-era arm had degenerated into.
+
+    A ratio of sums has none of that: it is total log-profit over total
+    slot-days, which is the quantity a slot's long-run growth actually
+    is, and it is what Amendment 4 named when it retired the ratio
+    target. Withdrawn on the operator's challenge, 2026-09-01;
+    DECISIONS.md carries the arithmetic and the list of earlier readings
+    it invalidates.
+    """
+    d = float(np.sum(days))
+    return float(np.exp(np.sum(profit) / d)) - 1.0 if d > 0 else float('nan')
+
+
+def report_book(name, tdf, eq, inv, pd_of, rent_of, pool_pd, pool_y,
                 p_rent) -> None:
-    """One arm's book: the portfolio, the per-bet multiple, and both
-    targets -- the retired ratio (`G_day`, reported only) and the trained
-    rent (`G_rent`) -- each beside the same number for the whole
-    candidate pool, so a difference reads as selection and not as a
+    """One arm's book: the portfolio, the per-bet multiple, growth per
+    slot-day, and the trained rent -- each beside the same number for the
+    whole candidate pool, so a difference reads as selection and not as a
     level.
 
     `G_rent` uses ONE rent per row, the first fitted arm's, for every
-    arm. The column then compares BOOKS rather than models; each arm's
-    own derived `c` is on its fold lines.
+    arm, so the column compares BOOKS rather than models; each arm's own
+    derived `c` is on its fold lines.
     """
     mt = metrics(tdf, eq, inv)
     mult = bet_multiples(tdf)
-    took = np.array([rate_of.get(k, np.nan) for k in mult.index], float)
-    took = took[np.isfinite(took)]
+    legs = np.array([pd_of.get(k, (np.nan, np.nan)) for k in mult.index],
+                    float)
+    legs = legs[np.isfinite(legs).all(1)]
     rent = np.array([rent_of.get(k, np.nan) for k in mult.index], float)
     rent = rent[np.isfinite(rent)]
-    g_day = float(np.exp(np.mean(took))) if len(took) else float('nan')
-    g_rent = float(np.exp(np.mean(rent))) if len(rent) else float('nan')
-    # a run with no fitted arm has no derived rent, so there is no
-    # `G_rent` to print -- a dash, never a NaN dressed as a percentage
-    rent_col = (f'{g_rent - 1:+10.4%}' if np.isfinite(g_rent)
-                else f'{"-":>10s}')
+    day = (per_slot_day(legs[:, 0], legs[:, 1]) if len(legs)
+           else float('nan'))
+    g_rent = float(np.exp(np.mean(rent))) - 1.0 if len(rent) else float('nan')
+
+    def cell(v):
+        # a run with no fitted arm has no derived rent, so there is no
+        # `G_rent` to print -- a dash, never a NaN dressed as a percentage
+        return f'{v:+10.4%}' if np.isfinite(v) else f'{"-":>10s}'
+
     print(f'{name:14s} {mt["total_return"]:+9.1%} {mt["ann_return"]:+7.1%} '
           f'{mt["max_drawdown"]:+8.1%} {len(tdf):7,d} {len(mult):6,d} '
-          f'{geo_mean_per_euro(mult) - 1:+9.2%} {g_day - 1:+10.4%} '
-          f'{rent_col} {inv:8.1%}')
+          f'{geo_mean_per_euro(mult) - 1:+9.2%} {cell(day)} '
+          f'{cell(g_rent)} {inv:8.1%}')
     print(f'{"":14s} {"":9s} {"":7s} {"":8s} {"":7s} '
           f'{len(pool_y):6,d} {geo_mean_per_euro(pool_y) - 1:+9.2%} '
-          f'{float(np.exp(np.mean(pool_r))) - 1:+10.4%} '
-          + (f'{p_rent:+10.4%}' if np.isfinite(p_rent) else f'{"-":>10s}')
-          + '   <- the whole pool')
+          f'{cell(per_slot_day(pool_pd[:, 0], pool_pd[:, 1]))} '
+          f'{cell(p_rent)}   <- the whole pool')
 
 
 def main() -> None:
@@ -658,8 +688,7 @@ def main() -> None:
     exits = pd.to_datetime(m['exit_date']).to_numpy().astype('datetime64[D]')
     # THE TRAINED TARGET is the rent one (Amendment 4): two heads,
     # log-profit and slot-days, and `r = profit - c*days` with `c`
-    # derived per fold. The ratio target survives only as the reported
-    # `G_day` column, with its floor, and nothing trains on it.
+    # derived per fold -- or, since Amendment 6, the value one below.
     # WITH THE CAP ON, the target is the plain per-bet log multiple: the
     # trading rule has already collapsed "profit per bet" and "profit per
     # slot-time" into one ranking, so there is no rent to charge and
@@ -672,16 +701,12 @@ def main() -> None:
                             m['half_frac'].to_numpy(np.float64),
                             m['y_half'].to_numpy(np.float64),
                             m['half_days_held'].to_numpy(np.float64)), 1)
-    r = rate_target(m['y'].to_numpy(np.float64),
-                    m['days_held'].to_numpy(np.float64),
-                    m['half_frac'].to_numpy(np.float64),
-                    m['y_half'].to_numpy(np.float64),
-                    m['half_days_held'].to_numpy(np.float64), T_FLOOR)
     pool_y = m['y'].to_numpy(np.float64)
     # the book's positions, keyed the way `geostats.bet_multiples` keys
     # them, so a taken bet can be looked up by its ledger rate
-    rate_of = {f'{t}|{s}': v for t, s, v in
-               zip(m['ticker'], m['entry_date'].astype(str), r)}
+    pd_of = {f'{t}|{s}': (a, b) for t, s, a, b in
+             zip(m['ticker'], m['entry_date'].astype(str),
+                 PD[:, 0], PD[:, 1])}
 
     # a ranker can only rank a signal it has a score for. If the ledger
     # ever stops covering what simulate() can order, the arms stop being
@@ -780,7 +805,7 @@ def main() -> None:
           f'orderable signals: selectivity {taken.mean():.2%}')
 
     hdr = (f'{"arm":14s} {"total":>9s} {"ann":>7s} {"maxDD":>8s} '
-           f'{"rows":>7s} {"bets":>6s} {"geo/bet":>9s} {"G_day":>10s} '
+           f'{"rows":>7s} {"bets":>6s} {"geo/bet":>9s} {"per_day":>10s} '
            f'{"G_rent":>10s} {"invested":>8s}')
 
     # ---- the fitted arms --------------------------------------------
@@ -845,11 +870,11 @@ def main() -> None:
                if rent_c is not None else {})
     print()
     print(hdr)
-    report_book('strength', st, eq_s, inv_s, rate_of, rent_of, r, pool_y,
+    report_book('strength', st, eq_s, inv_s, pd_of, rent_of, PD, pool_y,
                 pool_rent(PD, rent_c))
     for arm in [a for a in arms if a != 'strength']:
         A, d_, eq_, inv_ = sens[arm][1.0]
-        report_book(arm, d_, eq_, inv_, rate_of, rent_of, r, pool_y,
+        report_book(arm, d_, eq_, inv_, pd_of, rent_of, PD, pool_y,
                     pool_rent(PD, rent_c))
         if dump:
             d_.to_csv(ROOT / 'results' / f'ranker_trades_{arm}.csv',
@@ -897,8 +922,8 @@ def main() -> None:
                                  pool_days=pool, scores=books[a][0],
                                  min_score=None if a == 'strength'
                                  else min_score)
-        report_book(a, pd.DataFrame(t2), e2, i2, rate_of, rent_of,
-                    r, pool_y, pool_rent(PD, rent_c))
+        report_book(a, pd.DataFrame(t2), e2, i2, pd_of, rent_of,
+                    PD, pool_y, pool_rent(PD, rent_c))
 
     if not perm or 'rocket' not in books:
         return
