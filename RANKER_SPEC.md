@@ -1003,3 +1003,78 @@ lost; nothing in this amendment depends on the answer.
 4. 9.2's banner names both cached sources and the weight; its books
    print beside the 5-year value arm's cached row.
 5. Verdicts land in DECISIONS.md as one row each, whatever they are.
+
+---
+
+## Amendment 10 — two models, one formula (2026-09-01)
+
+The decision score is assembled from two model outputs by the law of
+total expectation — not by rank-averaging (measured harmful, 9.2),
+not by a second-stage fit, not by a threshold:
+
+    score = p_hat * L_hat + (1 - p_hat) * v_hat
+
+    p_hat  the CRASH model's calibrated probability that this bet
+           loses 7%+ (y < 0.93)
+    L_hat  the cost of a crash: mean ln(y) over the fold's TRAINING
+           crashes — a constant per fold, roughly ln(0.88)
+    v_hat  the VALUE model's prediction, trained on the fold's
+           training SURVIVORS only — expected gain GIVEN no crash
+
+Why this composition and no other: it is surgical by construction.
+At ordinary p_hat the score is the survivor value — the value model
+decides, undiluted, which protects the top of the ranking where all
+its skill lives. The crash opinion enters in proportion to its own
+confidence, so the measured 71% false-alarm rate costs millimeters of
+score instead of a full rank vote. And it is explainable in one
+sentence: expected value = chance of crash times crash cost, plus
+chance of surviving times predicted gain.
+
+### The two models
+
+Both per fold, 5-year window, grouped-CV alpha, features as today:
+
+- **Crash**: ridge on the binary label `y < 0.93`, all training
+  rows. Output clipped to [0, 1]; if clipping saturates more than a
+  few percent of rows, a training-window decile-to-frequency lookup
+  replaces the clip (monotone, from training rows only, stated on
+  the fold line).
+- **Survivor value**: ridge on `ln(y)` (split legs 0.5/0.5), fitted
+  on the training rows with `y >= 0.93` only. This is what makes the
+  formula honest: the all-rows value model already contains crash
+  mass, and using it would double-count the downside.
+
+Cost, stated plainly: two new target fits over the record — roughly
+two of the usual training runs. This is the training the operator
+authorised for the dedicated crash question; nothing else trains.
+
+### Gates, then the book — pre-registered
+
+1. **The crash model must earn its existence**: out-of-fold crash
+   AUC above the byproduct's measured 0.653 in at least 8 of 15
+   folds. If it cannot beat a free byproduct, the amendment closes
+   with "the byproduct was already the frontier" and no book runs.
+2. **The composed score must not lose the top**: out-of-fold
+   Spearman versus `ln(y)` at least as good as the cached value-5y
+   arm's, fold by fold, in the majority.
+3. **The book is judged on ONE column** — per-bet geometric mean
+   against the value-5y arm's recorded +0.67% (whole record,
+   no min-score). Drawdown is reported, never judged: under the
+   operator's growth objective a smoother ride buys nothing
+   (bet-size conversion measured shut). Totals stay inside the
+   noise band and decide nothing, as always.
+
+### Acceptance
+
+1. Control reproduces before any fitted row is read.
+2. Fold lines print: crash AUC (beside 0.653), the calibration mode
+   (clip or decile), `L_hat`, and the composed score's oof Spearman
+   beside the value arm's cached one.
+3. A hand-built example pins the formula: a candidate with p_hat
+   equal to the fold's base rate scores within float tolerance of
+   `base*L_hat + (1-base)*v_hat`.
+4. No rank-averaging, no second-stage fit, no threshold anywhere in
+   the score path — verifiable by reading one function.
+5. The verdict lands in DECISIONS.md as one row either way; if gate
+   1 fails, the row says the 0.653 byproduct stands as the final
+   characterisation of crash knowledge in this data.
