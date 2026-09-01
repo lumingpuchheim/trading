@@ -22,9 +22,10 @@ import numpy as np
 import pytest
 from sklearn.linear_model import Ridge
 
-from bets_common import (EMBARGO_DAYS, T_FLOOR, rate_target,
-                         rent_legs)
-from filter_backtest import blend_matrix, keys_plus
+from bets_common import (EMBARGO_DAYS, T_FLOOR, demean_by_day,
+                         rate_target, rent_legs)
+from filter_backtest import (blend_matrix, keys_plus,
+                             within_day_spearman)
 from rankers import (MultiRidge, derive_rent, inner_split,
                      loo_ridge, strength_matrix, ycv_ridge)
 from test_bet_multiples import DIV, ENTRY_I, PATH, _cfg, _ledger_y, _panel
@@ -456,3 +457,45 @@ def test_a_multi_target_fit_refuses_to_hand_back_a_composed_score():
         m.score(X)
     one = MultiRidge(alpha=10.0).fit(X, Y[:, 0])
     assert one.score(X).shape == (200,)
+
+
+# ---------------------------------- the within-day target (Amendment 8)
+
+def test_the_label_is_zero_mean_inside_every_entry_day():
+    rng = np.random.default_rng(21)
+    day = rng.integers(0, 40, 600)
+    v = rng.normal(size=600) * 0.2 + day * 0.01      # a real day effect
+    r = demean_by_day(v, day)
+    for d in np.unique(day):
+        assert r[day == d].mean() == pytest.approx(0.0, abs=1e-12)
+
+
+def test_a_single_signal_day_gets_exactly_zero():
+    v = np.array([1.0, 3.0, 5.0, 7.0])
+    day = np.array([10, 10, 10, 99])
+    r = demean_by_day(v, day)
+    assert list(r[:3]) == [-2.0, 0.0, 2.0]
+    assert r[3] == 0.0                     # no peer, no contrast, no vote
+
+
+def test_demeaning_removes_the_day_level_and_keeps_the_within_day_order():
+    rng = np.random.default_rng(22)
+    day = np.repeat(np.arange(30), 8)
+    level = np.repeat(rng.normal(scale=5.0, size=30), 8)   # huge weather
+    edge = rng.normal(scale=0.1, size=240)                 # tiny race
+    r = demean_by_day(level + edge, day)
+    # the day level is gone entirely...
+    assert np.corrcoef(r, level)[0, 1] == pytest.approx(0.0, abs=1e-10)
+    # ...and inside each day the ordering is exactly the edge's
+    for d in np.unique(day):
+        s = day == d
+        assert list(np.argsort(r[s])) == list(np.argsort(edge[s]))
+
+
+def test_within_day_spearman_ignores_days_below_the_minimum():
+    day = np.array([1] * 6 + [2] * 3)
+    score = np.array([1., 2, 3, 4, 5, 6, 9, 8, 7])
+    label = np.array([1., 2, 3, 4, 5, 6, 1, 2, 3])   # day 2 disagrees
+    # day 1 is perfect and day 2 is perfectly wrong, but day 2 has 3 rows
+    assert within_day_spearman(score, label, day, min_n=5) == pytest.approx(1.0)
+    assert within_day_spearman(score, label, day, min_n=3) == pytest.approx(0.0)

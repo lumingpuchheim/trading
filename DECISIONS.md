@@ -823,6 +823,52 @@ could not: both books beat their own pool per slot-day (+0.0337% and
 tests pin it, and it is the record of what the ratio era trained on.
 
 
+## Amendment 8 — the within-day target, at the 5-year window (2026-09-01)
+
+The label now matches the decision: `r_i = ln(y_i) - mean(ln y over the
+signals entered the SAME day)`. The slot decision only ever compares
+candidates that arrived together, so the market component of `ln(y)` --
+by far the larger, and the most regime-flipping part of the data -- was
+capacity the fit spent on weather it never uses. A per-day constant
+moves no rank; subtracting it changes nothing the decision can see and
+removes everything it cannot.
+
+Run at `--lookback 5` (the operator's choice; the matrix's other two
+windows, expanding and `--lookback 3`, are NOT yet measured).
+
+**The pre-registered gate fails on both legs:**
+
+    beats the constant       5 of 15   (bar: 10)   R2 oof -0.004
+    within-day Spearman +    9 of 15   (bar: 10)   mean  +0.024
+
+The within-day leg is the closer, and its shape is worth recording: it
+is negative in the early folds and positive in nearly all the late ones
+-- +0.17, +0.09, +0.11, +0.06, +0.06, +0.05, +0.11 from 2019 on. Nine of
+fifteen is still not ten of fifteen, and the bar was fixed in advance.
+
+**The book, which by the gate DOES NOT COUNT:**
+
+| arm | total | ann | maxDD | bets | geo/bet | per slot-day |
+|---|---|---|---|---|---|---|
+| strength | +292.4% | +9.8% | -29.3% | 988 | +0.82% | +0.0420% |
+| rocket, daymean, 5y | +281.7% | +9.6% | **-18.7%** | 926 | **+1.08%** | **+0.0490%** |
+| the pool | — | — | — | 55,737 | +0.52% | +0.0177% |
+
+It is the best fitted-arm book of the whole sequence -- level on total,
+10.6 points less drawdown, the highest per-bet figure any arm has posted
+on this window. **It is recorded as not counting.** The gate exists
+because this session produced good-looking books inside the noise band
+repeatedly, and 5-of-15 on the loss is exactly the evidence it was
+written to reject. (The driver simulates unconditionally, so the book
+exists whether or not the gate passed; noted as a deviation, as at
+Amendment 7.)
+
+**The closing clause has NOT fired.** It reads "if NO config clears the
+gate", and one of three configs is measured. Expanding and `--lookback
+3` are outstanding before the profit-ranking question on price windows
+can be closed.
+
+
 ## PROPOSED — not built
 
 | idea | what it would need |

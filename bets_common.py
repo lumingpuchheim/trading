@@ -265,6 +265,40 @@ def value_target(y, half_frac=None, y_half=None):
                     np.log(np.maximum(y, 1e-9)))
 
 
+def demean_by_day(v, day) -> np.ndarray:
+    """The within-day target (RANKER_SPEC Amendment 8).
+
+        r_i = v_i - mean(v_j : entry_day_j == entry_day_i)
+
+    The slot decision is a WITHIN-day ranking, but `ln(y)` is not a
+    within-day quantity: it is what the market did during the hold plus
+    how this stock did against its same-day peers. The first part is much
+    the larger -- out-of-fold error tracks each year's market variance,
+    five to eight times between calm and crash years -- the picks cancel
+    it exactly, because a per-day constant moves no rank, and it is the
+    most regime-flipping part of the data. So the fit was spending its
+    capacity predicting weather it never uses. Subtracting the day mean
+    makes the label the same shape as the decision.
+
+    A day with one signal gets exactly 0: no within-day contrast exists,
+    and the row neither contributes nor distorts.
+
+    NO NEW LOOKAHEAD. The day mean is built from peer OUTCOMES, which
+    resolve during the hold; the 400-day embargo already keeps every
+    training outcome resolved before its scored block opens, demeaned or
+    not.
+    """
+    v = np.asarray(v, dtype=np.float64)
+    d = np.asarray(day)
+    order = np.argsort(d, kind='stable')
+    out = np.empty_like(v)
+    ds, vs = d[order], v[order]
+    cuts = np.r_[0, np.flatnonzero(ds[1:] != ds[:-1]) + 1, len(ds)]
+    for lo, hi in zip(cuts[:-1], cuts[1:]):
+        out[order[lo:hi]] = vs[lo:hi] - vs[lo:hi].mean()
+    return out
+
+
 def warmup_rows(dates: np.ndarray, n: int, rng) -> np.ndarray:
     """Rows for fitting the MiniRocket bias quantiles: a sample of the
     EARLIEST bets in the record.

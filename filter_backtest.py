@@ -50,8 +50,8 @@ from sklearn.metrics import roc_auc_score
 
 import fitcache
 from bets_common import (AUX_Q, EMBARGO_DAYS, INNER_MIN, LOOKBACK_YEARS,
-                         load, rent_legs, value_target, warmup_rows,
-                         year_blocks)
+                         demean_by_day, load, rent_legs, value_target,
+                         warmup_rows, year_blocks)
 from geostats import bet_multiples, geo_mean_per_euro
 from lppl_backtest import ROOT, load_config, metrics
 from minervini import group_strength
@@ -286,6 +286,29 @@ def fold_line(Y, n_train, m, alpha, cached, r2, years, c, rounds,
             f'({years}y){"  (cached)" if cached else ""}')
 
 
+def within_day_spearman(score, label, day, min_n=5) -> float:
+    """Rank correlation of score against realised label INSIDE each day,
+    averaged over the days that have at least `min_n` signals.
+
+    This is the decision-relevant diagnostic and the pooled Spearman is
+    not: the slot decision only ever compares candidates that arrived on
+    the same day, so a model can rank the years correctly and the races
+    wrongly, and pooled correlation would applaud it (Amendment 8).
+    """
+    d = np.asarray(day)
+    order = np.argsort(d, kind='stable')
+    ds, ss, ls = d[order], np.asarray(score)[order], np.asarray(label)[order]
+    cuts = np.r_[0, np.flatnonzero(ds[1:] != ds[:-1]) + 1, len(ds)]
+    out = []
+    with np.errstate(invalid='ignore'):
+        for lo, hi in zip(cuts[:-1], cuts[1:]):
+            if hi - lo >= min_n:
+                rho = spearmanr(ss[lo:hi], ls[lo:hi]).statistic
+                if np.isfinite(rho):
+                    out.append(float(rho))
+    return float(np.mean(out)) if out else float('nan')
+
+
 def value_fold_line(Y, n_train, m, alpha, cached, r2, years, grp) -> str:
     # `grp` is the LEARNED, standardised weight on group_pct, printed so
     # the sign flip stays visible: the retired gate demanded the top 30%
@@ -295,13 +318,14 @@ def value_fold_line(Y, n_train, m, alpha, cached, r2, years, grp) -> str:
     return (f'  {Y}  train {n_train:>7,d}   '
             f'mse {m["mse_tr"]:.2e} / {m["mse_ev"]:.2e}  R2oof {r2:+6.2f}   '
             f'spear {m["sp_tr"]:+.2f} / {m["sp_ev"]:+.2f}   '
+            f'wday {m["wd_tr"]:+.2f} / {m["wd_ev"]:+.2f}   '
             f'alpha {alpha:.3g}'
             + (f'  group {grp:+.2e}' if grp is not None else '')
             + f' ({years}y){"  (cached)" if cached else ""}')
 
 
-def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
-                       embargo, hold, grp_at=None):
+def value_walk_forward(build, feat_id, rv, day, blocks, alpha, src,
+                       embargo, hold, date, grp_at=None, name='ridge-value'):
     """The capped-label walk-forward: ONE ridge per fold on `ln(y)`.
 
     No rent, no ratio, no floor and no second head. With the hold capped
@@ -318,15 +342,18 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
     Returns ({1.0: scores}, fitted years).
     """
     score = np.full(len(rv), np.nan)
-    r2s, n_ev, fitted, gws = [], [], [], []
+    r2s, n_ev, fitted, gws, wds = [], [], [], [], []
     for Y, tr, ev in blocks:
-        ck = fitcache.key('ridge-value', src, alpha, feat_id, hold,
+        # a DIFFERENT cache name per target, never an extra key field:
+        # the existing `ridge-value` entries stay loadable (CLAUDE.md,
+        # never add a key field without checking what it costs)
+        ck = fitcache.key(name, src, alpha, feat_id, hold,
                           tuple(YCV_ALPHAS), embargo, INNER_MIN, tr, ev)
         hit = fitcache.load('block', ck)
         if hit is not None:
             p_ev = hit['score']
             m = {k: float(hit[k]) for k in ('mse_tr', 'mse_ev', 'sp_tr',
-                                            'sp_ev')}
+                                            'sp_ev', 'wd_tr', 'wd_ev')}
             al, yrs = float(hit['alpha']), int(hit['years'])
             gw = float(hit['group']) if 'group' in hit else None
         else:
@@ -348,7 +375,9 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
                 m = {'mse_tr': float(np.mean((p_tr - rv[tr]) ** 2)),
                      'mse_ev': float(np.mean((p_ev - rv[ev]) ** 2)),
                      'sp_tr': float(spearmanr(p_tr, rv[tr]).statistic),
-                     'sp_ev': float(spearmanr(p_ev, rv[ev]).statistic)}
+                     'sp_ev': float(spearmanr(p_ev, rv[ev]).statistic),
+                     'wd_tr': within_day_spearman(p_tr, rv[tr], day[tr]),
+                     'wd_ev': within_day_spearman(p_ev, rv[ev], day[ev])}
             al, yrs = float(np.asarray(rk.alpha_).ravel()[0]), len(rk.years_)
             gw = (float(rk.coef_[grp_at, 0]) if grp_at is not None
                   else None)
@@ -367,6 +396,8 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
                               yrs, gw), flush=True)
         if gw is not None:
             gws.append(gw)
+        if np.isfinite(m['wd_ev']):
+            wds.append(m['wd_ev'])
     if r2s:
         w = np.asarray(n_ev, float)
         print(f'  loss against the null (predict the training mean): '
@@ -374,6 +405,10 @@ def value_walk_forward(build, feat_id, rv, date, blocks, alpha, src,
               f'{float(np.average(r2s, weights=w)):+.3f}, better than a '
               f'constant in {int(sum(v > 0 for v in r2s))} of {len(r2s)} '
               f'folds', flush=True)
+    if wds:
+        pos = int(sum(v > 0 for v in wds))
+        print(f'  within-day Spearman out of fold: positive in {pos} of '
+              f'{len(wds)} folds, mean {np.mean(wds):+.3f}', flush=True)
     if gws:
         neg = int(sum(v < 0 for v in gws))
         print(f'  learned group_pct weight: negative in {neg} of '
@@ -624,8 +659,14 @@ def main() -> None:
     # Amendment 6; `rent` = ln(y) - c*t, kept runnable so its recorded
     # negative can be reproduced, never as a default again.
     target = opt('--target', 'value')
-    if target not in ('value', 'rent'):
-        sys.exit(f'--target must be value or rent, not {target!r}')
+    if target not in ('value', 'rent', 'daymean'):
+        sys.exit(f'--target must be value, rent or daymean, '
+                 f'not {target!r}')
+    if min_score is not None and target == 'daymean':
+        sys.exit('--min-score is refused with target=daymean: the score '
+                 'is relative to an unknown day level, so "predicted rate '
+                 'below cash" is undefined. The natural zero belongs to '
+                 'absolute targets only (RANKER_SPEC Amendment 8).')
     # --permute N: N books in which the fitted scores are shuffled
     # WITHIN each day, so the day's candidate set and the score
     # distribution are untouched and only the ranker's information
@@ -696,6 +737,11 @@ def main() -> None:
     rv = value_target(m['y'].to_numpy(np.float64),
                       m['half_frac'].to_numpy(np.float64),
                       m['y_half'].to_numpy(np.float64))
+    if target == 'daymean':
+        # one line, and it is the whole amendment: the label becomes the
+        # same shape as the decision. The day mean is taken over ALL
+        # ledger signals entered that day, once, not per fold.
+        rv = demean_by_day(rv, ei)
     PD = np.stack(rent_legs(m['y'].to_numpy(np.float64),
                             m['days_held'].to_numpy(np.float64),
                             m['half_frac'].to_numpy(np.float64),
@@ -754,7 +800,8 @@ def main() -> None:
 
     print(f'\nRANKER  embargo={embargo}d  window='
           f'{f"{lookback:g}y" if lookback else "expanding"}  '
-          f'target={"ln(y)" if target == "value" else "ln(y)-c*t"}'
+          f'target={ {"value": "ln(y)", "rent": "ln(y)-c*t",
+                       "daymean": "ln(y)-daymean"}[target] }'
           + (f'  max_hold={hold}d' if hold else '')
           + ('  rent derived per fold' if target == 'rent' else ''))
     print(f'        estimator=ridge-{"ycv" if alpha == "cv" else alpha}  '
@@ -818,11 +865,13 @@ def main() -> None:
         print()
         print(f'walk-forward {arm} fits, features={n_f:,} '
               f'(train / out-of-fold, one line per fold):')
-        if target == 'value':
+        if target in ('value', 'daymean'):
             sc, fitted = value_walk_forward(
-                build, feat_id, rv, date, blocks, alpha, src, embargo,
-                hold, grp_at=(n_f - 2 if arm.endswith('+group')
-                              else None))
+                build, feat_id, rv, ei, blocks, alpha, src, embargo,
+                hold, date,
+                grp_at=(n_f - 2 if arm.endswith('+group') else None),
+                name=('ridge-daymean' if target == 'daymean'
+                      else 'ridge-value'))
             crow = None
         else:
             sc, fitted, crow = score_walk_forward(build, feat_id, PD, taken,
@@ -842,7 +891,7 @@ def main() -> None:
         # ranking should move slowly with c; a book that swings across
         # this band is fragile and the run has to say so.
         row = {}
-        for mu in (sc if target == 'value' else RENT_MULTS):
+        for mu in (sc if target != 'rent' else RENT_MULTS):
             A = S.copy()
             A[ei[ok], tj[ok]] = sc[mu][ok]
             t_, eq_, inv_, _ = simulate(panel, cfg, (j0, j1), moc=True,
