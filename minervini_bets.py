@@ -113,6 +113,8 @@ def price_bet(i0: int, j: int, arr: dict, p: dict) -> dict | None:
             reason = 'delisted'
         elif c <= stop_px:
             reason = 'stop'
+        elif p.get('max_hold') and age >= p['max_hold']:
+            reason = 'max_hold'          # Amendment 6, simulate()'s order
         elif age < protect:
             pass                    # tennis-ball window: only the stop sells
         elif age == protect and c < entry_px and not recovered:
@@ -219,6 +221,7 @@ def build_ledger(panel: dict, cfg: dict, fix_egg: bool,
          'protect_days': tr['protect_days'],
          'decisive_break_frac': tr['decisive_break_frac'],
          'decisive_volume': tr['decisive_volume'],
+         'max_hold': int(tr.get('max_hold_days', 0) or 0),
          'fix_egg': fix_egg}
     print(f'exit params: stop {p["stop_loss"]:.2f}x  breakeven-arm '
           f'{p["be_level"]:.2f}x  egg day {p["protect_days"]}  '
@@ -366,17 +369,37 @@ def main() -> None:
     if '--windows' in sys.argv:
         k = sys.argv.index('--windows')
         width = int(sys.argv[k + 1]) if k + 1 < len(sys.argv) else 252
+    # RANKER_SPEC Amendment 6: the ledger is keyed on H because the CAP
+    # changes outcomes -- y, y_half and days_held all move -- while the
+    # WINDOWS do not, because a window is entry-day history and the cap
+    # is an exit rule. Every H therefore shares one windows file and one
+    # feature cache, and only labels and fits are re-made.
+    hold = 0
+    if '--max-hold' in sys.argv:
+        hold = int(sys.argv[sys.argv.index('--max-hold') + 1])
 
     cfg = apply_v5(load_config())
     cfg['minervini_trading']['reentry_fast'] = True        # v5r keeps E3
+    if hold:
+        cfg['minervini_trading']['max_hold_days'] = hold
+        print(f'max_hold: every position force-sold {hold} trading days '
+              f'after entry')
     panel = load_panel(cfg)
     df = build_ledger(panel, cfg, fix_egg, all_days)
     summarise(df)
 
-    OUT.parent.mkdir(exist_ok=True)
-    df.to_csv(OUT, index=False)
-    print(f'\nledger: {len(df):,} bets -> {OUT.name}')
+    out = (OUT if not hold
+           else OUT.with_name(f'{OUT.stem}_H{hold}{OUT.suffix}'))
+    out.parent.mkdir(exist_ok=True)
+    df.to_csv(out, index=False)
+    print()
+    print(f'ledger: {len(df):,} bets -> {out.name}')
     if width:
+        if hold:
+            sys.exit('--windows with --max-hold would rewrite the shared '
+                     'windows file for no reason: a window is entry-day '
+                     'history and the cap is an exit rule. Build windows '
+                     'once, uncapped.')
         dump_windows(df, panel, width)
 
 

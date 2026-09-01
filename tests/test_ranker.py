@@ -25,7 +25,7 @@ from sklearn.linear_model import Ridge
 from bets_common import (EMBARGO_DAYS, T_FLOOR, rate_target,
                          rent_legs)
 from filter_backtest import blend_matrix, keys_plus
-from rankers import (RentRanker, derive_rent, inner_split,
+from rankers import (MultiRidge, derive_rent, inner_split,
                      loo_ridge, strength_matrix, ycv_ridge)
 from test_bet_multiples import DIV, ENTRY_I, PATH, _cfg, _ledger_y, _panel
 
@@ -392,10 +392,16 @@ def test_a_split_bet_decomposes_into_capital_weighted_profit_and_days():
 
 
 def test_the_two_heads_at_one_alpha_are_a_single_ridge_on_the_rent():
-    """The linearity claim the whole design rests on: ridge is linear in
-    its target and the target is linear in c, so ONE fit pair serves the
-    whole rent grid. Pinned at a fixed shared alpha, which is where the
-    claim is exact -- per-head alphas are a deliberate departure."""
+    """The guard this test always was (RANKER_SPEC Amendment 5).
+
+    At ONE shared alpha the two-head difference and a single ridge on
+    `ln(y) - c*t` are the same number -- which is exactly why the
+    measured failure was not a linearity bug but a REGULARISATION one:
+    the difference only stops being that single ridge when the two
+    halves are shrunk by different amounts, each against its own noise.
+    The decision path is now the single ridge, and this test composes
+    the difference itself so that no library code does.
+    """
     rng = np.random.default_rng(7)
     n, p = 500, 30
     X = rng.normal(size=(n, p)).astype(np.float32)
@@ -406,10 +412,11 @@ def test_the_two_heads_at_one_alpha_are_a_single_ridge_on_the_rent():
     X = ((X - X.mean(0)) / X.std(0)).astype(np.float32)
     profit = X[:, 0] * 0.2 + rng.normal(scale=0.1, size=n)
     days = 20.0 + X[:, 1] * 5.0 + rng.normal(scale=3.0, size=n)
-    rk = RentRanker(alpha=50.0).fit(X, np.stack([profit, days], 1))
+    heads = MultiRidge(alpha=50.0).fit(X, np.stack([profit, days], 1))
+    h = heads.predict(X)
     for c in (0.0, 1e-3, 2e-2):
         direct = loo_ridge(X, profit - c * days, alphas=[50.0])[3]
-        assert rk.score(X, c) == pytest.approx(direct, abs=1e-5)
+        assert h[:, 0] - c * h[:, 1] == pytest.approx(direct, abs=1e-5)
 
 
 def test_the_rent_derivation_finds_the_top_slice_ratio():
@@ -435,3 +442,17 @@ def test_the_rent_starts_from_the_windows_own_ratio_of_sums():
     # window's ratio of sums and it is a fixed point
     c, _ = derive_rent(profit, days, pred, selectivity=1.0)
     assert c == pytest.approx(profit.sum() / days.sum())
+
+
+def test_a_multi_target_fit_refuses_to_hand_back_a_composed_score():
+    """Acceptance 3, enforced in code rather than by review: a decision
+    may not be composed from several separately-regularised fits."""
+    rng = np.random.default_rng(9)
+    X = rng.normal(size=(200, 10)).astype(np.float32)
+    X -= X.mean(0)
+    Y = rng.normal(size=(200, 2))
+    m = MultiRidge(alpha=10.0).fit(X, Y)
+    with pytest.raises(ValueError):
+        m.score(X)
+    one = MultiRidge(alpha=10.0).fit(X, Y[:, 0])
+    assert one.score(X).shape == (200,)

@@ -11,7 +11,10 @@ sim/jobs.log
 
 # bet ledger and its windows: derived caches, not source.
 # rebuild with:  python minervini_bets.py --windows 252
+# the _H<n> ledgers are the same thing under a hold cap
+# (RANKER_SPEC Amendment 6): python minervini_bets.py --max-hold 42
 results/minervini_bets_v5r.csv
+results/minervini_bets_v5r_H*.csv
 results/minervini_bets_v5r_windows.npz
 
 # the fit cache: rebuilt on demand, ~1 GB (fitcache.py, modelstore.py)

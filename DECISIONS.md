@@ -542,6 +542,139 @@ the open question is whether new geometry over the same windows can
 predict profit when 4,200 kernels and two targets could not.
 
 
+## Amendment 5 — one fit, and the target is still not learnable (2026-08-31)
+
+The two-head construction of Amendment 4 was a specification error: the
+grouped CV judged log-profit alone (noise, shrunk to the ceiling) and
+slot-days alone (some signal, kept), and the difference of two
+individually-regularised halves ranked its own target NEGATIVELY out of
+fold. Replaced by ONE ridge fitted directly on `r = ln(y) - c*t`, `c`
+derived exactly as before. The rule that generalises, now beside "one
+bet, one multiple, one average": **a decision comes from the single best
+estimate of the decision quantity, never from separately tuned estimates
+of its parts.** It is enforced in code -- `MultiRidge.score` raises on a
+multi-target fit.
+
+Fitted years 2012-2026, 10 slots:
+
+| arm | total | ann | maxDD | bets | geo/bet | G_rent |
+|---|---|---|---|---|---|---|
+| strength | +292.4% | +9.8% | -29.3% | 988 | +0.82% | -1.0204% |
+| rocket (one fit on r) | +128.1% | +5.8% | -31.6% | 1,029 | +0.31% | -1.4233% |
+| blend0.75 | +253.9% | +9.0% | -27.9% | 1,018 | +0.63% | -1.1412% |
+
+**The composition error was real and fixing it was not enough.**
+Training Spearman went from negative to positive -- the model now ranks
+its own target in sample -- but out-of-fold R2 against the constant is
+-0.002, better in 6 of 15 folds, with alpha at the 1e+08 ceiling in 13
+of 15.
+
+**One correction to the amendment's own branch 2.** "The fit shrinks to
+a constant, so the book keeps the control ordering" is not what happens:
+ridge shrinkage SCALES the coefficient vector and rank is scale
+invariant, so a maximally shrunk model still emits a complete ordering
+-- driven by whatever direction survives, which is noise. The book does
+not revert to the control, it reverts to an arbitrary reordering, and
+pays for it on every column.
+
+**What it cost, read against the 3.3 yardstick.** Totals decide nothing
+(+128.1% and +292.4% are both inside the 276-point band). On the two
+readable columns the rent formulation is WORSE than the ratio one it
+replaced: maxDD -31.6% against the ratio arm's -18.5%, which was the
+best of 200 shuffled books; geo/bet +0.31% against +1.18%, which was the
+94th percentile. **The only measurement in this whole sequence that
+stood outside noise was the ratio arm's drawdown, and it does not
+survive the rent target.**
+
+## Amendment 6, steps 1-3 — cap the hold, train the value (2026-09-01)
+
+### Step 1: the voided data, gated
+
+Two gates over the same 15 fittable years -- per-year sign stability,
+then a ridge on the columns alone against the training-mean null:
+
+| candidate | coverage | gate 1 (sign) | gate 2 (folds) |
+|---|---|---|---|
+| **group_pct** | 87.4% | **12/15 PASS** | **8/15 PASS** |
+| c33_eps | 100% | 10/15 PASS | 6/15 fail |
+| c33_sales_margin | 100% | 9/15 fail | — |
+| surprise | 96.7% | 9/15 fail | — |
+| both survivors together | | | 7/15 fail |
+
+**`group_pct` survives, and its stable sign is NEGATIVE**: a stock in a
+stronger industry group returns a LOWER log multiple, in 12 of 15 years.
+The retired §16 hard gate required the top 30% of groups -- it was
+selecting the wrong side of a real relationship, which is precisely why
+voiding gate-era rejections was right. As a gate it could only lose; as
+a feature with a free sign it is usable. It clears gate 2 at exactly the
+bar, and adding the EPS column makes it worse (7/15), so nothing is
+admitted with it.
+
+### Step 2: what the cap costs the incumbent, before any fit
+
+`max_hold` force-sells H trading days after entry; off by default and
+the uncapped control still reproduces +291.5% row for row. At H=42, on
+the whole record under the strength ordering:
+
+| | uncapped | H=42 |
+|---|---|---|
+| total | **+291.5%** | **+214.8%** |
+| maxDD | -30.2% | -28.7% |
+| bets | 1,252 | **1,535** (+22.6%) |
+| geo/bet | +0.57% | +0.30% |
+
+The ledger says where the 77 points went: **12,248 signals now exit at
+the cap, and they were averaging 1.1448** (median 1.1283) -- still
+running at day 42. What is left under `sma` collapses from 1.0587 to
+1.0003: the good trend exits WERE the ones still alive at the cap.
+
+**The sharpest pair of numbers in this step.** The POOL's per-bet value
+barely moves (+0.52% -> +0.50%): the cap does not hurt the average
+candidate. The BOOK's halves (+0.57% -> +0.30%). So the incumbent
+ordering goes from marginally better than its own pool to clearly worse
+than it, once it may not hold winners past two months. **The strength
+ordering's entire per-bet edge lives in the right tail the cap
+amputates.**
+
+### Step 3: the value target on capped labels
+
+One ridge per fold on `ln(y)` -- with the hold capped, per-bet and
+per-slot-time are the same ranking, so there is nothing left to compose.
+
+| target | R2 oof | folds beating the constant |
+|---|---|---|
+| ratio `ln(y)/t` | **+0.038** | **13/15** |
+| rent, two heads | -0.000 | 5/15 |
+| rent, one fit | -0.002 | 6/15 |
+| **value, capped H=42** | -0.002 | **8/15** |
+
+The cap lifts the fold count to a bare majority -- best since the ratio
+target -- but the loss is still marginally worse than the constant and
+alpha pins at the ceiling in every fold.
+
+Books, fitted years, H=42:
+
+| arm | total | ann | maxDD | bets | geo/bet | G_day |
+|---|---|---|---|---|---|---|
+| strength (capped control) | **+204.9%** | +7.9% | -26.8% | 1,223 | +0.46% | -0.2727% |
+| rocket | +182.1% | +7.4% | **-22.4%** | 1,226 | +0.44% | **-0.2316%** |
+| blend0.75 | +86.2% | +4.3% | -32.2% | 1,227 | +0.14% | -0.2657% |
+| the pool | — | — | — | 55,737 | +0.50% | -0.2171% |
+
+- **The model recovers none of the cap's cost** and matches the control
+  per bet.
+- **Both orderings are now below their own pool** (+0.46%, +0.44%
+  against +0.50%). Under the cap neither the incumbent keys nor the
+  model beats a random draw from the same candidates.
+- **The blend collapses** (+86.2%, +0.14%/bet, worst drawdown of the
+  three): whatever made blend0.75 work uncapped does not survive the
+  cap.
+
+The total-return gaps are NOT called: the capped book needs its own
+200-way permutation band and the 276-point one belongs to the uncapped
+book (Amendment 6 step 5, not yet run). Steps 4-6 are outstanding.
+
+
 ## PROPOSED — not built
 
 | idea | what it would need |

@@ -245,6 +245,26 @@ def inner_split(when: np.ndarray, Y: int, embargo: int = EMBARGO_DAYS):
     return ((d >= y0 - gap) & (d <= y1 + gap), (d >= y0) & (d <= y1))
 
 
+def purged_years(when, embargo: int = EMBARGO_DAYS,
+                 inner_min: int = INNER_MIN) -> int:
+    """How many held-out years survive the purge in this training window.
+
+    Exactly the usability test `ycv_ridge` applies, with no fit attached,
+    so a caller can know which folds WILL fit before paying for any of
+    them. Two or more is fittable; below that the fold keeps the control
+    ordering. The test reads only rows and dates -- never features --
+    which is why every arm fits the same years.
+    """
+    when = np.asarray(when).astype('datetime64[D]')
+    n, k = len(when), 0
+    for Yr in sorted({int(v) for v in when.astype('datetime64[Y]').astype(int)
+                      + 1970}):
+        out, held = inner_split(when, Yr, embargo)
+        if held.sum() and n - int(out.sum()) >= inner_min:
+            k += 1
+    return k
+
+
 def ycv_ridge(X: np.ndarray, y: np.ndarray, when: np.ndarray,
               alphas=YCV_ALPHAS, embargo: int = EMBARGO_DAYS,
               inner_min: int = INNER_MIN):
@@ -446,27 +466,30 @@ def derive_rent(profit, days, pred, selectivity, rounds=3, tol=0.05):
     return c, rounds
 
 
-class RentRanker(Ranker):
-    """Two ridges, one rent, and the whole `c` grid for free.
+class MultiRidge(Ranker):
+    """One ridge per target, all of them sharing the decompositions.
 
-    Ridge is linear in its target and the rent target is linear in `c`,
-    so a fit on `profit` and a fit on `days` give the rent model for
-    EVERY `c` as their difference:
+    Ridge is linear in its target, so k targets over the same rows cost
+    one eigendecomposition and k back-substitutions. Each target still
+    chooses its OWN alpha by the Amendment 1 grouped purged criterion,
+    judged on that target's own held-out error.
 
-        score(c) = predicted_profit - c * predicted_days
+    THIS CLASS DOES NOT COMPOSE SCORES, and that is the point of
+    Amendment 5. The retired construction fitted log-profit and
+    slot-days separately and subtracted them, which regularised the two
+    halves against their own noise and then asked the difference to
+    rank -- and the difference ranked its own target NEGATIVELY out of
+    fold. A decision comes from the single best estimate of the decision
+    quantity, never from separately tuned estimates of its parts. So the
+    caller fits ONE target that IS the decision quantity, and reads
+    `predict` straight out. The two heads may still be fitted here as
+    diagnostics; nothing may be built from their difference.
 
-    One fit pair per fold therefore serves the whole grid, and the heads
-    are diagnostics in their own right -- `predicted_days` says directly
-    whether the model is steering toward long holds.
-
-    Alpha is chosen PER HEAD by the Amendment 1 criterion. That is a
-    deliberate departure from a single ridge on `profit - c*days`:
-    profit and holding time are different quantities with different
-    noise, and forcing one shrinkage on both would let the noisier head
-    set the other's. The consequence, stated so it is not discovered
-    later: with different alphas the difference is no longer identical
-    to a single ridge on the combined target. It is identical when the
-    alphas agree, which is what the equivalence test pins.
+    Standardisation comes from the fold's own training rows and is
+    carried with the model, so nothing about the block being scored ever
+    reaches the fit. A fold whose training window cannot supply two
+    purged years fits nothing: `fitted_` is False and the caller keeps
+    the control ordering.
     """
 
     def __init__(self, name: str = 'rocket', alpha='cv', alphas=YCV_ALPHAS,
@@ -475,45 +498,51 @@ class RentRanker(Ranker):
         self.alpha, self.alphas = alpha, alphas
         self.embargo, self.inner_min = embargo, inner_min
 
-    def fit(self, F: np.ndarray, pd_: np.ndarray,
-            when: np.ndarray | None = None) -> 'RentRanker':
+    def fit(self, F: np.ndarray, Y: np.ndarray,
+            when: np.ndarray | None = None) -> 'MultiRidge':
         X = np.asarray(F, dtype=np.float32)
         self.mu = X.mean(0)
         self.sd = X.std(0) + np.float32(1e-8)
         X = X - self.mu
         X /= self.sd
         self.fitted_, self.years_ = True, []
-        pd_ = np.asarray(pd_, dtype=np.float64)
+        Y = np.asarray(Y, dtype=np.float64)
+        Y = Y[:, None] if Y.ndim == 1 else Y
         if self.alpha != 'cv':
             a = float(self.alpha)
-            cols = [loo_ridge(X, pd_[:, i], [a]) for i in range(pd_.shape[1])]
+            cols = [loo_ridge(X, Y[:, i], [a]) for i in range(Y.shape[1])]
             self.coef_ = np.stack([c[0] for c in cols], 1)
             self.intercept_ = np.array([c[1] for c in cols])
             self.alpha_ = np.array([c[2] for c in cols])
-            self.train_heads_ = np.stack([c[3] for c in cols], 1)
+            self.train_pred_ = np.stack([c[3] for c in cols], 1)
             return self
         if when is None:
             raise ValueError('the alpha criterion groups by entry year, so '
                              'fit() needs the entry dates')
-        got = ycv_ridge(X, pd_, when, self.alphas, self.embargo,
+        got = ycv_ridge(X, Y, when, self.alphas, self.embargo,
                         self.inner_min)
         if got is None:
             self.fitted_ = False
             return self
         (self.coef_, self.intercept_, self.alpha_,
-         self.train_heads_, self.years_) = got
+         self.train_pred_, self.years_) = got
         return self
 
-    def heads(self, F: np.ndarray) -> np.ndarray:
+    def predict(self, F: np.ndarray) -> np.ndarray:
         X = np.asarray(F, dtype=np.float32)
         X = X - self.mu
         X /= self.sd
         return (np.asarray(X @ self.coef_.astype(np.float32),
                            dtype=np.float64) + self.intercept_[None, :])
 
-    def score(self, F: np.ndarray, c: float = 0.0) -> np.ndarray:
-        h = self.heads(F)
-        return h[:, 0] - float(c) * h[:, 1]
+    def score(self, F: np.ndarray) -> np.ndarray:
+        """The decision quantity, when there is exactly one target."""
+        p = self.predict(F)
+        if p.shape[1] != 1:
+            raise ValueError('score() is for a single-target fit; a '
+                             'decision may not be composed from several '
+                             '(RANKER_SPEC Amendment 5)')
+        return p[:, 0]
 
 
-REGISTRY = {'strength': StrengthScore, 'rocket': RentRanker}
+REGISTRY = {'strength': StrengthScore, 'rocket': MultiRidge}

@@ -233,6 +233,38 @@ def rent_legs(y, days_held, half_frac=None, y_half=None,
     return profit, (1.0 - f) * t + f * th
 
 
+def value_target(y, half_frac=None, y_half=None):
+    """The plain per-bet log multiple (RANKER_SPEC Amendment 6).
+
+        r = ln(y)                                unsplit
+        r = 0.5*ln(y_half) + 0.5*ln(y_rest)      split
+
+    No rent, no ratio, no floor, and no holding time anywhere. It is
+    trainable only because the trading rule caps the hold: with every
+    position force-sold after H days, "profit per bet" and "profit per
+    slot-time" stop being different rankings, so the mismatch that
+    consumed the ratio and rent targets is removed by the exit ladder
+    instead of by loss engineering.
+
+    THE SPLIT CONVENTION IS HALF AND HALF BY DECISION, not by reading
+    `half_frac`. The two legs are one bet's two capital streams and each
+    counts once; `strength_sell_frac` happens to be 0.5 today, so the
+    two agree, and pinning it here keeps the target fixed if that knob
+    ever moves.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    if half_frac is None:
+        return np.log(np.maximum(y, 1e-9))
+    f = np.asarray(half_frac, dtype=np.float64)
+    yh = np.asarray(y_half, dtype=np.float64)
+    split = (f > 0) & np.isfinite(yh)
+    y_rest = np.where(split, (y - f * yh) / np.maximum(1.0 - f, 1e-12), y)
+    return np.where(split,
+                    0.5 * np.log(np.maximum(np.where(split, yh, 1.0), 1e-9))
+                    + 0.5 * np.log(np.maximum(y_rest, 1e-9)),
+                    np.log(np.maximum(y, 1e-9)))
+
+
 def warmup_rows(dates: np.ndarray, n: int, rng) -> np.ndarray:
     """Rows for fitting the MiniRocket bias quantiles: a sample of the
     EARLIEST bets in the record.

@@ -507,6 +507,10 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
     be_r = tr.get('breakeven_r', 0)
     be_level = 1.0 + be_r * (1.0 - tr['stop_loss'])
     protect = tr.get('protect_days', 0)           # v4 tennis-ball window
+    # RANKER_SPEC Amendment 6: force-sell H trading days after entry.
+    # 0 or absent = off, and with it off every number in this repo
+    # reproduces bit for bit -- the branch below cannot be reached.
+    max_hold = int(tr.get('max_hold_days', 0) or 0)
     risk_frac = tr.get('risk_per_trade', 0.0)     # v6 money engine
     pos_cap = tr.get('position_cap', 0.0)
     pyr_frac = tr.get('pyramid_frac', 0.0)
@@ -724,6 +728,13 @@ def simulate(panel: dict, cfg: dict, period: tuple[int, int],
                 pos['exit_reason'] = 'failed_breakout'
             elif c <= tr['stop_loss'] * pos['entry_px']:
                 pos['exit_reason'] = 'stop'
+            elif max_hold and i - pos['entry_i'] >= max_hold:
+                # the time cap, ABOVE every discretionary exit and below
+                # the stop: a position that has blocked the slot for H
+                # days goes, whatever the tennis window, the velocity
+                # hold or the trend say. Fills at the next open like the
+                # other slow exits.
+                pos['exit_reason'] = 'max_hold'
             elif e4 and i - pos['entry_i'] >= v7c['aging_stop_day']                     and c <= v7c['aging_stop_level'] * pos['entry_px']:
                 pos['exit_reason'] = 'aged'
             elif e1 and c >= v7c['climax_min_gain'] * pos['entry_px']                     and i > pos['entry_i']                     and c / cl[i - 1, j] - 1 >= v7c['climax_day_ret']:
