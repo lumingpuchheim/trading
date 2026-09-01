@@ -762,3 +762,77 @@ the book is the ceremony.
 4. The split convention (0.5 per leg) is pinned by a hand-built test.
 5. Every step of the run order prints its go/no-go number before the
    next step spends anything.
+
+---
+
+## Amendment 7 — group_pct joins the model, uncapped (2026-09-01)
+
+The one survivor of Amendment 6's gates gets its real test. The
+measured ground: among candidates that all passed the strength
+screen, stocks from HOTTER industry groups made WORSE bets — sign
+negative in 12 of 15 years, the first non-price feature ever to pass
+both gates here (tiny model 8 of 15 folds over the constant). The
+retired §16 gate demanded the top 30% of groups: it held a real
+signal by the wrong end. Its OUT verdict stands — for the gate. The
+column is new evidence.
+
+### Two deliberate departures from Amendment 6 step 6
+
+1. **Uncapped.** Step 2 priced the day-42 forced sell at 77 points on
+   the incumbent before any model: the cap is a measured no-go, and
+   the live feature is not tested inside a refuted trading rule.
+   Today's exits, today's ledger, no `max_hold`.
+2. **Value target.** `r = ln(y)`, split legs at 0.5 each, as the
+   operator fixed it — the same target the gates screened against.
+   One model, Amendment 5's rule, grouped-CV alpha, same schedule.
+
+### Nobody flips anything by hand
+
+`group_pct` enters as an ordinary feature pair (value, finite). The
+regression learns its weight per fold from that fold's own window; if
+the screen is right the weight comes out NEGATIVE, and if the
+relationship fades in later folds the weight walks back on its own —
+which is exactly what the hard gate could never do. **Each fold line
+prints the learned `group_pct` coefficient (standardised), so the
+flip stays visible and human-readable.** If the printed signs
+disagree wildly with the screen's 12-of-15, something is wrong with
+the plumbing, not the market — stop and say so.
+
+### Two arms, small before large
+
+    'keys+group'    the six key columns + the group_pct pair
+                    (8 features, minutes). One new column cannot
+                    drown here; its effect is readable directly.
+    'rocket+group'  the full transform + keys + the group_pct pair
+                    (4,208 features). The production question.
+
+Run `strength`, `keys+group`, `rocket+group` in one session; the
+existing `rocket` fold caches serve as the no-group comparison
+without a re-run.
+
+### Gate, then book — pre-registered
+
+- **The gate (fold lines):** `keys+group` must beat the constant in
+  more folds than the keys alone ever did, and the learned group
+  sign must be stably negative. If the gate fails, no book is
+  simulated, the result is one recorded line, and the thread closes.
+- **The book (only after the gate):** judged on per-bet geo, maxDD
+  and G_day against `strength` and the cached `rocket`, inside the
+  uncapped 276-point permutation band — total return decides nothing
+  within it. The pre-registered honest outcomes: a small per-bet
+  improvement with a printable one-sentence explanation ("strong
+  stock, cool industry") — or no movement, one recorded line, and
+  the register notes that the last gated feature is spent.
+
+### Acceptance
+
+1. Control reproduces +291.5% before any fitted row is read.
+2. Banner: `target=ln(y)  features=8` / `features=4,208`, no
+   `max_hold`.
+3. Fold lines print the learned standardised `group_pct` coefficient
+   beside the metrics.
+4. The group column enters as a (value, finite) pair; its per-year
+   coverage is printed once before the first fit.
+5. Caches key on the feature identity (`keys6+grp`, `rocket+grp`);
+   nothing existing is invalidated, and the no-group `rocket` folds
+   are read from cache, not refitted.
