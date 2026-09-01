@@ -836,3 +836,90 @@ without a re-run.
 5. Caches key on the feature identity (`keys6+grp`, `rocket+grp`);
    nothing existing is invalidated, and the no-group `rocket` folds
    are read from cache, not refitted.
+
+---
+
+## Amendment 8 — the within-day target: rank the race, not the weather (2026-09-01)
+
+The slot decision is a WITHIN-day ranking, but the label has never
+been within-day: `ln(y)` = (what the market did during the hold) +
+(how this stock did against its same-day peers). The first component
+is the larger by far — the fold lines' out-of-fold mse tracks each
+year's market variance, 5-8x between calm and crash years — the picks
+cancel it exactly (a per-day constant moves no rank), and it is the
+most regime-flipping part of the data. So the fit has been spending
+its capacity predicting weather it never uses, and dragging the
+within-day ordering around with stale market coefficients. This
+amendment makes the label match the decision.
+
+### The target
+
+Per signal: the value target as fixed by the operator (split legs at
+0.5 each), MINUS the mean of that value over all ledger signals
+entered the SAME day:
+
+    v_i = ln(y_i)            (legs blended 0.5/0.5 as before)
+    r_i = v_i − mean(v_j : entry_date_j == entry_date_i)
+
+- A day with a single signal gets label exactly 0 — no within-day
+  contrast exists, and the row stays (it contributes nothing and
+  distorts nothing).
+- No new lookahead: the day-mean uses peer OUTCOMES, which resolve
+  within the hold; the 400-day embargo already keeps every training
+  outcome resolved before the scored block opens, demeaned or not.
+- `--min-score` is REFUSED with this target: the score is relative to
+  an unknown day level, so "predicted rate below cash" is undefined.
+  The natural zero belongs to absolute targets only.
+
+### What changes and what does not
+
+One line in label construction. Features, arms, schedule, grouped-CV
+alpha (now judged on the demeaned number — automatically aligned),
+the slot decision, and every book column are untouched. Fold metrics
+gain the decision-relevant diagnostic: **within-day Spearman** —
+rank correlation of score vs realised label inside each day (days
+with >= 5 signals), averaged over the block's days — printed beside
+the pooled Spearman, which stays for continuity.
+
+### The run matrix — the rolling-window test rides along
+
+The regime-drift question (expanding averages +sign years with -sign
+years into zero) is one existing flag, so it shares the session:
+
+    arms: strength (control), rocket
+    target: within-day value        windows: expanding, --lookback 3,
+                                             --lookback 5
+
+Six fold-line columns, no books yet. Feature caches shared; block
+caches key on target id and the training masks (the lookback changes
+the masks, so keys separate themselves).
+
+### Gate, then book — pre-registered, with a closing clause
+
+**Gate, per config:** beats the constant (predict 0) in >= 10 of 15
+folds AND mean within-day Spearman positive in >= 10 of 15. Books
+are simulated only for configs that clear it, and judged on per-bet
+geo, maxDD and G_day inside their own permutation band.
+
+**The closing clause, agreed in advance:** this is the last
+cross-sectional construction on these features. The label now matches
+the decision exactly; the window question is answered in the same
+session. If NO config clears the gate, the profit-ranking question
+on price windows is CLOSED — the register records it as measured to
+completion, the standing assets are the pool's edge, the market
+light, and the crash-avoidance drawdown cut, and further growth work
+requires new inputs, not new constructions. No amendment 9 on these
+features.
+
+### Acceptance
+
+1. Control reproduces +291.5% before any fitted row is read.
+2. A test pins the demeaning: within each entry day of the training
+   window, the mean label is 0 to float tolerance; a single-signal
+   day's label is exactly 0.
+3. `--min-score` with this target refuses with a message naming this
+   amendment.
+4. Fold lines print pooled AND within-day Spearman; the banner names
+   the target (`target=ln(y)-daymean`) and the window.
+5. Existing caches untouched; the six configs' fold caches key
+   separately and completely.
